@@ -379,3 +379,25 @@ def test_preparation_sampling_signature_defaults_and_source_families(bundle):
     replay.preparation_sources_by_object[14]=('learned',)
     with pytest.raises(ValueError,match='preparation families'):
         validate_loaded_model(model,checkpoint,2)
+
+
+def test_variant_preparation_signature_is_distinct_and_keeps_legacy_sources():
+    from pnr.phase2_checkpoints import check_signature
+    root = Path(__file__).resolve().parents[1]
+    legacy = dict(method(), preparation_mode='learned-grasp',
+                  preparation_grasp_sha256='g'*64, preparation_settings={'grasp_lift_m': .24},
+                  training_cases_sha256='c'*64)
+    before = signature(legacy, root)
+    varied = copy.deepcopy(legacy)
+    varied['preparation_mode'] = 'learned-grasp-variants'
+    varied['preparation_settings'].update(variants_per_case=3, preparation_seed=9401)
+    after = signature(varied, root)
+    assert set(after['semantic_sources']) - set(before['semantic_sources']) == {
+        'pnr/diverse_learned_carry.py', 'pnr/grasp_sampling.py'}
+    assert all(after['semantic_sources'][k] == v for k, v in before['semantic_sources'].items())
+    with pytest.raises(ValueError, match='preparation_mode'):
+        check_signature(before, after)
+    changed = copy.deepcopy(varied)
+    changed['preparation_settings']['preparation_seed'] += 1
+    with pytest.raises(ValueError, match='preparation_settings'):
+        check_signature(after, signature(changed, root))

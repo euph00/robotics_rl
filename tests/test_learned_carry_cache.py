@@ -275,3 +275,76 @@ def test_rejects_missing_or_incompatible_embedded_grasp_metadata(factory, monkey
         action_space=SimpleNamespace(shape=(4,)), _pnr_grasp_protocol_signature=metadata))
     with pytest.raises(ValueError, match='protocol metadata'):
         factory([case(0)])
+
+
+def test_diverse_slots_preserve_scene_identity_rng_provenance_and_physical_ledger(factory, monkeypatch):
+    import pnr.diverse_learned_carry as variants
+    calls = []
+    class Predictor:
+        def __init__(self, variant): self.variant = variant
+        def sampling_report(self): return {'seed': self.variant['torch_seed'], 'checked': True}
+    def predictor(model, variant):
+        calls.append(deepcopy(variant))
+        return Predictor(variant)
+    monkeypatch.setattr(variants, 'predictor_for_variant', predictor)
+    original = [case(0), case(1, 2)]
+    expanded = variants.expand_preparation_cases(original)
+    env = variants.DiverseLearnedMultiCaseCarry(expanded, factory.path, factory.sha)
+    original_grasp = env.grasp
+    report = env.prime_cache()
+    assert len(calls) == len(Native.instances) == report['scenes'] == 6
+    assert len(set(env.case_keys)) == 6
+    assert env.grasp is original_grasp
+    assert report['canonical_case_ids'] == [c['case_id'] for c in original]
+    assert env.setup_action_calls == 6 * 16
+    assert env.initialization_physics_ticks == 6 * 7
+    assert all(r['post_refresh_observation']['observation'] for r in report['restore_attempts'])
+    assert len({r['sampling_report']['seed'] for r in report['preparation_attempts']}) == 6
+    visited = []
+    for _ in range(6):
+        _, info = env.reset()
+        visited.append((info['case_id'], info['preparation_id']))
+        _, _, _, _, step_info = env.step(np.array([0., 1.]))
+        assert step_info['preparation_id'] == info['preparation_id']
+        assert step_info['case_id'] == info['case_id']
+    assert [v[0] for v in visited] == [original[i//3]['case_id'] for i in range(6)]
+    assert len({v[1] for v in visited}) == 6
+    assert env.source_action_calls == 30
+    assert all('preparation_variant' not in c for c in original)
+    state = env.get_training_state()
+    env.close()
+    resumed = variants.DiverseLearnedMultiCaseCarry(expanded, factory.path, factory.sha)
+    resumed.set_training_state(state)
+    assert resumed.setup_action_calls == 0
+    resumed.prime_cache()
+    assert resumed.setup_action_calls == 96
+    assert resumed.reset_count == 6
+    assert len(calls) == 12
+    assert calls[:6] == calls[6:]
+    changed = variants.DiverseLearnedMultiCaseCarry(variants.expand_preparation_cases(original, seed=9402), factory.path, factory.sha)
+    with pytest.raises(ValueError, match='signature'):
+        changed.set_training_state(state)
+    with pytest.raises(ValueError, match='protocol'):
+        changed.set_training_state(factory(original).get_training_state())
+    resumed.close()
+    changed.close()
+
+
+def test_diverse_failures_are_retained_per_variant_without_retry(factory, monkeypatch):
+    import pnr.diverse_learned_carry as variants
+    seen = []
+    def predictor(model, variant):
+        seen.append(variant['torch_seed'])
+        return SimpleNamespace(sampling_report=lambda: {'seed': variant['torch_seed']})
+    monkeypatch.setattr(variants, 'predictor_for_variant', predictor)
+    Native.fail_objects.add(2)
+    env = variants.DiverseLearnedMultiCaseCarry(variants.expand_preparation_cases([case(0), case(1, 2)]), factory.path, factory.sha)
+    report = env.prime_cache()
+    assert len(report['failed_case_ids']) == 3
+    assert len(report['valid_case_ids']) == 3
+    assert env.setup_action_calls == 3 * 16 + 3 * 11
+    assert all('sampling_report' in record for record in env.failed_setup_attempts)
+    for _ in range(4):
+        assert env.reset()[1]['case_id'] == case(0)['case_id']
+    assert len(seen) == 6
+    env.close()

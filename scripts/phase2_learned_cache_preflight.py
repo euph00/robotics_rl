@@ -33,6 +33,7 @@ def main():
     parser.add_argument('--bank', type=Path, default=ROOT/'configs/phase2_scene_bank_expanded.json')
     parser.add_argument('--grasp', type=Path, default=ROOT/'runs/phase2_sac_grasp_clearance01/candidate/grasp.zip')
     parser.add_argument('--carry', type=Path, default=ROOT/'runs/phase2_carry_expanded_init01/checkpoints/bc_initialized.zip')
+    parser.add_argument('--preparation-variants', type=int, choices=(1, 3), default=1)
     args = parser.parse_args()
     if args.output.exists() and any(args.output.iterdir()):
         parser.error('Use a fresh output directory; no overwritten outcomes')
@@ -52,26 +53,34 @@ def main():
                              'sha256': hashlib.sha256(dest.read_bytes()).hexdigest()}
     bank = load_scene_bank(args.bank)
     cases = case_specs(bank, 'train', object_indices=[14, 2, 5])[:3]
+    cache_class = LearnedMultiCaseCarry
+    if args.preparation_variants == 3:
+        from pnr.diverse_learned_carry import DiverseLearnedMultiCaseCarry, expand_preparation_cases
+        canonical = case_specs(bank, 'train', object_indices=[14, 5, 2, 7, 10])[:5]
+        cases = [c for c in expand_preparation_cases(canonical) if c['object_idx'] in [14, 2, 5]]
+        cache_class = DiverseLearnedMultiCaseCarry
     config = {'protocol': 'learned-carry-cache-physical-preflight-v1',
         'cases': cases, 'bank_sha256': bank['manifest_sha256'], 'checkpoints': checkpoints,
         'cycles_per_case': 3, 'maximum_carry_decisions_per_cycle': 20,
         'preparation_settings': PREPARATION_SETTINGS, 'restore_settings': CACHE_RESTORE_SETTINGS,
-        'selection': 'first TRAIN layout, prespecified foam/can/apple',
+        'selection': 'first TRAIN layout, prespecified foam14/can2/banana5; variants use canonical five-object case indices',
+        'preparation_variants': args.preparation_variants,
         'source_hashes': hashes, 'training_updates': 0, 'full_task_evaluation': False}
     atomic_json(args.output/'config.json', config)
     policy = load_policy_checkpoint(checkpoints['carry']['frozen_path'], device='cpu')
     results = []; start = time.monotonic()
     for case in cases:
         env = None
-        record = {'case_id': case['case_id'], 'cycles': [], 'completed': False}
+        preparation_id = case['case_id'] + ('__' + case['preparation_variant']['variant_id'] if args.preparation_variants == 3 else '')
+        record = {'case_id': case['case_id'], 'preparation_id': preparation_id, 'cycles': [], 'completed': False}
         try:
-            env = LearnedMultiCaseCarry([case], checkpoints['grasp']['frozen_path'],
+            env = cache_class([case], checkpoints['grasp']['frozen_path'],
                 checkpoints['grasp']['sha256'])
             record['initial_cache'] = env.prime_cache()
             if not record['initial_cache']['ready_for_training']:
                 record['error'] = 'Preparation or initial restore validation failed'
             else:
-                with (out/(case['case_id']+'_trajectory.jsonl')).open('w') as trace:
+                with (out/(preparation_id+'_trajectory.jsonl')).open('w') as trace:
                     for cycle in range(3):
                         row = {'cycle': cycle, 'decisions': 0, 'restored': False}; record['cycles'].append(row)
                         observation, info = env.reset()
@@ -110,7 +119,7 @@ def main():
             payload['all_physics_ticks'] = sum(payload['costs'][k] for k in (
                 'setup_physics_ticks', 'initialization_physics_ticks', 'incremental_transport_physics_ticks'))
             atomic_json(out/'result.json', json.loads(json.dumps(payload, default=plain, allow_nan=False)))
-            print(json.dumps({'case': case['case_id'], 'completed': record['completed'],
+            print(json.dumps({'case': case['case_id'], 'preparation_id': preparation_id, 'completed': record['completed'],
                               'restores': sum(c['restored'] for c in record['cycles']),
                               'error': record.get('error')}), flush=True)
     print(json.dumps({k: v for k, v in payload.items() if k != 'results'}), flush=True)

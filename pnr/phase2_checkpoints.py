@@ -52,13 +52,13 @@ def _normalized_method(method):
     if result['balance_replay_sources'] and not result['balance_replay_objects']:
         raise ValueError('Preparation source balancing requires object-balanced replay')
     mode=result.get('preparation_mode','reference')
-    if mode not in ('reference','learned-grasp'):raise ValueError('Unknown carry preparation mode')
+    if mode not in ('reference','learned-grasp','learned-grasp-variants'):raise ValueError('Unknown carry preparation mode')
     result['preparation_mode']=mode
     for key in PREPARATION_FIELDS[1:]:
         result[key]=result.get(key)
     if mode=='reference' and any(result[key] is not None for key in PREPARATION_FIELDS[1:]):
         raise ValueError('Reference preparation cannot claim learned preparation metadata')
-    if mode=='learned-grasp' and any(result[key] is None for key in PREPARATION_FIELDS[1:]):
+    if mode in ('learned-grasp','learned-grasp-variants') and any(result[key] is None for key in PREPARATION_FIELDS[1:]):
         raise ValueError('Learned preparation requires immutable grasp/settings/case signatures')
     result['buffer_size']=int(result.get('buffer_size',100000))
     if result['buffer_size']<1:raise ValueError('Invalid checkpoint buffer_size')
@@ -78,10 +78,11 @@ def _method(config):
 
 def _semantic_sources(method):
     preparation_sources=('pnr/learned_carry.py','pnr/system.py','pnr/general_manipulation.py',
-        'pnr/skills.py','pnr/clearance_grasps.py','pnr/policies.py','pnr/features.py','pnr/grasp_actor_ablation.py') if method['preparation_mode']=='learned-grasp' else ()
+        'pnr/skills.py','pnr/clearance_grasps.py','pnr/policies.py','pnr/features.py','pnr/grasp_actor_ablation.py') if method['preparation_mode'] in ('learned-grasp','learned-grasp-variants') else ()
+    variant_sources=('pnr/diverse_learned_carry.py','pnr/grasp_sampling.py') if method['preparation_mode']=='learned-grasp-variants' else ()
     replay_sources=('pnr/object_balanced_her.py',) if method['balance_replay_objects'] else ()
     source_balance_sources=('pnr/preparation_balanced_her.py','pnr/preparation_metadata.py') if method['balance_replay_sources'] else ()
-    return SEMANTIC_SOURCES+preparation_sources+replay_sources+source_balance_sources+(('pnr/regularized_sac.py',) if method['bc_weight']>0 else ())+(('pnr/navigation_features.py',) if method['navigation_only'] else ())
+    return SEMANTIC_SOURCES+preparation_sources+variant_sources+replay_sources+source_balance_sources+(('pnr/regularized_sac.py',) if method['bc_weight']>0 else ())+(('pnr/navigation_features.py',) if method['navigation_only'] else ())
 
 
 def signature(config,source_root):

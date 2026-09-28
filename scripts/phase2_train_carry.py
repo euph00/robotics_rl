@@ -233,6 +233,8 @@ def main():
     p.add_argument('--balance-replay-objects',action='store_true',help='Uniform original-object sampling before standard HER relabeling')
     p.add_argument('--balance-replay-sources',action='store_true',help='Uniform fixed preparation families within each replay object')
     p.add_argument('--preparation-grasp',help='Opt-in frozen learned grasp for conditional five-object carry training')
+    p.add_argument('--preparation-variants',type=int,choices=(1,3),default=1,help='Three uses independent deterministic and two native-SAC sampled grasps per TRAIN case')
+    p.add_argument('--preparation-seed',type=int,default=9401)
     p.add_argument('--training-layouts',type=int,help='Number of first selected TRAIN layouts used for learned handovers; default8')
     p.add_argument('--training-objects',type=int,nargs='+',default=[14,5,2,7,10])
     p.add_argument('--buffer-size',type=int,default=100000)
@@ -247,7 +249,7 @@ def main():
         if Path(args.resume_run).name!=args.resume_run:p.error('Use a run ID for --resume-run')
         parent_config=json.loads((ROOT/'runs'/args.resume_run/'config.json').read_text())
         explicit={token.split('=')[0] for token in sys.argv[1:] if token.startswith('--')}
-        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts','navigation_only','buffer_size','critic_warmup_tau','balance_objects','preparation_grasp','training_layouts','training_objects','balance_replay_objects','balance_replay_sources'):
+        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts','navigation_only','buffer_size','critic_warmup_tau','balance_objects','preparation_grasp','training_layouts','training_objects','balance_replay_objects','balance_replay_sources','preparation_variants','preparation_seed'):
             if '--'+key.replace('_','-') not in explicit:setattr(args,key,parent_config.get(key,getattr(args,key)))
         if '--preparation-grasp' not in explicit and parent_config.get('frozen_preparation_grasp'):
             args.preparation_grasp=parent_config['frozen_preparation_grasp']
@@ -256,6 +258,7 @@ def main():
     if not args.demonstrations:p.error('--demonstrations required for a fresh run')
     if args.buffer_size<1:p.error('--buffer-size must be positive')
     if args.balance_replay_sources and not args.balance_replay_objects:p.error('Source balancing requires explicit object-balanced replay')
+    if args.preparation_variants!=1 and not args.preparation_grasp:p.error('Preparation variants require a frozen learned grasp')
     if args.balance_replay_objects and not args.preparation_grasp:p.error('Object-balanced replay requires declared learned five-object handover training')
     if args.workers>args.layouts:p.error('Each worker needs at least one selected layout')
     torch.set_num_threads(1);np.random.seed(args.seed);random.seed(args.seed);torch.manual_seed(args.seed)
@@ -272,13 +275,19 @@ def main():
         preparation_cases=[case for case in case_specs(bank,'train',object_indices=args.training_objects) if case['layout_id'] in selected_ids]
         if len(preparation_cases)<args.workers:p.error('Every worker needs at least one declared learned-handover case')
         preparation_settings=dict(PREPARATION_SETTINGS,cache_restore=dict(CACHE_RESTORE_SETTINGS))
+        if args.preparation_variants==3:
+            from pnr.diverse_learned_carry import expand_preparation_cases, CACHE_PROTOCOL as VARIANT_CACHE_PROTOCOL
+            from pnr.grasp_sampling import SAMPLING_PROTOCOL
+            preparation_cases=expand_preparation_cases(preparation_cases,seed=args.preparation_seed)
+            preparation_settings.update(variants_per_case=3,preparation_seed=args.preparation_seed,
+                sampling_protocol=SAMPLING_PROTOCOL,cache_protocol=VARIANT_CACHE_PROTOCOL)
         if args.delta_scale!=preparation_settings['carry_delta_scale']:p.error('Learned preparation requires its frozen carry action scale')
         preparation_sha=hashlib.sha256(Path(args.preparation_grasp).read_bytes()).hexdigest()
         cases_sha=hashlib.sha256(json.dumps(preparation_cases,sort_keys=True,separators=(',',':')).encode()).hexdigest()
     elif args.training_layouts is not None:p.error('--training-layouts requires --preparation-grasp')
     validation=scene_records(bank,'validation')[:args.validation_layouts]
     if not 1<=args.validation_layouts<=len(scene_records(bank,'validation')):p.error('Invalid validation layout count')
-    config=dict(vars(args),preparation_mode='learned-grasp' if preparation_cases else 'reference',
+    config=dict(vars(args),preparation_mode=('learned-grasp-variants' if args.preparation_variants==3 else 'learned-grasp') if preparation_cases else 'reference',
         preparation_grasp_sha256=preparation_sha,preparation_settings=preparation_settings,training_cases_sha256=cases_sha,
         carry_training_scope='conditional on physically prepared learned grasp; failures and costs retained' if preparation_cases else 'reference-prepared foam',
         gamma=.995,shaping_weight=2.,alpha_initial=.005,target_entropy=-4.,online_tau=.01,
@@ -436,7 +445,11 @@ def main():
                 ignore_worker_stop_signals(parent_pid)
                 if preparation_cases is not None:
                     from pnr.learned_carry import LearnedMultiCaseCarry
-                    env=LearnedMultiCaseCarry(preparation_cases[index::args.workers],grasp_checkpoint=str(frozen_grasp.resolve()),
+                    preparation_class=LearnedMultiCaseCarry
+                    if args.preparation_variants==3:
+                        from pnr.diverse_learned_carry import DiverseLearnedMultiCaseCarry
+                        preparation_class=DiverseLearnedMultiCaseCarry
+                    env=preparation_class(preparation_cases[index::args.workers],grasp_checkpoint=str(frozen_grasp.resolve()),
                         grasp_sha256=preparation_sha,seed=args.seed+index,episodes_per_case=1,
                         horizon=args.horizon,delta_scale=args.delta_scale)
                     if args.balance_replay_sources:
@@ -459,8 +472,9 @@ def main():
             atomic_json(logger.directory/'artifacts/scene_cache_setup.json',plain(priming))
             if preparation_cases is not None:
                 counts={str(obj):sum(int(row['valid_object_counts'].get(str(obj),0)) for row in priming) for obj in args.training_objects}
-                atomic_json(logger.directory/'artifacts/preparation_coverage.json',{'declared_cases':len(preparation_cases),
-                    'valid_object_counts':counts,'all_declared_failures_retained':True,'full_task_success':False})
+                atomic_json(logger.directory/'artifacts/preparation_coverage.json',{'declared_preparation_slots':len(preparation_cases),
+                    'declared_cases':len({case['case_id'] for case in preparation_cases}),
+                    'variants_per_case':args.preparation_variants,'valid_object_counts':counts,'all_declared_failures_retained':True,'full_task_success':False})
                 if any(not row.get('ready_for_training',False) for row in priming):raise RuntimeError('A learned-handover worker has no valid prepared case; see persisted priming reports')
                 if any(count==0 for count in counts.values()):raise RuntimeError('No valid learned handover for a declared object: '+str(counts))
             if resumed is not None:
