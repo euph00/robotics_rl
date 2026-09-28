@@ -71,3 +71,19 @@ Preparation-source balancing was rejected: at40k it completed46/60 tasks,
 43/60 within15k ticks including settling, versus51/60 and47/60 for object-only
 balancing. Its8k endpoint was also worse. The diverse-data branch retains
 object-only replay balancing.
+
+The longer-control evaluations are complete:
+
+| Online decisions | Full completion | Within15k action ticks | Within15k including settling |
+|---|---:|---:|---:|
+| 40k |51/60|50/60|47/60|
+| 80k |47/60|47/60|46/60|
+| 120k |48/60|48/60|47/60|
+| 200k |48/60|48/60|47/60|
+
+The40k checkpoint remains the best complete-task result. Final200k failures were
+11 carry grip losses and the recurring can grasp timeout. All60 cases at every
+milestone exactly matched40k in saved pre-carry states and stage counts. These
+traces sample every five native calls and omit actions, velocities and solver
+state, so they do not establish complete hidden-state equality. No held-out
+case was evaluated. The three added full validations consumed2,321,875 ticks.
