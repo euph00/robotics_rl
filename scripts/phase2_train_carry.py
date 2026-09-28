@@ -27,9 +27,10 @@ from pnr.general_carry import GeneralCarryEnv
 from pnr.multi_carry import CarrySchema, MultiSceneCarry
 from pnr.scenes import load_scene_bank, scene_records
 from pnr.spatial_features import CarrySpatialExtractor
+from pnr.navigation_features import NavigationSpatialExtractor
 from pnr.sac_initialization import calibrate_actor_std,critic_only_warmup
 from pnr.regularized_sac import RegularizedSAC
-from pnr.demonstrations import seed_replay
+from pnr.demonstrations import seed_replay, carry_supervision
 from pnr.telemetry import RunLogger,atomic_json
 from pnr.train import GracefulStop,ignore_worker_stop_signals
 from pnr.phase2_checkpoints import (signature,load_checkpoint,publish_checkpoint,
@@ -226,6 +227,8 @@ def main():
     p.add_argument('--horizon',type=int,default=900);p.add_argument('--eval-every',type=int,default=10000)
     p.add_argument('--checkpoint-every',type=int,default=10000);p.add_argument('--device',default='cuda')
     p.add_argument('--validation-layouts',type=int,default=4)
+    p.add_argument('--navigation-only',action='store_true')
+    p.add_argument('--buffer-size',type=int,default=100000)
     p.add_argument('--bc-weight',type=float,default=0.);p.add_argument('--demo-batch-size',type=int,default=256)
     args=p.parse_args()
     if not np.isfinite(args.bc_weight) or args.bc_weight<0 or args.demo_batch_size<1:p.error('Invalid demonstration regularization settings')
@@ -235,9 +238,10 @@ def main():
         if Path(args.resume_run).name!=args.resume_run:p.error('Use a run ID for --resume-run')
         parent_config=json.loads((ROOT/'runs'/args.resume_run/'config.json').read_text())
         explicit={token.split('=')[0] for token in sys.argv[1:] if token.startswith('--')}
-        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts'):
+        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts','navigation_only','buffer_size'):
             if '--'+key.replace('_','-') not in explicit:setattr(args,key,parent_config.get(key,getattr(args,key)))
     if not args.demonstrations:p.error('--demonstrations required for a fresh run')
+    if args.buffer_size<1:p.error('--buffer-size must be positive')
     if args.workers>args.layouts:p.error('Each worker needs at least one selected layout')
     torch.set_num_threads(1);np.random.seed(args.seed);random.seed(args.seed);torch.manual_seed(args.seed)
     bank=load_scene_bank(args.bank);layouts=scene_records(bank,'train')[:args.layouts]
@@ -264,45 +268,51 @@ def main():
     dataset=pickle.loads(Path(args.demonstrations).read_bytes())
     allowed={l['maze_hash'] for l in layouts}
     if any(e['maze_hash'] not in allowed for e in dataset['episodes']):raise ValueError('Demonstration layout outside selected training partition')
-    rows=[r for e in dataset['episodes'] for r in e['transitions']]
+    if resumed is None or args.bc_weight>0:
+        rows,groups,probabilities,supervision=carry_supervision(dataset)
+        # Preserve the established sampler group name for old regularized resumes.
+        groups={('turn' if name=='turn_or_vertical' else name):indices for name,indices in groups.items()}
+        strata=list(groups.values())
+        atomic_json(logger.directory/'artifacts/supervision.json',supervision)
     if resumed is None:
         obs={key:torch.as_tensor(np.stack([r['observation'][key] for r in rows]),device=args.device) for key in CarrySchema().observation_space.spaces}
         targets=torch.as_tensor(np.stack([r['teacher_action'] for r in rows]),device=args.device)
-        labels=targets.detach().cpu().numpy();norm=np.linalg.norm(labels,axis=1)
-        strata=[np.flatnonzero((norm>.5)&(np.abs(labels[:,1])>.15)),np.flatnonzero((norm>.5)&(np.abs(labels[:,1])<=.15)),np.flatnonzero(norm<=.5)]
-        if any(len(s)==0 for s in strata):raise ValueError('Need turns, straights and goal holds for balanced imitation')
     schema=DummyVecEnv([lambda:CarrySchema() for _ in range(args.workers)])
     if resumed is not None:
         model=learner.load(resumed['model'],env=schema,device=args.device)
         model.load_replay_buffer(resumed['replay'],truncate_last_traj=True)
         validate_loaded_model(model,resumed,args.workers)
     else:
-        model=learner('MultiInputPolicy',schema,learning_rate=args.learning_rate,buffer_size=100000,
+        model=learner('MultiInputPolicy',schema,learning_rate=args.learning_rate,buffer_size=args.buffer_size,
             learning_starts=0,batch_size=args.batch_size,tau=.01,gamma=.995,train_freq=1,gradient_steps=1,
             ent_coef='auto_0.005',target_entropy=-4.,replay_buffer_class=HerReplayBuffer,
             replay_buffer_kwargs={'n_sampled_goal':1,'goal_selection_strategy':'future','copy_info_dict':True},
-            policy_kwargs={'net_arch':[128,128],'features_extractor_class':CarrySpatialExtractor,
+            policy_kwargs={'net_arch':[128,128],'features_extractor_class':NavigationSpatialExtractor if args.navigation_only else CarrySpatialExtractor,
                 'features_extractor_kwargs':{'features_dim':128,'channels':32}},device=args.device,seed=args.seed)
         if args.initial_checkpoint:
-            model=learner.load(args.initial_checkpoint,env=schema,device=args.device,learning_rate=args.learning_rate)
-            if model.num_timesteps != 0:
+            source=SAC.load(args.initial_checkpoint,env=schema,device=args.device)
+            if source.num_timesteps != 0:
                 raise ValueError('This initializer accepts only a zero-online BC checkpoint')
+            incompatible=model.actor.load_state_dict(source.actor.state_dict(),strict=False)
+            allowed={'features_extractor.navigation_grip_mask'} if args.navigation_only else set()
+            if set(incompatible.missing_keys)-allowed or incompatible.unexpected_keys:
+                raise ValueError('Actor initializer architecture does not match the declared features')
+            del source
     # SB3 enables deterministic cuDNN kernels; benchmarked alternatives may be much faster.
     torch.backends.cudnn.deterministic=False
     torch.backends.cudnn.benchmark=True
     torch.set_float32_matmul_precision('high')
     if args.bc_weight>0:
         demo_obs={key:np.stack([r['observation'][key] for r in rows]) for key in CarrySchema().observation_space.spaces}
-        demo_actions=np.stack([r['teacher_action'] for r in rows]);norm=np.linalg.norm(demo_actions,axis=1)
-        groups={'turn':np.flatnonzero((norm>.5)&(np.abs(demo_actions[:,1])>.15)),
-                'straight':np.flatnonzero((norm>.5)&(np.abs(demo_actions[:,1])<=.15)),
-                'hold':np.flatnonzero(norm<=.5)}
+        demo_actions=np.stack([r['teacher_action'] for r in rows])
         model.bc_weight=args.bc_weight;model.demo_batch_size=args.demo_batch_size
         manifest=model.set_demonstrations(demo_obs,demo_actions,groups,
-            group_probabilities=[.5,.35,.15],seed=args.seed+9000 if resumed is None else None)
+            group_probabilities=probabilities,seed=args.seed+9000 if resumed is None else None)
         atomic_json(logger.directory/'artifacts/actor_regularization.json',manifest|{'weight':args.bc_weight,
             'demo_batch_size':args.demo_batch_size,'objective':'SAC actor loss + weight * original-goal demonstration action MSE'})
-    if resumed is None:model.actor.features_extractor.set_carry_pose_mask(True)
+    if resumed is None:
+        model.actor.features_extractor.set_carry_pose_mask(True)
+        if args.navigation_only:model.actor.features_extractor.set_navigation_only(True)
     model.set_logger(configure(str(logger.directory/'sb3'),['csv']))
     callback=Progress(logger,layouts[:2]+validation,args,None);callback.model=model;callback.resume_signature=current_signature
     if resumed is not None:
@@ -317,7 +327,8 @@ def main():
                 rng=np.random.default_rng(args.seed);losses=[];bc_started=time.monotonic()
                 update=0
                 for update in range(1,args.bc_updates+1):
-                    sizes=[args.batch_size//2,args.batch_size*35//100];sizes.append(args.batch_size-sum(sizes))
+                    sizes=[int(args.batch_size*probability) for probability in probabilities[:-1]]
+                    sizes.append(args.batch_size-sum(sizes))
                     indices=np.concatenate([rng.choice(s,size=n,replace=True) for s,n in zip(strata,sizes)])
                     batch={k:v[indices] for k,v in obs.items()}
                     predicted=model.actor(batch,deterministic=True)
@@ -331,7 +342,7 @@ def main():
                     if stop.requested:break
                 callback.initialization['bc']={'parent_checkpoint':args.initial_checkpoint,
                     'parent_checkpoint_sha256':config['initial_checkpoint_sha256'],'updates':update,'batch_size':args.batch_size,'examples':update*args.batch_size,
-                    'wall_seconds':time.monotonic()-bc_started,'strata_counts':[len(s) for s in strata]}
+                    'wall_seconds':time.monotonic()-bc_started,'supervision':supervision}
                 callback.initialization['std_calibration']=calibrate_actor_std(model,-3.)
                 model.save(logger.directory/'checkpoints/bc_initialized')
                 atomic_json(logger.directory/'artifacts/initialization.json',plain(callback.initialization))

@@ -45,7 +45,7 @@ def method():
     result={key:0 for key in METHOD_FIELDS}
     result.update(workers=2,layouts=2,seed=37,horizon=6,delta_scale=.075,batch_size=8,
         learning_rate=3e-4,gamma=.995,shaping_weight=2.,target_entropy=-4.,n_sampled_goal=1,
-        demonstrations_sha256='d'*64,scene_bank_sha256='b'*64)
+        demonstrations_sha256='d'*64,scene_bank_sha256='b'*64,buffer_size=128)
     return result
 
 

@@ -17,7 +17,7 @@ VERSION = 'phase2-checkpoint-v1'
 BASE_METHOD_FIELDS = ('workers','layouts','seed','horizon','delta_scale','batch_size','learning_rate',
                  'gamma','shaping_weight','target_entropy','n_sampled_goal',
                  'demonstrations_sha256','scene_bank_sha256')
-METHOD_FIELDS = BASE_METHOD_FIELDS + ('bc_weight','demo_batch_size')
+METHOD_FIELDS = BASE_METHOD_FIELDS + ('bc_weight','demo_batch_size','navigation_only','buffer_size')
 SEMANTIC_SOURCES = ('pnr/env.py','pnr/carry.py','pnr/general_carry.py','pnr/multi_carry.py',
                     'pnr/spatial_features.py','pnr/reference.py','pnr/planning.py',
                     'pnr/local_control.py','pnr/scenes.py')
@@ -44,6 +44,9 @@ def _normalized_method(method):
     weight=float(result.get('bc_weight',0.))
     if not np.isfinite(weight) or weight<0:raise ValueError('Invalid checkpoint bc_weight')
     result['bc_weight']=weight
+    result['navigation_only']=bool(result.get('navigation_only',False))
+    result['buffer_size']=int(result.get('buffer_size',100000))
+    if result['buffer_size']<1:raise ValueError('Invalid checkpoint buffer_size')
     # This setting is inactive for plain SAC, including pre-regularization runs.
     size=result.get('demo_batch_size',256) if weight>0 else None
     if weight>0 and (isinstance(size,bool) or not isinstance(size,(int,np.integer)) or size<1):
@@ -54,12 +57,12 @@ def _normalized_method(method):
 
 def _method(config):
     result={key:config[key] for key in BASE_METHOD_FIELDS}
-    result.update({key:config[key] for key in ('bc_weight','demo_batch_size') if key in config})
+    result.update({key:config[key] for key in ('bc_weight','demo_batch_size','navigation_only','buffer_size') if key in config})
     return _normalized_method(result)
 
 
 def _semantic_sources(method):
-    return SEMANTIC_SOURCES+(('pnr/regularized_sac.py',) if method['bc_weight']>0 else ())
+    return SEMANTIC_SOURCES+(('pnr/regularized_sac.py',) if method['bc_weight']>0 else ())+(('pnr/navigation_features.py',) if method['navigation_only'] else ())
 
 
 def signature(config,source_root):
@@ -193,6 +196,20 @@ def validate_loaded_model(model,checkpoint,workers):
         raise ValueError('Resume model counters differ from checkpoint state')
     if not getattr(replay,'copy_info_dict',False):raise ValueError('HER physical reward information missing')
     method=_normalized_method(state['resume_signature']['method'])
+    if model.buffer_size!=method['buffer_size'] or replay.buffer_size!=max(method['buffer_size']//workers,1):
+        raise ValueError('Saved SAC replay capacity differs from declared method')
+    if method['navigation_only']:
+        from pnr.navigation_features import NavigationSpatialExtractor
+        actor=model.actor.features_extractor
+        if not isinstance(actor,NavigationSpatialExtractor):raise ValueError('Navigation-only actor encoder missing')
+        mask=actor.navigation_grip_mask
+        if not torch.equal(mask,torch.tensor([0.,0.,0.,0.,0.,1.,1.,0.,0.],device=mask.device)) or torch.count_nonzero(actor.state_mask):
+            raise ValueError('Navigation-only actor mask differs')
+        for network in (model.critic,model.critic_target):
+            encoder=network.features_extractor
+            if not torch.all(encoder.state_mask==1.) or not torch.all(encoder.navigation_grip_mask==1.):
+                raise ValueError('Navigation-only critic must retain measured physical state')
+
     declared_weight=method['bc_weight']
     if float(getattr(model,'bc_weight',0.))!=declared_weight:
         raise ValueError('Saved SAC bc_weight differs from declared method')
