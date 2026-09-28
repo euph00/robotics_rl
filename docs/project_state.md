@@ -36,9 +36,13 @@ promotion after further development. Its trajectories are not training data.
 Training and validation records remain frozen; a new confirmation bank was
 fixed before revision, while the separate final-study reserve remains untouched.
 
-Next is a controlled carry-discount ablation motivated by the
-[TRAIN reward audit](phase2_carry_return_audit.md). No claimed success improvement
-exists yet. The eventual SAC/TD3 × original/modified gripper × three-seed study
+The [carry-discount experiment](phase2_discount_trial.md) did not improve
+validation: 45/60 and 44/60 complete at 40k and 80k decisions. It is not promoted.
+A [matched navigation-network screen](phase2_encoder_screen.md) favored the
+gated alternative over its fresh CNN control (45/60 versus 40/60), while both
+remained below the historical candidate. Both networks are now receiving the
+same full 192-map demonstrations and SAC+HER training before another matched
+validation. No improved candidate has been selected. The eventual SAC/TD3 × original/modified gripper × three-seed study
 still requires independent replications and matched assistance/data protocols.
 Current development runs are not those replications.
 

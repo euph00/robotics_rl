@@ -43,8 +43,9 @@ The longer same-data control and broader-grasp branch did not beat the selected
 candidate on validation. [Comparisons](phase2_diverse_carry_preparation.md).
 An existing [TRAIN reward audit](phase2_carry_return_audit.md) identifies a possible
 speed–reliability incentive mismatch, without establishing the cause of failures.
-A controlled discount ablation is the next investigation; physics and evaluation
-criteria remain fixed.
+The subsequent [controlled discount ablation](phase2_discount_trial.md) did not
+improve validation. A matched navigation-network investigation is ongoing;
+physics and evaluation criteria remain fixed.
 
 This first test is preserved as a historical result. Because its outcome now
 informs further development, it is retired from future held-out claims and its
