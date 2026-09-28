@@ -179,3 +179,18 @@ All twenty proposal triples match exactly. The slowest setting adds a mean 39 gr
 The 0.20 setting rescues six ordinary-teacher failures but introduces two regressions. By object, transport changes from foam 4/4 to 3/4, banana 3/4 to 2/4, can 1/4 to 4/4, apple 2/4 to 4/4, and mug 3/4 to 4/4. This supports investigating a single slower shared teacher on additional fixed TRAIN cases; it does not justify an object-specific winner lookup or claim uniformly improved seating. No production teacher, reward, observation contract, or dataset has changed.
 
 All 60 outcomes, first-contact seating, every-native contact centroids/margins, and measured action/approach-speed records are preserved. Every completed branch is backed up before JSON serialization. Exact cost is 141,504 native calls / 707,520 physics ticks plus 28,800 initialization ticks, totaling 736,320 ticks. Summary and paired comparisons are in `runs/phase2_grasp_approach_speed01/artifacts/summary.json` and `review_metrics.json`.
+
+
+## Independent TRAIN confirmation rejects the slower shared teacher
+
+`phase2_grasp_approach_speed02` fixes the next four TRAIN layouts, 004–007, all five objects, and only the ordinary 0.65 versus proposed 0.20 cap: 40 additional branches. Every original start, proposal, closure gate, lift goal, route, hold, and physical setting is retained. The relevant environment, grasp, carry, planner, controller, and system source hashes match the first cohort.
+
+| Cohort | Ordinary 0.65 | Slow 0.20 |
+| --- | --- | --- |
+| Initial TRAIN000–003 | 13/20 | 17/20 |
+| Confirmation TRAIN004–007 | 18/20 | 13/20 |
+| Pooled matched cases | 31/40 | 30/40 |
+
+The confirmation reverses the apparent initial benefit. Across all 40 paired cases, slower approach rescues seven ordinary failures but introduces eight regressions; both settings pass 23 cases and fail two. Measured mean approach speed falls from 0.118 to 0.039 m/s, so this is not a null intervention. The 23 shared successes cost a mean 42 additional physics ticks under the slower teacher. These results do not support changing the shared teacher, replacing its dataset, choosing settings by object identity, or starting a new BC branch from this hypothesis.
+
+All confirmation outcomes and costs remain in `runs/phase2_grasp_approach_speed02/artifacts`; `pooled_review_metrics.json` reports each cohort and the pooled pairs separately. Exact confirmation cost is 98,079 native calls / 490,395 physics ticks plus 19,200 initialization ticks, totaling 509,595 ticks. No production policy, demonstration dataset, observation contract, or reward changed.

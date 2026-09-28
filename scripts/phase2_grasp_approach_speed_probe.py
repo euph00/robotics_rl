@@ -251,10 +251,17 @@ def summarize(results, cases):
 
 
 def main():
+    global CAPS
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--workers', type=int, default=4)
+    parser.add_argument('--layout-start', type=int, default=0)
+    parser.add_argument('--layout-count', type=int, default=4)
+    parser.add_argument('--caps', nargs='+', type=float, choices=[.65, .40, .20], default=list(CAPS))
     args = parser.parse_args()
+    CAPS = tuple(args.caps)
+    if len(set(CAPS)) != len(CAPS) or not 0 <= args.layout_start <= 60 or args.layout_count != 4:
+        parser.error('Use four declared TRAIN layouts and distinct common caps')
     if not 1 <= args.workers <= 8:
         parser.error('Use one to eight CPU workers')
     directory = ROOT/'runs'/args.run_id
@@ -263,7 +270,11 @@ def main():
     out = directory/'artifacts'
     out.mkdir(parents=True)
     bank = load_scene_bank(ROOT/'configs/phase2_scene_bank.json')
-    cases = select_cases(bank, 'train', [14, 5, 2, 7, 10], layout_limit=4)
+    cases = select_cases(bank, 'train', [14, 5, 2, 7, 10],
+                         layout_limit=args.layout_start+args.layout_count)[args.layout_start*5:]
+    if len(cases) != args.layout_count*5:
+        raise ValueError('Declared TRAIN case slice is incomplete')
+    budget = len(cases)*len(CAPS)
     sources = freeze_sources(out/'source')
     for path in [Path(__file__).resolve(), ROOT/'scripts/phase2_apple_retention_branches.py']:
         destination = out/'source'/'scripts'/path.name
@@ -271,7 +282,8 @@ def main():
         sources['scripts/'+path.name] = sha256_file(path)
     plan = dict(protocol='train-teacher-near-contact-speed-full-transport-v1',
         cases=cases, caps=CAPS, source_hashes=sources,
-        bank_sha256=bank['manifest_sha256'], selection='first four TRAIN layouts cross all five frozen objects',
+        bank_sha256=bank['manifest_sha256'], selection=f'TRAIN layouts {args.layout_start:03d} through {args.layout_start+args.layout_count-1:03d} cross all five frozen objects',
+        layout_start=args.layout_start, layout_count=args.layout_count,
         original_start=True, independent_branch_replay=True, inter_skill_resets=False,
         snapshot_restoration=False, near_contact_radius_m=.03, close_distance_m=.018,
         ordinary_teacher_cap=.65, teacher_approach_control='ray-tilted', grasp_repeat=3,
@@ -281,9 +293,9 @@ def main():
         production_policy_changed=False, observation_contract_changed=False, workers=args.workers)
     plan['plan_sha256'] = plan_digest(plan)
     atomic_json(out/'diagnostic_plan.json', plan)
-    logger = RunLogger(args.run_id, kind='diagnostic', budget=60, skill='grasp',
+    logger = RunLogger(args.run_id, kind='diagnostic', budget=budget, skill='grasp',
         name='TRAIN teacher approach speed and full transport',
-        summary='Sixty original-start branches; three common near-contact caps and measured downstream retention.')
+        summary=f'{budget} original-start branches; {len(CAPS)} common near-contact caps and measured downstream retention.')
     logger.artifact('artifacts/diagnostic_plan.json', 'Frozen TRAIN-only transport diagnostic')
     results = []
     tasks = [(case, cap, str(out)) for case in cases for cap in CAPS]
@@ -302,7 +314,7 @@ def main():
             results.append(result)
             summary = summarize(results, cases)
             atomic_json(out/'summary.json', summary)
-            logger.metric(len(results), completed_branches=len(results), planned_branches=60,
+            logger.metric(len(results), completed_branches=len(results), planned_branches=budget,
                           common_setting_results=summary['common_setting_results'],
                           physics_ticks=summary['total_physics_ticks_including_initialization'])
     logger.artifact('artifacts/summary.json', 'Uniform teacher settings: transport, speeds, contact geometry, and costs')
