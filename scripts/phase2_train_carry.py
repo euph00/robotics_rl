@@ -223,7 +223,7 @@ def main():
     p.add_argument('--workers',type=int,default=8);p.add_argument('--seed',type=int,default=7401)
     p.add_argument('--initial-checkpoint');p.add_argument('--bc-updates',type=int,default=12000);p.add_argument('--warmup-updates',type=int,default=2000)
     p.add_argument('--critic-warmup-tau',type=float,default=.01,help='Initialization target-update rate only; online SAC tau remains .01')
-    p.add_argument('--steps',type=int,default=40000);p.add_argument('--batch-size',type=int,default=256)
+    p.add_argument('--steps',type=int,default=40000,help='Additional online decisions; zero runs fresh initialization and validation only');p.add_argument('--batch-size',type=int,default=256)
     p.add_argument('--learning-rate',type=float,default=3e-5);p.add_argument('--delta-scale',type=float,default=.075)
     p.add_argument('--horizon',type=int,default=900);p.add_argument('--eval-every',type=int,default=10000)
     p.add_argument('--checkpoint-every',type=int,default=10000);p.add_argument('--device',default='cuda')
@@ -235,7 +235,8 @@ def main():
     if not np.isfinite(args.bc_weight) or args.bc_weight<0 or args.demo_batch_size<1:p.error('Invalid demonstration regularization settings')
     if not np.isfinite(args.critic_warmup_tau) or not 0<args.critic_warmup_tau<=1:p.error('Critic warmup tau must be within (0,1]')
     if args.resume_run and args.initial_checkpoint:p.error('--resume-run and --initial-checkpoint are exclusive')
-    if min(args.steps,args.workers,args.horizon,args.eval_every,args.checkpoint_every)<1:p.error('Positive steps/workers/horizon/intervals required')
+    if args.steps<0 or min(args.workers,args.horizon,args.eval_every,args.checkpoint_every)<1:p.error('Nonnegative steps and positive workers/horizon/intervals required')
+    if args.steps==0 and args.resume_run:p.error('Zero-step initialization requires a fresh run; resume with a positive online budget')
     if args.resume_run:
         if Path(args.resume_run).name!=args.resume_run:p.error('Use a run ID for --resume-run')
         parent_config=json.loads((ROOT/'runs'/args.resume_run/'config.json').read_text())
@@ -360,6 +361,15 @@ def main():
                     on_log=lambda row:logger.metric(0,scope='actor_initialization',metric_source='critic_initialization',**row))
                 callback.checkpoint('initialized')
                 if stop.requested:return
+                if args.steps==0:
+                    atomic_json(logger.directory/'artifacts/result.json',plain({
+                        'status':'complete','initialization_only':True,'online_decisions':0,'online_updates':0,
+                        'initialization':callback.initialization,'accounting':callback.accounting(),
+                        'ancestry':callback.ancestry,'best_checkpoint':None,
+                        'validation':'artifacts/evaluation_bc_zero_online.json'}))
+                    logger.artifact('artifacts/result.json','Initialization and validation accounting')
+                    logger.finish('complete','Initialization and validation complete; zero online SAC decisions. Resumable checkpoint saved.')
+                    return
             parent_pid=os.getpid()
             def make(index):
                 ignore_worker_stop_signals(parent_pid)
