@@ -70,10 +70,11 @@ Independent data/model/outcome audits passed. The trial closed as predeclared,
 with no full 60-case follow-up or new held-out evaluation. Total collection/comparison
 cost was 2,024,915 physics ticks. The earlier conditional plan remains skipped.
 
-The next investigation asks whether original-goal downstream-retention feedback
-can improve grasp learning while preserving native transitions and valid HER.
-It starts with TRAIN-only feasibility and method review; no new policy training
-or physical interactions have been authorized for this hypothesis. Small gains on the reused 60-case validation
+The [retention prediction screen](phase2_retention_feedback.md) failed: the
+fixed classifier was worse than object prevalence and ranked within-case
+variants at 0.52 (required 0.65). No auxiliary action-value critic is proceeding.
+A distinct direct on-policy retention-feedback proposal is under review;
+no policy training or physics has started for that hypothesis. Small gains on the reused 60-case validation
 bank are insufficient evidence of better generalization. The eventual SAC/TD3 × original/modified gripper × three-seed study
 still requires independent replications and matched assistance/data protocols.
 Current development runs are not those replications.
