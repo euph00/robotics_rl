@@ -208,3 +208,20 @@ All confirmation outcomes and costs remain in `runs/phase2_grasp_approach_speed0
 Compact passes every grasp, pickup hold, and planned-posture prefix, but loses 13 objects during carry and one during reach. It rescues eight control failures and regresses twelve; 38 pairs pass both and two fail both. Compact outcomes by object are foam 8/12, banana 12/12, can 7/12, apple 7/12, and mug 12/12. Thus the compact representation's better pickup bank does not make it the stronger complete-system candidate; downstream retention still favors clearance01 with this carry checkpoint.
 
 All failures and timing costs remain in the run artifacts. `paired_control_audit.json` verifies the unchanged contract and checkpoint bytes; `paired_control_results.json` records every paired outcome. Exact new evaluation cost is 148,322 native calls / 741,610 physics ticks plus 28,800 initialization ticks, totaling 770,410 ticks. This is development validation, not a hidden-bank result or a claim that the SAC update improved full-task generalization.
+
+
+## Read-only audit of the twelve recorded carry contact-loss endpoints
+
+All twelve physical `lost_grasp` endpoints in `phase2_learned_carry_demos01` have both fingers off, zero robot-object contacts, zero normal force, and downward object velocity. Recorded object height spans 0.852520–1.027265 m; object-bottom clearance above the table spans 0.176104–0.343432 m. Hand-relative seating displacement from the prepared handover is 0.039034–0.186849 m. Recorded object speed is 0.984630–2.108350 m/s, vertical velocity is -1.926701 to -0.609029 m/s, and estimated hand-relative speed over the final native interval is 0.727076–1.854533 m/s. Eleven tails show approximately gravitational downward acceleration; the mug has intermittent contact earlier in its tail but also ends unsupported and falling. Full-precision per-case measurements and their sources are preserved in `runs/phase2_learned_carry_demos01/artifacts/termination_endpoint_audit.json`.
+
+`lifted=True` describes remaining clearance, not support. Native `drop_events` stays zero until clearance falls below 2 cm after a prior lifted grasp. Carry instead terminates after five consecutive native calls without observed bilateral contact (25 physics ticks, approximately 104 ms), and the full system respects that termination. Every same-attempt trace ends exactly there; later noisy attempts restore the original handover and do not establish recovery. The evidence therefore establishes unsupported falling at termination, but neither later recovery nor its impossibility. The six zero-call snapshot-cache failures are separate. Existing outcomes and criteria remain unchanged; no continuation runs were performed.
+
+The archived collection sources and reviewed current sources match exactly:
+
+| Source | SHA256 |
+| --- | --- |
+| `pnr/env.py` | `4f690362d4b3acadcf282e00e95b23bc53260c482f6d5c1e2c3d40a03866e772` |
+| `pnr/carry.py` | `883032948b6e2ac8d04cc0c14f5765e09caf8a3ef0f24f80d9cbaa20d17323c7` |
+| `pnr/system.py` | `a7d631131e55bd2a9f7ca2c89fcaae2a7e2bf8f931c05f6d036583e7b3d4ad35` |
+
+This audit uses existing recorded observations and poses only. Velocity observations retain their original float32 precision; hand-relative speed and acceleration are finite-difference estimates. It performs zero new physics and changes no implementation or dataset labels.
