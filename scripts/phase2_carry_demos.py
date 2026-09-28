@@ -110,6 +110,77 @@ def collect_episode(env,obs,rng,noise_scale,summary,stop_path):
     return rows,bool(succeeded and not terminated and not stopped),info,stopped
 
 
+def collect_on_policy_episode(env,obs,policy,summary,stop_path,*,learner_budget=450,
+                              stall_window=60,stall_progress_m=.5,noise_std=0.,noise_rho=.9,rng=None):
+    """DAgger-style labels on real learner states, followed by one expert takeover.
+
+    The actor never receives the expert path/distance. No reset or goal switch is
+    allowed at takeover. This function collects data; it is not an evaluator.
+    """
+    goal=obs['desired_goal'].copy();world_goal=goal*env.goal_scale
+    rng=np.random.default_rng(0) if rng is None else rng
+    noise_state=rng.normal(0.,noise_std,2) if noise_std else np.zeros(2)
+    rows=[];info={};stopped=False;terminated=False;succeeded=False
+    best_distances=[];takeover=None;teacher_seconds=0.;collector_error=None
+    for step in range(env._episode_horizon):
+        if stop_path.exists():stopped=True;break
+        position=obs['achieved_goal']*env.goal_scale
+        before=time.monotonic()
+        try:
+            path=np.asarray(maze_astar(env.native.cube_positions,position,world_goal,
+                table_bounds=env.native.p.getAABB(env.native.table_id)))
+            remaining=float(np.linalg.norm(np.diff(path,axis=0),axis=1).sum())
+            teacher=route_action(path,position,world_goal,env.delta_scale)
+        except ValueError as error:
+            collector_error='teacher_route_unavailable: '+str(error);break
+        finally:
+            teacher_seconds+=time.monotonic()-before
+        best_distances.append(min(remaining,best_distances[-1] if best_distances else remaining))
+        if takeover is None:
+            reason=('learner_budget' if step>=learner_budget else
+                    'geometric_progress_stalled' if len(best_distances)>stall_window and
+                    best_distances[-stall_window-1]-best_distances[-1]<stall_progress_m else None)
+            if reason:
+                takeover={'decision':step+1,'reason':reason,'xy':position.tolist(),
+                          'remaining_path_m':remaining,'learner_decisions':step}
+        source='learner' if takeover is None else 'expert_recovery'
+        policy_action=None;applied_noise=None
+        if source=='learner':
+            action,_=policy.predict(obs,deterministic=True)
+            action=np.asarray(action,dtype=np.float32)
+            if action.shape!=(2,) or not np.isfinite(action).all():
+                collector_error='invalid_learner_action';break
+            policy_action=np.clip(action,-1.,1.).copy()
+            if noise_std:
+                noise_state=noise_rho*noise_state+noise_std*np.sqrt(1.-noise_rho**2)*rng.normal(size=2)
+            action=np.clip(policy_action+np.clip(noise_state,-.5,.5),-1.,1.).astype(np.float32)
+            applied_noise=action-policy_action
+        else:action=teacher.copy()
+        nxt,reward,terminated,truncated,info=counted_step(env,action,summary)
+        if not np.array_equal(nxt['desired_goal'],goal):
+            raise RuntimeError('On-policy recovery changed the original task goal')
+        if step+1==env._episode_horizon and not terminated:truncated=True
+        rows.append({'observation':obs,'action':action.copy(),'teacher_action':teacher.copy(),
+            'next_observation':nxt,'reward':reward,'terminated':terminated,'truncated':truncated,
+            'info':info,'control_source':source,'expert_remaining_path_m':remaining,
+            'learner_mean_action':policy_action,'applied_action_noise':applied_noise})
+        succeeded|=bool(info['is_success']);obs=nxt
+        if terminated or truncated:break
+    if rows and not (rows[-1]['terminated'] or rows[-1]['truncated']):
+        rows[-1]['truncated']=True  # Collector interruption: bootstrap, not physical failure.
+    diagnostics={'takeover':takeover,'teacher_query_seconds':teacher_seconds,
+                 'collector_error':collector_error,'learner_deterministic':noise_std==0.,
+                 'base_policy_predict_deterministic':True,'noise_std':noise_std,'noise_rho':noise_rho,
+                 'noise_clip':.5,'noise_protocol':'stationary Gaussian AR1 before clipping normalized action',
+                 'learner_decisions':sum(r['control_source']=='learner' for r in rows),
+                 'expert_recovery_decisions':sum(r['control_source']=='expert_recovery' for r in rows),
+                 'interior_teacher_west_rows':sum(float(r['observation']['achieved_goal'][0])*env.goal_scale>3.5
+                                                 and float(r['teacher_action'][0])<-.5 for r in rows),
+                 'distinct_action_label_rows':sum(not np.allclose(r['action'],r['teacher_action'],atol=1e-5,rtol=0.) for r in rows),
+                 'uninterrupted_takeover':True,'goal_changed':False}
+    return rows,bool(succeeded and not terminated and not stopped and collector_error is None),info,stopped,diagnostics
+
+
 def worker(task):
     layout,index,out,config,parent_pid=task
     ignore_worker_stop_signals(parent_pid)
@@ -128,8 +199,18 @@ def worker(task):
                 setup_physics_ticks=env.setup_physics_ticks,initialization_physics_ticks=env.initialization_physics_ticks,
                 route_length_m=env.route_length,physical_snapshots=len(env.starts))
             rng=np.random.default_rng(202600+index)
+            policies=[]
+            if config['mode']=='on-policy-recovery':
+                import torch
+                from pnr.policies import load_policy_checkpoint
+                torch.set_num_threads(1)
+                for record in config['learner_records']:
+                    checkpoint=Path(record['frozen_path'])
+                    if hashlib.sha256(checkpoint.read_bytes()).hexdigest()!=record['sha256']:
+                        raise ValueError('Frozen learner checkpoint hash mismatch')
+                    policies.append(load_policy_checkpoint(checkpoint,device='cpu'))
             candidates=(recovery_targets(layout,config['episodes']) if config['mode']=='recovery'
-                        else [None]*config['episodes'])
+                        else [None]*(len(policies) if policies else config['episodes']))
             for e,candidate in enumerate(candidates):
                 if stop_path.exists():summary['stopped']=True;break
                 preparation={};before={key:summary[key] for key in COST_FIELDS}
@@ -150,22 +231,38 @@ def worker(task):
                         continue
                     full=False;noise_scale=config['recovery_noise_std']
                 else:
-                    requested_full=e<2;env.set_curriculum_level(2 if e%2 else 3)
+                    requested_full=bool(policies) or e<2;env.set_curriculum_level(2 if e%2 else 3)
                     obs,reset_info=env.reset(options={'full':requested_full})
                     full=reset_info['evaluation_scope']=='full_carry'
-                    noise_scale=0. if e==0 else .18
-                rows,succeeded,info,stopped=collect_episode(env,obs,rng,noise_scale,summary,stop_path)
+                    noise_scale=0. if policies or e==0 else .18
+                diagnostics=None
+                if policies:
+                    rows,succeeded,info,stopped,diagnostics=collect_on_policy_episode(
+                        env,obs,policies[e],summary,stop_path,learner_budget=config['learner_budget'],
+                        stall_window=config['stall_window'],stall_progress_m=config['stall_progress_m'],
+                        noise_std=config['learner_noise_std'],noise_rho=config['learner_noise_rho'],
+                        rng=np.random.default_rng(config['collection_seed']+1000*index+e))
+                    diagnostics['rng_seed']=config['collection_seed']+1000*index+e
+                else:
+                    rows,succeeded,info,stopped=collect_episode(env,obs,rng,noise_scale,summary,stop_path)
                 if rows:
                     original_goal=bool(np.linalg.norm(rows[0]['observation']['desired_goal']*env.goal_scale-env.native.goal_pos[:2])<1e-4)
                     episode={'layout_id':layout['layout_id'],'maze_hash':layout['maze_hash'],'object_idx':14,
                         'full_route':full,'original_exit_goal':original_goal,'collection_mode':config['mode'],
                         'corrective_noise_std':noise_scale,'success':succeeded,'transitions':rows}
                     if candidate is not None:episode['recovery_start']=dict(candidate,**preparation)
+                    if diagnostics is not None:
+                        episode.update(on_policy_recovery=diagnostics,learner=config['learner_records'][e])
                     episodes.append(episode)
                     brief={'full_route':full,'original_exit_goal':original_goal,'success':succeeded,
                         'transitions':len(rows),'failure_reason':info.get('failure_reason'),
                         'goal_distance':info.get('goal_distance'),'collection_mode':config['mode']}
+                    if diagnostics is not None:
+                        brief.update(on_policy_recovery=diagnostics,learner=config['learner_records'][e])
                     summary['episodes'].append(brief)
+                elif diagnostics is not None:
+                    summary.setdefault('empty_on_policy_attempts',[]).append(
+                        dict(learner=config['learner_records'][e],**diagnostics))
                 if attempt is not None:
                     attempt.update(status='stopped' if stopped else ('success' if succeeded else 'failed_recovery'),
                         transitions=len(rows),failure_reason=info.get('failure_reason'),
@@ -175,7 +272,8 @@ def worker(task):
                 if stopped:summary['stopped']=True;break
             attempted=[a for a in summary['recovery_attempts'] if a['status']!='skipped_geometry']
             summary['success']=(bool(episodes) and all(e['success'] for e in summary['episodes'])
-                                and all(a['status']=='success' for a in attempted))
+                                and all(a['status']=='success' for a in attempted)
+                                and not summary.get('empty_on_policy_attempts'))
         except Exception as exc:
             summary['error']=repr(exc)
             if env is None:
@@ -199,8 +297,15 @@ def main():
     p.add_argument('--layout-ids',nargs='+',default=None)
     p.add_argument('--workers',type=int,default=6);p.add_argument('--episodes',type=int,default=4)
     p.add_argument('--delta-scale',type=float,default=.075)
-    p.add_argument('--mode',choices=['standard','recovery'],default='standard')
+    p.add_argument('--mode',choices=['standard','recovery','on-policy-recovery'],default='standard')
     p.add_argument('--recovery-noise-std',type=float,default=.12)
+    p.add_argument('--learner-checkpoints',nargs='+',default=[])
+    p.add_argument('--learner-budget',type=int,default=450)
+    p.add_argument('--stall-window',type=int,default=60)
+    p.add_argument('--stall-progress-m',type=float,default=.5)
+    p.add_argument('--learner-noise-std',type=float,default=0.)
+    p.add_argument('--learner-noise-rho',type=float,default=.9)
+    p.add_argument('--collection-seed',type=int,default=203000)
     args=p.parse_args();bank=load_scene_bank(args.bank)
     available=scene_records(bank,'train')
     if args.layout_ids:
@@ -212,11 +317,31 @@ def main():
     if not layouts or not 1<=args.workers<=6 or args.episodes<1:p.error('Need layouts, episodes>0 and1–6 workers')
     if args.mode=='recovery' and args.episodes>6:p.error('Recovery mode has at most six distinct offset attempts per layout')
     if args.recovery_noise_std<0 or not np.isfinite(args.recovery_noise_std):p.error('Noise std must be finite nonnegative')
+    if args.mode=='on-policy-recovery':
+        if not args.learner_checkpoints or any(not Path(path).is_file() for path in args.learner_checkpoints):
+            p.error('On-policy recovery needs existing immutable learner checkpoint ZIPs')
+        if not 1<=args.learner_budget<900 or not 1<=args.stall_window<900 or not np.isfinite(args.stall_progress_m) or args.stall_progress_m<=0:
+            p.error('Use bounded learner/stall counts and a positive finite progress threshold')
+        if (not np.isfinite(args.learner_noise_std) or not 0<=args.learner_noise_std<=1
+                or not np.isfinite(args.learner_noise_rho) or not 0<=args.learner_noise_rho<1 or args.collection_seed<0):
+            p.error('Noise needs std in[0,1],rho in[0,1),and nonnegative seed')
+    elif args.learner_checkpoints:p.error('Learner checkpoints require on-policy-recovery mode')
     logger=RunLogger(args.run_id,kind='reference',skill='carry',algorithm='Physical training demonstrations',
-        name='Physical carry recovery data' if args.mode=='recovery' else 'Multi-maze carry data',
-        summary='TRAIN layouts only; physical off-route preparation and original-goal recovery.' if args.mode=='recovery'
+        name='Learner-induced TRAIN carry recovery' if args.mode=='on-policy-recovery' else
+             'Physical carry recovery data' if args.mode=='recovery' else 'Multi-maze carry data',
+        summary='TRAIN-only frozen-learner states and expert recovery; actual actions and separate labels.' if args.mode=='on-policy-recovery' else
+                'TRAIN layouts only; physical off-route preparation and original-goal recovery.' if args.mode=='recovery'
                 else 'TRAIN layouts only; physical demonstrations with corrective action noise.')
     out=logger.directory/'artifacts';out.mkdir()
+    args.learner_records=[]
+    if args.mode=='on-policy-recovery':
+        frozen=out/'learners';frozen.mkdir()
+        for i,path in enumerate(args.learner_checkpoints):
+            source=Path(path).resolve();target=frozen/f'learner_{i:02d}.zip'
+            shutil.copy2(source,target);sha=hashlib.sha256(target.read_bytes()).hexdigest()
+            if sha!=hashlib.sha256(source.read_bytes()).hexdigest():raise ValueError('Learner changed while freezing')
+            if any(record['sha256']==sha for record in args.learner_records):raise ValueError('Duplicate learner checkpoints')
+            args.learner_records.append(dict(source=str(source),frozen_path=str(target.resolve()),sha256=sha))
     configuration=dict(vars(args),partition='train',object_idx=14,selected_layout_ids=[l['layout_id'] for l in layouts],
         bank_sha256=bank['manifest_sha256'],reward='sparse plus goal-consistent Euclidean potential, gamma=.995,weight=2')
     atomic_json(logger.directory/'config.json',configuration)
@@ -248,9 +373,12 @@ def main():
                 logger.event(f"Collected {summary['layout_id']}: {len(data['episodes'])} episodes"+
                              (f"; {summary['error']}" if 'error' in summary else ''))
         stopped=stop.requested
-    metadata={'protocol':'multimaze-physical-originalgoal-recovery-v1' if args.mode=='recovery' else 'multimaze-physical-corrective-v2',
+    metadata={'protocol':'multimaze-physical-onpolicy-recovery-v1' if args.mode=='on-policy-recovery' else
+                          'multimaze-physical-originalgoal-recovery-v1' if args.mode=='recovery' else 'multimaze-physical-corrective-v2',
         'partition':'train','bank_sha256':bank['manifest_sha256'],'configuration':configuration,
         'layouts_requested':len(layouts),'layouts_completed':len(summaries),'cancelled_layouts':cancelled,
+        'on_policy_episodes_requested':len(layouts)*len(args.learner_records),
+        'empty_on_policy_attempts':sum(len(s.get('empty_on_policy_attempts',[])) for s in summaries),
         'episodes':len(episodes),'object_idx':14,'gamma':.995,'shaping_weight':2.,'delta_scale':args.delta_scale,'repeat':5,
         **{key:sum(s[key] for s in summaries) for key in COST_FIELDS},
         'wall_seconds':time.monotonic()-started,'summaries':summaries,'source_hashes':sources,
