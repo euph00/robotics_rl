@@ -194,3 +194,17 @@ All 60 outcomes, first-contact seating, every-native contact centroids/margins, 
 The confirmation reverses the apparent initial benefit. Across all 40 paired cases, slower approach rescues seven ordinary failures but introduces eight regressions; both settings pass 23 cases and fail two. Measured mean approach speed falls from 0.118 to 0.039 m/s, so this is not a null intervention. The 23 shared successes cost a mean 42 additional physics ticks under the slower teacher. These results do not support changing the shared teacher, replacing its dataset, choosing settings by object identity, or starting a new BC branch from this hypothesis.
 
 All confirmation outcomes and costs remain in `runs/phase2_grasp_approach_speed02/artifacts`; `pooled_review_metrics.json` reports each cohort and the pooled pairs separately. Exact confirmation cost is 98,079 native calls / 490,395 physics ticks plus 19,200 initialization ticks, totaling 509,595 ticks. No production policy, demonstration dataset, observation contract, or reward changed.
+
+
+## Matched compact SAC grasp in the complete learned system
+
+`phase2_system_learned_balanced_008k_compact01` combines the selected compact SAC grasp (7,038 decisions, SHA256 `9c22b7f232bcbd9851ca378e110a817c4b28595862d1d56221a2842d7c826912`) with the exact frozen balanced-carry 8k and reach checkpoints from `phase2_system_learned_balanced_008k01`. All 60 development-validation cases, all evaluation source hashes, the 24 cm lift goal, 8 cm reach handover, clearance-v2 proposals, and other execution settings match. Only the grasp checkpoint changes. Neither rejected teacher intervention appears at inference.
+
+| Grasp with the same carry/reach | Complete task | Within 15,000 ticks including initialization |
+| --- | --- | --- |
+| Clearance01 SAC control | 50/60 | 47/60 |
+| Compact SAC candidate | 46/60 | 41/60 |
+
+Compact passes every grasp, pickup hold, and planned-posture prefix, but loses 13 objects during carry and one during reach. It rescues eight control failures and regresses twelve; 38 pairs pass both and two fail both. Compact outcomes by object are foam 8/12, banana 12/12, can 7/12, apple 7/12, and mug 12/12. Thus the compact representation's better pickup bank does not make it the stronger complete-system candidate; downstream retention still favors clearance01 with this carry checkpoint.
+
+All failures and timing costs remain in the run artifacts. `paired_control_audit.json` verifies the unchanged contract and checkpoint bytes; `paired_control_results.json` records every paired outcome. Exact new evaluation cost is 148,322 native calls / 741,610 physics ticks plus 28,800 initialization ticks, totaling 770,410 ticks. This is development validation, not a hidden-bank result or a claim that the SAC update improved full-task generalization.
