@@ -38,11 +38,14 @@ fixed before revision, while the separate final-study reserve remains untouched.
 
 The [carry-discount experiment](phase2_discount_trial.md) did not improve
 validation: 45/60 and 44/60 complete at 40k and 80k decisions. It is not promoted.
-A [matched navigation-network screen](phase2_encoder_screen.md) favored the
-gated alternative over its fresh CNN control (45/60 versus 40/60), while both
-remained below the historical candidate. Both networks are now receiving the
-same full 192-map demonstrations and SAC+HER training before another matched
-validation. No improved candidate has been selected. The eventual SAC/TD3 × original/modified gripper × three-seed study
+The [matched navigation-network experiment](phase2_encoder_screen.md) reached
+51/60 complete and 39/60 within the deadline with the gated encoder, versus
+42/60 and 34/60 for its fresh CNN control. Its imitation-only initializer already
+scored 50/60 and 43/60, so the contribution of SAC remains small and mixed.
+Continuing the gated branch to 80k decisions regressed to 39/60 and 29/60;
+the final 120k check is pending. Separate bounded branches now test existing
+varied grasp data and a minimum demonstration replay share. No improved
+candidate has been selected. The eventual SAC/TD3 × original/modified gripper × three-seed study
 still requires independent replications and matched assistance/data protocols.
 Current development runs are not those replications.
 
