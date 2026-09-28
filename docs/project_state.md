@@ -43,9 +43,16 @@ The [matched navigation-network experiment](phase2_encoder_screen.md) reached
 42/60 and 34/60 for its fresh CNN control. Its imitation-only initializer already
 scored 50/60 and 43/60, so the contribution of SAC remains small and mixed.
 Continuing the gated branch regressed to 39/60 and 29/60 at 80k decisions,
-then 44/60 and 35/60 at 120k. Separate bounded branches now test existing
-varied grasp data and a minimum demonstration replay share. No improved
-candidate has been selected. The eventual SAC/TD3 × original/modified gripper × three-seed study
+then 44/60 and 35/60 at 120k. Broader grasp experience scored 47/60 and 40/60.
+A [minimum demonstration replay share](phase2_demonstration_floor_replay.md)
+scored 47/60 and 35/60 at 40k, then 46/60 and 38/60 at 80k; it is not promoted.
+
+The [pretraining audit](phase2_carry_bc_curriculum.md) found that the historical
+best inherited 60k BC updates, versus 16k for the fresh encoder comparison.
+A staged 52k map-pretraining + 8k object-adaptation experiment is running.
+A separate [actor map-core freeze](phase2_actor_spatial_freeze.md) tests whether
+retaining learned map features prevents harmful SAC drift. No improved candidate
+has been selected. The eventual SAC/TD3 × original/modified gripper × three-seed study
 still requires independent replications and matched assistance/data protocols.
 Current development runs are not those replications.
 
