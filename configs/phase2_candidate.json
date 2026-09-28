@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "phase": "general_original_fetch_sac_her",
+  "selected_at": "2026-09-28T14:36:13.928215+00:00",
+  "selection_partition": "validation",
+  "selection_rule": "Highest complete-task validation count; inclusive timed count breaks ties. Test outcomes unavailable at selection.",
+  "selected_validation_run": "phase2_system_learned_balanced_040k01",
+  "selection_comparisons": [
+    {
+      "run": "phase2_system_learned_balanced_040k01",
+      "complete": 51,
+      "within_deadline_including_settling": 47,
+      "within_deadline_action_only": 50,
+      "summary_sha256": "bcafb3550bfd8d46f3d6fff77f81c0e5ae60186302bb083aa278494f29cc2a23"
+    },
+    {
+      "run": "phase2_system_learned_balanced_080k01",
+      "complete": 47,
+      "within_deadline_including_settling": 46,
+      "within_deadline_action_only": 47,
+      "summary_sha256": "703c01c2554375098bb57ba9a0d4865d6409bd96fb0e0f1e808ae045661aec96"
+    },
+    {
+      "run": "phase2_system_learned_balanced_120k01",
+      "complete": 48,
+      "within_deadline_including_settling": 47,
+      "within_deadline_action_only": 48,
+      "summary_sha256": "978fa52885059ec0ede93bbe111485bc522a60d22e74768d426919f55a814286"
+    },
+    {
+      "run": "phase2_system_learned_balanced_200k01",
+      "complete": 48,
+      "within_deadline_including_settling": 47,
+      "within_deadline_action_only": 48,
+      "summary_sha256": "c1ce1825e9b7e963d16da3e4fc0652a03f70202a79e3d37a1355ad02e6bd0c4d"
+    },
+    {
+      "run": "phase2_system_preparation_balanced_008k01",
+      "complete": 46,
+      "within_deadline_including_settling": 42,
+      "within_deadline_action_only": 43,
+      "summary_sha256": "1303217f6d503e9346b6038c4cf592219d0fdbcd1491606c094f225cc45bd783"
+    },
+    {
+      "run": "phase2_system_preparation_balanced_040k01",
+      "complete": 46,
+      "within_deadline_including_settling": 43,
+      "within_deadline_action_only": 45,
+      "summary_sha256": "02fc30bcefcdd22d2996c55978e3ef376bd05cd9027c0f63c18e73abf1203733"
+    },
+    {
+      "run": "phase2_system_diverse_040k01",
+      "complete": 49,
+      "within_deadline_including_settling": 45,
+      "within_deadline_action_only": 47,
+      "summary_sha256": "79fe6e815fe6c8856825417ae4c19fea4d60d16b763a2cf04bc617a2281496c3"
+    },
+    {
+      "run": "phase2_system_diverse_120k01",
+      "complete": 47,
+      "within_deadline_including_settling": 47,
+      "within_deadline_action_only": 47,
+      "summary_sha256": "edffa1b372266c3e67f9f73dba4352d74f77e72336e411c60cf3d6e86bc6b3d4"
+    },
+    {
+      "run": "phase2_system_diverse_200k01",
+      "complete": 49,
+      "within_deadline_including_settling": 48,
+      "within_deadline_action_only": 49,
+      "summary_sha256": "2b87dd8d4e625dee12b5294783a7e02b48805b1cf44c2faba969abc26dddc8df"
+    }
+  ],
+  "upstream": {
+    "repository": "https://github.com/NUS-LinS-Lab/Pick-Nav-Reach-Default-Project.git",
+    "commit": "54ab2d1faa54d1aa7e2738f114531a76c6514cd3",
+    "branch_at_inspection": "main",
+    "checkout_path": "upstream/Pick-Nav-Reach-Default-Project",
+    "inspected_on": "2026-09-28",
+    "policy": "Keep this reference checkout unchanged; track integration code and explicit patches in the outer repository."
+  },
+  "algorithm": "Three-skill hybrid: BC-initialized regularized SAC+HER grasp/carry, ordinary SAC+HER reach; planned approach and carry posture; no navigation oracle",
+  "checkpoint_sha256": {
+    "grasp": "fa7b8d54cdc916d6e68753721993b66b7e571bf09af84e70cf4e4030618dfbe2",
+    "carry": "a07f79281a48066ef3281d1d0b261f85ede542915b81873f7eb13cefc3a7838e",
+    "reach": "cd0c3f20ad0f938028533a8635e95f119056e0fd3abff185d7c7679f9629c258"
+  },
+  "skill_training": {
+    "grasp": {
+      "online_decisions": 12000,
+      "online_gradient_updates": 2000,
+      "continuing_demonstration_weight": 200,
+      "separate_critic_warmup_updates": 2000,
+      "selected_bc_initializer_updates": 6000
+    },
+    "carry": {
+      "online_decisions": 40000,
+      "online_gradient_updates": 5000,
+      "continuing_demonstration_weight": 100,
+      "separate_critic_warmup_updates": 2000,
+      "inherited_five_object_bc_refinement_updates": 8000
+    },
+    "reach": {
+      "online_decisions": 15000,
+      "online_gradient_updates": 13996,
+      "ordinary_sac_her": true,
+      "actor_cloning": false
+    }
+  },
+  "execution": {
+    "grasp_horizon": 600,
+    "carry_horizon": 1200,
+    "reach_horizon": 150,
+    "delta_scale": 0.075,
+    "planned_speed_scale": 1.0,
+    "deadline_physics_ticks": 15000,
+    "grasp_lift_m": 0.24,
+    "reach_tolerance_m": 0.08,
+    "grasp_proposal_mode": "clearance-v2"
+  },
+  "evaluation_plan": "runs/phase2_milestone_test_plan01/artifacts/evaluation_plan.json",
+  "evaluation_plan_sha256": "383f19d3cfa1b0570abb138f2e73eca888689540e22c1ebca78f4cb5c2a8785b",
+  "heldout_evaluation": {
+    "partition": "milestone_test",
+    "unique_cases": 100,
+    "unique_layouts": 20,
+    "objects": [
+      14,
+      5,
+      2,
+      7,
+      10
+    ],
+    "minimum_complete_tasks": 80,
+    "deadline_physics_ticks": 15000,
+    "timed_success_reported_separately": true,
+    "include_settling_and_final_hold": true,
+    "status_at_selection": "not_started",
+    "final_reserve": "untouched"
+  },
+  "reproduction_note": "Earlier first-case video failed; three predeclared instrumented repeats succeeded with identical measured actions/states. Cause of original discrepancy unresolved; all recordings retained."
+}

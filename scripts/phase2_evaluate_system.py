@@ -433,13 +433,19 @@ def main():
         atomic_json(artifact_dir / 'summary.json', summary)
         logger.metric(transitions=summary['source_action_calls'], scope='full_task',
                       success_rate=summary['success_rate'], success_rate_within_deadline=summary['success_rate_within_deadline'],
-                      eval_episodes=len(results), planned_cases=len(cases), physics_ticks=summary['physics_ticks'])
+                      successes_within_deadline_including_initialization=summary['successes_within_deadline_including_initialization'],
+                      success_rate_within_deadline_including_initialization=summary['successes_within_deadline_including_initialization']/len(cases),
+                      eval_episodes=len(results), planned_cases=len(cases), physics_ticks=summary['physics_ticks'],
+                      initialization_physics_ticks=summary['initialization_physics_ticks'],
+                      total_physics_ticks_including_initialization=summary['total_physics_ticks_including_initialization'])
         for media in result.get('media', []):
             logger.artifact(media['path'], result['case_id'], kind=media['kind'])
         logger.event(f'{result["case_id"]}: '+('success' if result['success'] else 'failed'),
                      failed_stage=result.get('failed_stage'), error=result.get('error'))
         print(json.dumps({'case_id': result['case_id'], 'success': result['success'],
                           'success_within_deadline': result['success_within_deadline'],
+                          'success_within_deadline_including_initialization': result['success_within_deadline_including_initialization'],
+                          'total_physics_ticks_including_initialization': result['total_physics_ticks_including_initialization'],
                           'failed_stage': result.get('failed_stage'), 'physics_ticks': result['physics_ticks']}), flush=True)
     try:
         # Validate checkpoint interfaces once before launching any physical case.
@@ -465,7 +471,10 @@ def main():
         logger.artifact('artifacts/validation_matrix.png','Object and maze outcomes; timing includes settling','image')
         logger.artifact('artifacts/summary.json', 'Full-task and deadline results')
         summary = summarize_results(results, cases)
-        logger.finish(summary=f'{summary["successes"]}/{len(cases)} complete; {summary["successes_within_deadline"]}/{len(cases)} within deadline.')
+        logger.finish(summary=f'{summary["successes"]}/{len(cases)} complete; '
+                      f'{summary["successes_within_deadline_including_initialization"]}/{len(cases)} within '
+                      f'{execution["deadline_physics_ticks"]:,} ticks including settling '
+                      f'({summary["successes_within_deadline"]}/{len(cases)} action-only).')
     except KeyboardInterrupt:
         logger.finish('stopped', 'Interrupted; completed results and full declared denominator retained.')
         raise
