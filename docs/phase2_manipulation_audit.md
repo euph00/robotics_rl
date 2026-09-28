@@ -242,3 +242,33 @@ The stochastic failures are one mug pickup and one can carry loss; all attempts 
 All 1,895 predictions passed RNG-isolation checks, and every actor/log-std parameter digest stayed unchanged. Exact cost is 77,170 native calls / 385,850 physics ticks plus 14,400 initialization ticks, totaling 400,250 ticks. The existing 54-state observation and four-action grasp contract, 24 cm lift, clearance-v2 proposals, planned handover, 0.075 m teacher carry, and final 50-call hold remain unchanged. No snapshots are restored between these branches. No production policy or training dataset changed.
 
 The command is `.venv/bin/python scripts/phase2_grasp_sampling_transport_probe.py --grasp runs/phase2_sac_grasp_clearance01/candidate/grasp.zip --run-id phase2_grasp_sampling_transport01 --workers 4`. Protocol: `train-native-sac-sampling-full-transport-v1`; diagnostic script SHA256: `a03d86b002eca8c5bb8c306e84adaf458863337a5f745cecc1ee83ce03c48a1b`. The frozen plan contains all thirty seeds, checkpoint/source hashes and exact cases. Per-branch JSON/pickle backups, every-native contact traces, and grasp-action records with saved means/log-std are retained alongside `review_metrics.json`. Plan SHA256: `05fd2047895d47fc472b2334f89af6aea95209f0f52d0ee0857f63329f4859de`.
+
+### Declared native-SAC TRAIN preparation expansion
+
+The existing learned-handover collector now has an explicit three-variant mode:
+first 16 frozen TRAIN layouts × the fixed five objects × deterministic / native
+SAC stochastic 1 / native SAC stochastic 2 = 240 independently constructed
+original-start preparations. The canonical case ID is unchanged; a separate
+preparation ID identifies the variant in case records, episodes, and each copied
+transition info. The protocol is `learned-handover-native-sac-variants-carry-v1`.
+Each retained preparation receives exactly one clean full-route `collect_episode`
+transport, including that collector's five goal-hold decisions. There is no
+restored second attempt or outcome-based replacement in this mode. The existing
+default deterministic preparation plus clean/restored-noisy pair remains available.
+
+`pnr/grasp_sampling.py` freezes the mapping `9401 + 3*canonical_case_index +
+variant_index` (zero-based indices in the predeclared case list; seeds 9401–9640).
+Its CPU wrapper calls the frozen SAC's native `predict` distribution with an
+advancing private Torch state, no extra action noise, and checks that caller Torch,
+NumPy, and Python RNG states and all actor/log-standard-deviation parameters stay
+unchanged. This changes TRAIN preparation only, not production inference.
+
+Fourteen focused tests pass: native SAC sequence equivalence/reproducibility,
+local advancement, deterministic equivalence, RNG integrity even on exceptions,
+invalid protocol/frozen-weight detection, the 240-slot plan, failure/cost
+accounting, transition provenance/rewards/continuity, and complete synthetic
+workers that forbid restoration and stop collection on malformed data. The
+collector freezes checkpoints, sources, all cases/variants/seeds before physics,
+persists each case, and refuses to publish a dataset if schema or cost checks fail.
+The intended output is `runs/phase2_learned_carry_diverse01`; no collection outcome
+is claimed here before that run completes.
