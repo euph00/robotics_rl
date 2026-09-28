@@ -1,0 +1,1319 @@
+{
+  "version": "sealed-confirmation-cases-v1",
+  "scene_bank_sha256": "be4d117896c5ed641c5619abe86263a30407d6144abd26f04865a211f41e4bc1",
+  "generation_plan_sha256": "9d3875ad90bbdecd68fb6504ed834bc80392b91f74812d2729af1e54d7bfd700",
+  "partition": "milestone_test",
+  "status": "sealed_pending_revised_candidate_selection",
+  "object_indices": [
+    14,
+    5,
+    2,
+    7,
+    10
+  ],
+  "cases": [
+    {
+      "case_id": "confirmation_20260930_000_object_14",
+      "layout_id": "confirmation_20260930_000",
+      "partition": "milestone_test",
+      "maze_hash": "79063d3a44ca1739f6928f7daa9f94e9add7b43299b90ad398a2a3cde6af674a",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 3208124234,
+        "object_idx": 14,
+        "maze_seed": 1253346647,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_000_object_05",
+      "layout_id": "confirmation_20260930_000",
+      "partition": "milestone_test",
+      "maze_hash": "79063d3a44ca1739f6928f7daa9f94e9add7b43299b90ad398a2a3cde6af674a",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 1835129138,
+        "object_idx": 5,
+        "maze_seed": 1253346647,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_000_object_02",
+      "layout_id": "confirmation_20260930_000",
+      "partition": "milestone_test",
+      "maze_hash": "79063d3a44ca1739f6928f7daa9f94e9add7b43299b90ad398a2a3cde6af674a",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 1795808521,
+        "object_idx": 2,
+        "maze_seed": 1253346647,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_000_object_07",
+      "layout_id": "confirmation_20260930_000",
+      "partition": "milestone_test",
+      "maze_hash": "79063d3a44ca1739f6928f7daa9f94e9add7b43299b90ad398a2a3cde6af674a",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 4011990038,
+        "object_idx": 7,
+        "maze_seed": 1253346647,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_000_object_10",
+      "layout_id": "confirmation_20260930_000",
+      "partition": "milestone_test",
+      "maze_hash": "79063d3a44ca1739f6928f7daa9f94e9add7b43299b90ad398a2a3cde6af674a",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 4264458550,
+        "object_idx": 10,
+        "maze_seed": 1253346647,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_001_object_14",
+      "layout_id": "confirmation_20260930_001",
+      "partition": "milestone_test",
+      "maze_hash": "b94d5ccee5de45eb61bea1823c17a56ae570e3fe6493d2757e0801d0702ecc02",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 1278131754,
+        "object_idx": 14,
+        "maze_seed": 896291724,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_001_object_05",
+      "layout_id": "confirmation_20260930_001",
+      "partition": "milestone_test",
+      "maze_hash": "b94d5ccee5de45eb61bea1823c17a56ae570e3fe6493d2757e0801d0702ecc02",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 512860161,
+        "object_idx": 5,
+        "maze_seed": 896291724,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_001_object_02",
+      "layout_id": "confirmation_20260930_001",
+      "partition": "milestone_test",
+      "maze_hash": "b94d5ccee5de45eb61bea1823c17a56ae570e3fe6493d2757e0801d0702ecc02",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 547738583,
+        "object_idx": 2,
+        "maze_seed": 896291724,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_001_object_07",
+      "layout_id": "confirmation_20260930_001",
+      "partition": "milestone_test",
+      "maze_hash": "b94d5ccee5de45eb61bea1823c17a56ae570e3fe6493d2757e0801d0702ecc02",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 2304500315,
+        "object_idx": 7,
+        "maze_seed": 896291724,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_001_object_10",
+      "layout_id": "confirmation_20260930_001",
+      "partition": "milestone_test",
+      "maze_hash": "b94d5ccee5de45eb61bea1823c17a56ae570e3fe6493d2757e0801d0702ecc02",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 895998792,
+        "object_idx": 10,
+        "maze_seed": 896291724,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_002_object_14",
+      "layout_id": "confirmation_20260930_002",
+      "partition": "milestone_test",
+      "maze_hash": "5b837559854d0ddec77fb14790e11fb16968e0a3ec1ca73bd7304e393002ff01",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 4087080062,
+        "object_idx": 14,
+        "maze_seed": 1001094063,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_002_object_05",
+      "layout_id": "confirmation_20260930_002",
+      "partition": "milestone_test",
+      "maze_hash": "5b837559854d0ddec77fb14790e11fb16968e0a3ec1ca73bd7304e393002ff01",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 204021273,
+        "object_idx": 5,
+        "maze_seed": 1001094063,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_002_object_02",
+      "layout_id": "confirmation_20260930_002",
+      "partition": "milestone_test",
+      "maze_hash": "5b837559854d0ddec77fb14790e11fb16968e0a3ec1ca73bd7304e393002ff01",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 1979281438,
+        "object_idx": 2,
+        "maze_seed": 1001094063,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_002_object_07",
+      "layout_id": "confirmation_20260930_002",
+      "partition": "milestone_test",
+      "maze_hash": "5b837559854d0ddec77fb14790e11fb16968e0a3ec1ca73bd7304e393002ff01",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 1298640899,
+        "object_idx": 7,
+        "maze_seed": 1001094063,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_002_object_10",
+      "layout_id": "confirmation_20260930_002",
+      "partition": "milestone_test",
+      "maze_hash": "5b837559854d0ddec77fb14790e11fb16968e0a3ec1ca73bd7304e393002ff01",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 3727261105,
+        "object_idx": 10,
+        "maze_seed": 1001094063,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_003_object_14",
+      "layout_id": "confirmation_20260930_003",
+      "partition": "milestone_test",
+      "maze_hash": "0e999dbc3b9e54ec65140135bf9c219eef474a6f8a94a14552cd2ddd30294eb8",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 2233141994,
+        "object_idx": 14,
+        "maze_seed": 787254898,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_003_object_05",
+      "layout_id": "confirmation_20260930_003",
+      "partition": "milestone_test",
+      "maze_hash": "0e999dbc3b9e54ec65140135bf9c219eef474a6f8a94a14552cd2ddd30294eb8",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 2794012884,
+        "object_idx": 5,
+        "maze_seed": 787254898,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_003_object_02",
+      "layout_id": "confirmation_20260930_003",
+      "partition": "milestone_test",
+      "maze_hash": "0e999dbc3b9e54ec65140135bf9c219eef474a6f8a94a14552cd2ddd30294eb8",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 1033034735,
+        "object_idx": 2,
+        "maze_seed": 787254898,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_003_object_07",
+      "layout_id": "confirmation_20260930_003",
+      "partition": "milestone_test",
+      "maze_hash": "0e999dbc3b9e54ec65140135bf9c219eef474a6f8a94a14552cd2ddd30294eb8",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 4105421788,
+        "object_idx": 7,
+        "maze_seed": 787254898,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_003_object_10",
+      "layout_id": "confirmation_20260930_003",
+      "partition": "milestone_test",
+      "maze_hash": "0e999dbc3b9e54ec65140135bf9c219eef474a6f8a94a14552cd2ddd30294eb8",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 1465464864,
+        "object_idx": 10,
+        "maze_seed": 787254898,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_004_object_14",
+      "layout_id": "confirmation_20260930_004",
+      "partition": "milestone_test",
+      "maze_hash": "174e64c5021f357824fa9176d4fa9a50cb3ad6188b12e405a4eacd13717840be",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 3398974288,
+        "object_idx": 14,
+        "maze_seed": 1626349061,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_004_object_05",
+      "layout_id": "confirmation_20260930_004",
+      "partition": "milestone_test",
+      "maze_hash": "174e64c5021f357824fa9176d4fa9a50cb3ad6188b12e405a4eacd13717840be",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 1609498303,
+        "object_idx": 5,
+        "maze_seed": 1626349061,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_004_object_02",
+      "layout_id": "confirmation_20260930_004",
+      "partition": "milestone_test",
+      "maze_hash": "174e64c5021f357824fa9176d4fa9a50cb3ad6188b12e405a4eacd13717840be",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 3637798379,
+        "object_idx": 2,
+        "maze_seed": 1626349061,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_004_object_07",
+      "layout_id": "confirmation_20260930_004",
+      "partition": "milestone_test",
+      "maze_hash": "174e64c5021f357824fa9176d4fa9a50cb3ad6188b12e405a4eacd13717840be",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 3573947046,
+        "object_idx": 7,
+        "maze_seed": 1626349061,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_004_object_10",
+      "layout_id": "confirmation_20260930_004",
+      "partition": "milestone_test",
+      "maze_hash": "174e64c5021f357824fa9176d4fa9a50cb3ad6188b12e405a4eacd13717840be",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 4250365425,
+        "object_idx": 10,
+        "maze_seed": 1626349061,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_005_object_14",
+      "layout_id": "confirmation_20260930_005",
+      "partition": "milestone_test",
+      "maze_hash": "c14cd0aa664f96120d3fd3fbc32a0232d09de4cc50a0f4b8da9b928fbe1bd70c",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 4283426900,
+        "object_idx": 14,
+        "maze_seed": 650704610,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_005_object_05",
+      "layout_id": "confirmation_20260930_005",
+      "partition": "milestone_test",
+      "maze_hash": "c14cd0aa664f96120d3fd3fbc32a0232d09de4cc50a0f4b8da9b928fbe1bd70c",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 2667426601,
+        "object_idx": 5,
+        "maze_seed": 650704610,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_005_object_02",
+      "layout_id": "confirmation_20260930_005",
+      "partition": "milestone_test",
+      "maze_hash": "c14cd0aa664f96120d3fd3fbc32a0232d09de4cc50a0f4b8da9b928fbe1bd70c",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 2271850158,
+        "object_idx": 2,
+        "maze_seed": 650704610,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_005_object_07",
+      "layout_id": "confirmation_20260930_005",
+      "partition": "milestone_test",
+      "maze_hash": "c14cd0aa664f96120d3fd3fbc32a0232d09de4cc50a0f4b8da9b928fbe1bd70c",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 4075198901,
+        "object_idx": 7,
+        "maze_seed": 650704610,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_005_object_10",
+      "layout_id": "confirmation_20260930_005",
+      "partition": "milestone_test",
+      "maze_hash": "c14cd0aa664f96120d3fd3fbc32a0232d09de4cc50a0f4b8da9b928fbe1bd70c",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 579433904,
+        "object_idx": 10,
+        "maze_seed": 650704610,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_006_object_14",
+      "layout_id": "confirmation_20260930_006",
+      "partition": "milestone_test",
+      "maze_hash": "776131ad8b86a555e8fee89edeb0c515ab93061b5c4f5ece9efd8361dbc139b7",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 1994544180,
+        "object_idx": 14,
+        "maze_seed": 1703789751,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_006_object_05",
+      "layout_id": "confirmation_20260930_006",
+      "partition": "milestone_test",
+      "maze_hash": "776131ad8b86a555e8fee89edeb0c515ab93061b5c4f5ece9efd8361dbc139b7",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 1878755570,
+        "object_idx": 5,
+        "maze_seed": 1703789751,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_006_object_02",
+      "layout_id": "confirmation_20260930_006",
+      "partition": "milestone_test",
+      "maze_hash": "776131ad8b86a555e8fee89edeb0c515ab93061b5c4f5ece9efd8361dbc139b7",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 934076840,
+        "object_idx": 2,
+        "maze_seed": 1703789751,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_006_object_07",
+      "layout_id": "confirmation_20260930_006",
+      "partition": "milestone_test",
+      "maze_hash": "776131ad8b86a555e8fee89edeb0c515ab93061b5c4f5ece9efd8361dbc139b7",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 2807018907,
+        "object_idx": 7,
+        "maze_seed": 1703789751,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_006_object_10",
+      "layout_id": "confirmation_20260930_006",
+      "partition": "milestone_test",
+      "maze_hash": "776131ad8b86a555e8fee89edeb0c515ab93061b5c4f5ece9efd8361dbc139b7",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 2126167448,
+        "object_idx": 10,
+        "maze_seed": 1703789751,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_007_object_14",
+      "layout_id": "confirmation_20260930_007",
+      "partition": "milestone_test",
+      "maze_hash": "59f5324a5eb4cd10a2b206dd2682c1a4faa368cfc815d1d397d4b1afa9a121a1",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 1854965845,
+        "object_idx": 14,
+        "maze_seed": 707925101,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_007_object_05",
+      "layout_id": "confirmation_20260930_007",
+      "partition": "milestone_test",
+      "maze_hash": "59f5324a5eb4cd10a2b206dd2682c1a4faa368cfc815d1d397d4b1afa9a121a1",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 77230601,
+        "object_idx": 5,
+        "maze_seed": 707925101,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_007_object_02",
+      "layout_id": "confirmation_20260930_007",
+      "partition": "milestone_test",
+      "maze_hash": "59f5324a5eb4cd10a2b206dd2682c1a4faa368cfc815d1d397d4b1afa9a121a1",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 3662652781,
+        "object_idx": 2,
+        "maze_seed": 707925101,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_007_object_07",
+      "layout_id": "confirmation_20260930_007",
+      "partition": "milestone_test",
+      "maze_hash": "59f5324a5eb4cd10a2b206dd2682c1a4faa368cfc815d1d397d4b1afa9a121a1",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 3275484666,
+        "object_idx": 7,
+        "maze_seed": 707925101,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_007_object_10",
+      "layout_id": "confirmation_20260930_007",
+      "partition": "milestone_test",
+      "maze_hash": "59f5324a5eb4cd10a2b206dd2682c1a4faa368cfc815d1d397d4b1afa9a121a1",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 3383181332,
+        "object_idx": 10,
+        "maze_seed": 707925101,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_008_object_14",
+      "layout_id": "confirmation_20260930_008",
+      "partition": "milestone_test",
+      "maze_hash": "cedb3627ceb161f37b904d332036637167bbd276ff0c53c4f33e6710d9c1178d",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 1927743066,
+        "object_idx": 14,
+        "maze_seed": 796969451,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_008_object_05",
+      "layout_id": "confirmation_20260930_008",
+      "partition": "milestone_test",
+      "maze_hash": "cedb3627ceb161f37b904d332036637167bbd276ff0c53c4f33e6710d9c1178d",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 1256778818,
+        "object_idx": 5,
+        "maze_seed": 796969451,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_008_object_02",
+      "layout_id": "confirmation_20260930_008",
+      "partition": "milestone_test",
+      "maze_hash": "cedb3627ceb161f37b904d332036637167bbd276ff0c53c4f33e6710d9c1178d",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 1415640543,
+        "object_idx": 2,
+        "maze_seed": 796969451,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_008_object_07",
+      "layout_id": "confirmation_20260930_008",
+      "partition": "milestone_test",
+      "maze_hash": "cedb3627ceb161f37b904d332036637167bbd276ff0c53c4f33e6710d9c1178d",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 258425981,
+        "object_idx": 7,
+        "maze_seed": 796969451,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_008_object_10",
+      "layout_id": "confirmation_20260930_008",
+      "partition": "milestone_test",
+      "maze_hash": "cedb3627ceb161f37b904d332036637167bbd276ff0c53c4f33e6710d9c1178d",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 2162592269,
+        "object_idx": 10,
+        "maze_seed": 796969451,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_009_object_14",
+      "layout_id": "confirmation_20260930_009",
+      "partition": "milestone_test",
+      "maze_hash": "5c43d1637a1ace0ee4b6aa85b74f4ad1e275fe1282d837d000cd5f554a4b5791",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 1971795067,
+        "object_idx": 14,
+        "maze_seed": 337712569,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_009_object_05",
+      "layout_id": "confirmation_20260930_009",
+      "partition": "milestone_test",
+      "maze_hash": "5c43d1637a1ace0ee4b6aa85b74f4ad1e275fe1282d837d000cd5f554a4b5791",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 2361881360,
+        "object_idx": 5,
+        "maze_seed": 337712569,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_009_object_02",
+      "layout_id": "confirmation_20260930_009",
+      "partition": "milestone_test",
+      "maze_hash": "5c43d1637a1ace0ee4b6aa85b74f4ad1e275fe1282d837d000cd5f554a4b5791",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 2193158899,
+        "object_idx": 2,
+        "maze_seed": 337712569,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_009_object_07",
+      "layout_id": "confirmation_20260930_009",
+      "partition": "milestone_test",
+      "maze_hash": "5c43d1637a1ace0ee4b6aa85b74f4ad1e275fe1282d837d000cd5f554a4b5791",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 4158660757,
+        "object_idx": 7,
+        "maze_seed": 337712569,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_009_object_10",
+      "layout_id": "confirmation_20260930_009",
+      "partition": "milestone_test",
+      "maze_hash": "5c43d1637a1ace0ee4b6aa85b74f4ad1e275fe1282d837d000cd5f554a4b5791",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 2481694452,
+        "object_idx": 10,
+        "maze_seed": 337712569,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_010_object_14",
+      "layout_id": "confirmation_20260930_010",
+      "partition": "milestone_test",
+      "maze_hash": "ba6648c52d94c4992711b5b661a7d7c00ea90490e28f042435051cd2e37dd216",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 361390261,
+        "object_idx": 14,
+        "maze_seed": 1016273529,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_010_object_05",
+      "layout_id": "confirmation_20260930_010",
+      "partition": "milestone_test",
+      "maze_hash": "ba6648c52d94c4992711b5b661a7d7c00ea90490e28f042435051cd2e37dd216",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 2377369484,
+        "object_idx": 5,
+        "maze_seed": 1016273529,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_010_object_02",
+      "layout_id": "confirmation_20260930_010",
+      "partition": "milestone_test",
+      "maze_hash": "ba6648c52d94c4992711b5b661a7d7c00ea90490e28f042435051cd2e37dd216",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 1177693503,
+        "object_idx": 2,
+        "maze_seed": 1016273529,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_010_object_07",
+      "layout_id": "confirmation_20260930_010",
+      "partition": "milestone_test",
+      "maze_hash": "ba6648c52d94c4992711b5b661a7d7c00ea90490e28f042435051cd2e37dd216",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 3089683862,
+        "object_idx": 7,
+        "maze_seed": 1016273529,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_010_object_10",
+      "layout_id": "confirmation_20260930_010",
+      "partition": "milestone_test",
+      "maze_hash": "ba6648c52d94c4992711b5b661a7d7c00ea90490e28f042435051cd2e37dd216",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 2959840966,
+        "object_idx": 10,
+        "maze_seed": 1016273529,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_011_object_14",
+      "layout_id": "confirmation_20260930_011",
+      "partition": "milestone_test",
+      "maze_hash": "727868b81dd7e20e772c597ec40723f950b025bccc75f9b7e5394ab42b7fcdc6",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 1544711527,
+        "object_idx": 14,
+        "maze_seed": 832043265,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_011_object_05",
+      "layout_id": "confirmation_20260930_011",
+      "partition": "milestone_test",
+      "maze_hash": "727868b81dd7e20e772c597ec40723f950b025bccc75f9b7e5394ab42b7fcdc6",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 1172969631,
+        "object_idx": 5,
+        "maze_seed": 832043265,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_011_object_02",
+      "layout_id": "confirmation_20260930_011",
+      "partition": "milestone_test",
+      "maze_hash": "727868b81dd7e20e772c597ec40723f950b025bccc75f9b7e5394ab42b7fcdc6",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 1560636218,
+        "object_idx": 2,
+        "maze_seed": 832043265,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_011_object_07",
+      "layout_id": "confirmation_20260930_011",
+      "partition": "milestone_test",
+      "maze_hash": "727868b81dd7e20e772c597ec40723f950b025bccc75f9b7e5394ab42b7fcdc6",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 2611005938,
+        "object_idx": 7,
+        "maze_seed": 832043265,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_011_object_10",
+      "layout_id": "confirmation_20260930_011",
+      "partition": "milestone_test",
+      "maze_hash": "727868b81dd7e20e772c597ec40723f950b025bccc75f9b7e5394ab42b7fcdc6",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 2225604216,
+        "object_idx": 10,
+        "maze_seed": 832043265,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_012_object_14",
+      "layout_id": "confirmation_20260930_012",
+      "partition": "milestone_test",
+      "maze_hash": "f1a157ecc933b9ce42a6eefbd07af645d366ab28647ca78235e50253a868afe0",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 288343075,
+        "object_idx": 14,
+        "maze_seed": 1174241597,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_012_object_05",
+      "layout_id": "confirmation_20260930_012",
+      "partition": "milestone_test",
+      "maze_hash": "f1a157ecc933b9ce42a6eefbd07af645d366ab28647ca78235e50253a868afe0",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 3474462426,
+        "object_idx": 5,
+        "maze_seed": 1174241597,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_012_object_02",
+      "layout_id": "confirmation_20260930_012",
+      "partition": "milestone_test",
+      "maze_hash": "f1a157ecc933b9ce42a6eefbd07af645d366ab28647ca78235e50253a868afe0",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 3954474285,
+        "object_idx": 2,
+        "maze_seed": 1174241597,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_012_object_07",
+      "layout_id": "confirmation_20260930_012",
+      "partition": "milestone_test",
+      "maze_hash": "f1a157ecc933b9ce42a6eefbd07af645d366ab28647ca78235e50253a868afe0",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 3728735285,
+        "object_idx": 7,
+        "maze_seed": 1174241597,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_012_object_10",
+      "layout_id": "confirmation_20260930_012",
+      "partition": "milestone_test",
+      "maze_hash": "f1a157ecc933b9ce42a6eefbd07af645d366ab28647ca78235e50253a868afe0",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 1728990871,
+        "object_idx": 10,
+        "maze_seed": 1174241597,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_013_object_14",
+      "layout_id": "confirmation_20260930_013",
+      "partition": "milestone_test",
+      "maze_hash": "ab0a6b5ef38db7b16537003885f0427be4c2e60929a6359d0c1b75f583aa8f14",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 4081493680,
+        "object_idx": 14,
+        "maze_seed": 1486161592,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_013_object_05",
+      "layout_id": "confirmation_20260930_013",
+      "partition": "milestone_test",
+      "maze_hash": "ab0a6b5ef38db7b16537003885f0427be4c2e60929a6359d0c1b75f583aa8f14",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 3479893219,
+        "object_idx": 5,
+        "maze_seed": 1486161592,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_013_object_02",
+      "layout_id": "confirmation_20260930_013",
+      "partition": "milestone_test",
+      "maze_hash": "ab0a6b5ef38db7b16537003885f0427be4c2e60929a6359d0c1b75f583aa8f14",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 1033599638,
+        "object_idx": 2,
+        "maze_seed": 1486161592,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_013_object_07",
+      "layout_id": "confirmation_20260930_013",
+      "partition": "milestone_test",
+      "maze_hash": "ab0a6b5ef38db7b16537003885f0427be4c2e60929a6359d0c1b75f583aa8f14",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 2557137273,
+        "object_idx": 7,
+        "maze_seed": 1486161592,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_013_object_10",
+      "layout_id": "confirmation_20260930_013",
+      "partition": "milestone_test",
+      "maze_hash": "ab0a6b5ef38db7b16537003885f0427be4c2e60929a6359d0c1b75f583aa8f14",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 3623678561,
+        "object_idx": 10,
+        "maze_seed": 1486161592,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_014_object_14",
+      "layout_id": "confirmation_20260930_014",
+      "partition": "milestone_test",
+      "maze_hash": "35b934ce59dfbb711c91e922afd8804c82153bb0c0587d81dc72d10dc771a228",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 3426551677,
+        "object_idx": 14,
+        "maze_seed": 1500376631,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_014_object_05",
+      "layout_id": "confirmation_20260930_014",
+      "partition": "milestone_test",
+      "maze_hash": "35b934ce59dfbb711c91e922afd8804c82153bb0c0587d81dc72d10dc771a228",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 2056403000,
+        "object_idx": 5,
+        "maze_seed": 1500376631,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_014_object_02",
+      "layout_id": "confirmation_20260930_014",
+      "partition": "milestone_test",
+      "maze_hash": "35b934ce59dfbb711c91e922afd8804c82153bb0c0587d81dc72d10dc771a228",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 4034974517,
+        "object_idx": 2,
+        "maze_seed": 1500376631,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_014_object_07",
+      "layout_id": "confirmation_20260930_014",
+      "partition": "milestone_test",
+      "maze_hash": "35b934ce59dfbb711c91e922afd8804c82153bb0c0587d81dc72d10dc771a228",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 3028132799,
+        "object_idx": 7,
+        "maze_seed": 1500376631,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_014_object_10",
+      "layout_id": "confirmation_20260930_014",
+      "partition": "milestone_test",
+      "maze_hash": "35b934ce59dfbb711c91e922afd8804c82153bb0c0587d81dc72d10dc771a228",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 2868945504,
+        "object_idx": 10,
+        "maze_seed": 1500376631,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_015_object_14",
+      "layout_id": "confirmation_20260930_015",
+      "partition": "milestone_test",
+      "maze_hash": "0c519785dbc98d30886e082ea82ff20485e5631cd4c5a1a59ce05920f0f70ab7",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 1227389451,
+        "object_idx": 14,
+        "maze_seed": 1605315134,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_015_object_05",
+      "layout_id": "confirmation_20260930_015",
+      "partition": "milestone_test",
+      "maze_hash": "0c519785dbc98d30886e082ea82ff20485e5631cd4c5a1a59ce05920f0f70ab7",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 2384340643,
+        "object_idx": 5,
+        "maze_seed": 1605315134,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_015_object_02",
+      "layout_id": "confirmation_20260930_015",
+      "partition": "milestone_test",
+      "maze_hash": "0c519785dbc98d30886e082ea82ff20485e5631cd4c5a1a59ce05920f0f70ab7",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 2197761901,
+        "object_idx": 2,
+        "maze_seed": 1605315134,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_015_object_07",
+      "layout_id": "confirmation_20260930_015",
+      "partition": "milestone_test",
+      "maze_hash": "0c519785dbc98d30886e082ea82ff20485e5631cd4c5a1a59ce05920f0f70ab7",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 2929366457,
+        "object_idx": 7,
+        "maze_seed": 1605315134,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_015_object_10",
+      "layout_id": "confirmation_20260930_015",
+      "partition": "milestone_test",
+      "maze_hash": "0c519785dbc98d30886e082ea82ff20485e5631cd4c5a1a59ce05920f0f70ab7",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 2499129571,
+        "object_idx": 10,
+        "maze_seed": 1605315134,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_016_object_14",
+      "layout_id": "confirmation_20260930_016",
+      "partition": "milestone_test",
+      "maze_hash": "be1ab74da6d433e0f79459f2225b23b6f00f4845796f1a89704d254019183763",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 1908653586,
+        "object_idx": 14,
+        "maze_seed": 1592259268,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_016_object_05",
+      "layout_id": "confirmation_20260930_016",
+      "partition": "milestone_test",
+      "maze_hash": "be1ab74da6d433e0f79459f2225b23b6f00f4845796f1a89704d254019183763",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 1816541656,
+        "object_idx": 5,
+        "maze_seed": 1592259268,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_016_object_02",
+      "layout_id": "confirmation_20260930_016",
+      "partition": "milestone_test",
+      "maze_hash": "be1ab74da6d433e0f79459f2225b23b6f00f4845796f1a89704d254019183763",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 3683880007,
+        "object_idx": 2,
+        "maze_seed": 1592259268,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_016_object_07",
+      "layout_id": "confirmation_20260930_016",
+      "partition": "milestone_test",
+      "maze_hash": "be1ab74da6d433e0f79459f2225b23b6f00f4845796f1a89704d254019183763",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 3383401687,
+        "object_idx": 7,
+        "maze_seed": 1592259268,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_016_object_10",
+      "layout_id": "confirmation_20260930_016",
+      "partition": "milestone_test",
+      "maze_hash": "be1ab74da6d433e0f79459f2225b23b6f00f4845796f1a89704d254019183763",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 2646636359,
+        "object_idx": 10,
+        "maze_seed": 1592259268,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_017_object_14",
+      "layout_id": "confirmation_20260930_017",
+      "partition": "milestone_test",
+      "maze_hash": "50428716fba606086c06aba959513f11fca388e39af796ede2069ab0cf91d0e8",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 165025930,
+        "object_idx": 14,
+        "maze_seed": 1746049222,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_017_object_05",
+      "layout_id": "confirmation_20260930_017",
+      "partition": "milestone_test",
+      "maze_hash": "50428716fba606086c06aba959513f11fca388e39af796ede2069ab0cf91d0e8",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 3004117397,
+        "object_idx": 5,
+        "maze_seed": 1746049222,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_017_object_02",
+      "layout_id": "confirmation_20260930_017",
+      "partition": "milestone_test",
+      "maze_hash": "50428716fba606086c06aba959513f11fca388e39af796ede2069ab0cf91d0e8",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 2961728624,
+        "object_idx": 2,
+        "maze_seed": 1746049222,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_017_object_07",
+      "layout_id": "confirmation_20260930_017",
+      "partition": "milestone_test",
+      "maze_hash": "50428716fba606086c06aba959513f11fca388e39af796ede2069ab0cf91d0e8",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 499047869,
+        "object_idx": 7,
+        "maze_seed": 1746049222,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_017_object_10",
+      "layout_id": "confirmation_20260930_017",
+      "partition": "milestone_test",
+      "maze_hash": "50428716fba606086c06aba959513f11fca388e39af796ede2069ab0cf91d0e8",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 865049445,
+        "object_idx": 10,
+        "maze_seed": 1746049222,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_018_object_14",
+      "layout_id": "confirmation_20260930_018",
+      "partition": "milestone_test",
+      "maze_hash": "99f12e1d045137f2810a382d86deb9e41622a078182e506170d40164583fb7da",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 3446865582,
+        "object_idx": 14,
+        "maze_seed": 1432486431,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_018_object_05",
+      "layout_id": "confirmation_20260930_018",
+      "partition": "milestone_test",
+      "maze_hash": "99f12e1d045137f2810a382d86deb9e41622a078182e506170d40164583fb7da",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 3573311060,
+        "object_idx": 5,
+        "maze_seed": 1432486431,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_018_object_02",
+      "layout_id": "confirmation_20260930_018",
+      "partition": "milestone_test",
+      "maze_hash": "99f12e1d045137f2810a382d86deb9e41622a078182e506170d40164583fb7da",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 1848262978,
+        "object_idx": 2,
+        "maze_seed": 1432486431,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_018_object_07",
+      "layout_id": "confirmation_20260930_018",
+      "partition": "milestone_test",
+      "maze_hash": "99f12e1d045137f2810a382d86deb9e41622a078182e506170d40164583fb7da",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 262821610,
+        "object_idx": 7,
+        "maze_seed": 1432486431,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_018_object_10",
+      "layout_id": "confirmation_20260930_018",
+      "partition": "milestone_test",
+      "maze_hash": "99f12e1d045137f2810a382d86deb9e41622a078182e506170d40164583fb7da",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 1364097525,
+        "object_idx": 10,
+        "maze_seed": 1432486431,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_019_object_14",
+      "layout_id": "confirmation_20260930_019",
+      "partition": "milestone_test",
+      "maze_hash": "a74f101506e6c2e64eec1e751dc61c02bb4a7e037451893e3d3102e18561ec92",
+      "object_idx": 14,
+      "env_kwargs": {
+        "seed": 122320683,
+        "object_idx": 14,
+        "maze_seed": 1273344625,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_019_object_05",
+      "layout_id": "confirmation_20260930_019",
+      "partition": "milestone_test",
+      "maze_hash": "a74f101506e6c2e64eec1e751dc61c02bb4a7e037451893e3d3102e18561ec92",
+      "object_idx": 5,
+      "env_kwargs": {
+        "seed": 2971307080,
+        "object_idx": 5,
+        "maze_seed": 1273344625,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_019_object_02",
+      "layout_id": "confirmation_20260930_019",
+      "partition": "milestone_test",
+      "maze_hash": "a74f101506e6c2e64eec1e751dc61c02bb4a7e037451893e3d3102e18561ec92",
+      "object_idx": 2,
+      "env_kwargs": {
+        "seed": 3550051848,
+        "object_idx": 2,
+        "maze_seed": 1273344625,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_019_object_07",
+      "layout_id": "confirmation_20260930_019",
+      "partition": "milestone_test",
+      "maze_hash": "a74f101506e6c2e64eec1e751dc61c02bb4a7e037451893e3d3102e18561ec92",
+      "object_idx": 7,
+      "env_kwargs": {
+        "seed": 2196789783,
+        "object_idx": 7,
+        "maze_seed": 1273344625,
+        "seed_mode": "independent-maze-v1"
+      }
+    },
+    {
+      "case_id": "confirmation_20260930_019_object_10",
+      "layout_id": "confirmation_20260930_019",
+      "partition": "milestone_test",
+      "maze_hash": "a74f101506e6c2e64eec1e751dc61c02bb4a7e037451893e3d3102e18561ec92",
+      "object_idx": 10,
+      "env_kwargs": {
+        "seed": 893085630,
+        "object_idx": 10,
+        "maze_seed": 1273344625,
+        "seed_mode": "independent-maze-v1"
+      }
+    }
+  ],
+  "physical_evaluations": 0,
+  "training_use_allowed": false,
+  "case_manifest_sha256": "283ff33a834209801bd4cc57e25458ec365d0dd278cb6a6e01175ec9800d27e9"
+}

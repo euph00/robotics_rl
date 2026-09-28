@@ -1,0 +1,22 @@
+{
+  "version": "confirmation-scene-bank-v1",
+  "manifest_sha256": "be4d117896c5ed641c5619abe86263a30407d6144abd26f04865a211f41e4bc1",
+  "parent_manifest_sha256": "d6f130f4dae03b9ee4a27635bb5146cc5db48661240dd0d1da59e58e18424553",
+  "confirmation_seed": 20260930,
+  "confirmation_layouts": 20,
+  "confirmation_cases": 100,
+  "first_layout_id": "confirmation_20260930_000",
+  "last_layout_id": "confirmation_20260930_019",
+  "excluded_parent_layouts": 244,
+  "excluded_course_legacy_layouts": 100,
+  "geometry_rejections": 0,
+  "preserved_partition_sha256": {
+    "train": "d69159fc36be2197e6b31368a62258eee67348bc86612cd0507c0fc1b13a122f",
+    "validation": "ee4b1dfedec4b2b1d3ec92d4b2a0079980621c8a49ffba7b941d4093e42f86e6",
+    "final_reserve": "e99dd934c802b59ceacea6420561fed3a87db76f642293e447b9189e68124e57"
+  },
+  "retirement_status": "retired_from_future_heldout_claims_after_guiding_refinement",
+  "training_loader_rejects_version": true,
+  "physical_evaluations": 0,
+  "case_manifest_sha256": "283ff33a834209801bd4cc57e25458ec365d0dd278cb6a6e01175ec9800d27e9"
+}

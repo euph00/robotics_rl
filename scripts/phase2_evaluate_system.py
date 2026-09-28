@@ -26,7 +26,9 @@ from pnr.env import PickNavReachEnv
 from pnr.general_carry import GeneralCarryEnv
 from pnr.general_manipulation import GeneralGraspEnv
 from pnr.policies import load_policy_checkpoint
-from pnr.scenes import HELDOUT_PARTITIONS, case_specs, load_scene_bank
+from pnr.scenes import HELDOUT_PARTITIONS
+from pnr.confirmation_scenes import (evaluation_case_specs as case_specs,
+    load_evaluation_bank as load_scene_bank, require_evaluation_partition)
 from pnr.system import LearnedSystem
 from pnr.telemetry import RunLogger, atomic_json
 from scripts.evaluate_system import freeze_checkpoints, plain, resolve_checkpoint
@@ -56,6 +58,7 @@ def plan_digest(plan):
 
 def select_cases(bank, partition, objects, *, allow_heldout=False, legacy_seeds=(42,),
                  layout_limit=None, case_limit=None):
+    require_evaluation_partition(bank, partition)
     objects = [int(value) for value in objects]
     if not objects or len(set(objects)) != len(objects) or any(not 0 <= value < 15 for value in objects):
         raise ValueError('Provide distinct supplied object indices')
