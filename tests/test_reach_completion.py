@@ -66,6 +66,7 @@ def test_legacy_acceptance_retains_skill_predicate_exactly(monkeypatch):
     assert system.stage_results['reach']['reach_acceptance'] == 'legacy_skill_is_success'
 
 
+@pytest.mark.parametrize('tolerance', [.08, .10])
 @pytest.mark.parametrize('info,terminated,drops', [
     ({'dist_to_goal': .10}, False, 0),
     ({'dist_to_goal': float('nan')}, False, 0),
@@ -75,16 +76,17 @@ def test_legacy_acceptance_retains_skill_predicate_exactly(monkeypatch):
     ({}, True, 0),
     ({}, False, 1),
 ])
-def test_native_handover_rejects_missing_current_goal_or_retention(monkeypatch, info, terminated, drops):
-    system, _ = make_system(monkeypatch, info=info, terminated=terminated, drops=drops)
+def test_native_handover_rejects_missing_current_goal_or_retention(monkeypatch, tolerance, info, terminated, drops):
+    system, _ = make_system(monkeypatch, tolerance=tolerance, info=info, terminated=terminated, drops=drops)
     with pytest.raises(StageFailure):
         system._skill('reach')
     assert not system.stage_results['reach']['success']
 
 
+@pytest.mark.parametrize('tolerance', [.08, .10])
 @pytest.mark.parametrize('hold_outcome', ['retained', 'unstable', 'outside_goal'])
-def test_final_hold_and_final_native_recheck_remain_mandatory(monkeypatch, hold_outcome):
-    system, report = make_system(monkeypatch)
+def test_final_hold_and_final_native_recheck_remain_mandatory(monkeypatch, tolerance, hold_outcome):
+    system, report = make_system(monkeypatch, tolerance=tolerance)
     system._observe_native_steps = nullcontext
     real_skill = system._skill
     calls = []
@@ -104,7 +106,7 @@ def test_final_hold_and_final_native_recheck_remain_mandatory(monkeypatch, hold_
     result = system.run()
     assert calls == ['grasp', ('pick_hold', 50), 'carry', 'reach', ('final_hold', 60)]
     assert result['success'] == (hold_outcome == 'retained')
-    assert result['reach_tolerance_m'] == .10 and result['final_hold_source_calls'] == 60
+    assert result['reach_tolerance_m'] == tolerance and result['final_hold_source_calls'] == 60
     if hold_outcome == 'unstable':
         assert result['failed_stage'] == 'final_hold'
 
@@ -113,3 +115,42 @@ def test_final_hold_and_final_native_recheck_remain_mandatory(monkeypatch, hold_
 def test_only_versioned_tolerances_are_allowed(monkeypatch, tolerance):
     with pytest.raises(ValueError, match='Reach tolerance'):
         make_system(monkeypatch, tolerance=tolerance)
+
+
+def test_8cm_margin_keeps_acting_inside_native10cm_until_below8cm(monkeypatch):
+    system, report = make_system(monkeypatch, tolerance=.08)
+    distances=iter([.09,.079])
+    def predict(observation, deterministic):
+        report['dist_to_goal']=next(distances)
+        return np.zeros(3),None
+    system.policies['reach']=SimpleNamespace(predict=predict)
+    system._skill('reach')
+    stage=system.stage_results['reach']
+    assert stage['success'] and stage['policy_decisions']==2
+    assert stage['reach_acceptance']=='native_complete_task_success_with_8cm_margin'
+    assert stage['native_goal_distance']==.079
+    assert stage['source_action_calls']==6 and stage['physics_ticks']==30
+
+
+def test_8cm_margin_does_not_tighten_final_native10cm_goal(monkeypatch):
+    system, report = make_system(monkeypatch, tolerance=.08)
+    system._observe_native_steps=nullcontext
+    real_skill=system._skill
+    system._skill=lambda name: real_skill(name) if name=='reach' else None
+    calls=[]
+    def hold(stage,steps):
+        calls.append((stage,steps))
+        if stage=='final_hold':
+            report['dist_to_goal']=.09
+            report['complete_task_success']=True
+    system._held_pause=hold
+    result=system.run()
+    assert result['success'] and result['metrics']['dist_to_goal']==.09
+    assert calls==[('pick_hold',50),('final_hold',60)]
+
+
+@pytest.mark.parametrize('distance',[.08,.081,.099])
+def test_8cm_handover_uses_strict_internal_margin(monkeypatch,distance):
+    system,_=make_system(monkeypatch,tolerance=.08,info={'dist_to_goal':distance,'is_success':True})
+    with pytest.raises(StageFailure,match='decision_horizon'):
+        system._skill('reach')

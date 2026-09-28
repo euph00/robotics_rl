@@ -45,8 +45,8 @@ class LearnedSystem:
             raise ValueError('Skill factories must be callable entries for grasp, carry, or reach')
         if not np.isfinite(controller_speed_scale) or controller_speed_scale <= 0:
             raise ValueError('Planned controller speed scale must be positive and finite')
-        if reach_tolerance_m not in (.04, .10):
-            raise ValueError('Reach tolerance must be native 0.10 m or legacy 0.04 m')
+        if reach_tolerance_m not in (.04, .08, .10):
+            raise ValueError('Reach tolerance must be native 0.10 m, internal margin 0.08 m, or legacy 0.04 m')
         self.reach_tolerance_m = float(reach_tolerance_m)
         self.controller = ReferenceController(native,seed=native.seed,speed_scale=controller_speed_scale,
                                               grasp_proposal_mode=grasp_proposal_mode)
@@ -150,10 +150,11 @@ class LearnedSystem:
             rejected+=int(last_info.get('action_rejected',False))
             # A historical episode_success is insufficient for a stage handover.
             goal_reached=last_info.get('is_success',False)
-            if name=='reach' and self.reach_tolerance_m==.10:
+            if name=='reach' and self.reach_tolerance_m in (.08, .10):
                 # Training still uses its 4 cm goal. Full-task handover follows
-                # the native 10 cm contract, including pickup/retention history.
-                # The mandatory final hold and native recheck happen in run().
+                # the native contract, including pickup/retention history.
+                # Optional 8 cm handover leaves room for drift during the final
+                # hold; run() still requires the unchanged native 10 cm result.
                 goal_reached=bool(last_info.get('complete_task_success',False)
                                   and last_info.get('dist_to_goal',np.inf)<self.reach_tolerance_m)
             reached=bool(goal_reached and last_info.get('bilateral_contact',False)
@@ -177,7 +178,8 @@ class LearnedSystem:
                      bilateral_contact=last_info.get('bilateral_contact',False),
                      **({'reach_tolerance_m':self.reach_tolerance_m,
                          'reach_acceptance':('native_complete_task_success' if self.reach_tolerance_m==.10
-                                             else 'legacy_skill_is_success'),
+                                             else 'native_complete_task_success_with_8cm_margin'
+                                             if self.reach_tolerance_m==.08 else 'legacy_skill_is_success'),
                          'native_goal_distance':last_info.get('dist_to_goal')} if name=='reach' else {}))
         if not reached:
             raise StageFailure(f'{name}: {reason}')

@@ -216,3 +216,18 @@ def test_proposal_mode_is_frozen_and_legacy_v3_stays_legacy(bank, tmp_path):
     expanded = execution_settings(plan)
     assert expanded['grasp_proposal_mode'] == 'legacy'
     assert expanded['reach_tolerance_m'] == .10
+
+
+def test_8cm_internal_margin_requires_frozen_v4_plan(bank,tmp_path):
+    plan=frozen_plan(bank,tmp_path)
+    plan['execution']['reach_tolerance_m']=.08
+    with pytest.raises(ValueError,match='digest'):
+        verify_frozen_plan(plan,bank,allow_heldout=True)
+    plan['plan_sha256']=plan_digest(plan)
+    verify_frozen_plan(plan,bank,allow_heldout=True)
+    assert execution_settings(plan)['reach_tolerance_m']==.08
+    plan['version']=REACH_PLAN_VERSION
+    del plan['execution']['grasp_proposal_mode']
+    plan['plan_sha256']=plan_digest(plan)
+    with pytest.raises(ValueError,match='Reach tolerance'):
+        verify_frozen_plan(plan,bank,allow_heldout=True)

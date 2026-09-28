@@ -130,8 +130,9 @@ def verify_frozen_plan(plan, bank, *, allow_heldout=False, verify_checkpoints=Tr
         raise ValueError('Unknown grasp proposal mode')
     if not .15 <= settings.get('grasp_lift_m', .20) <= .30:
         raise ValueError('Grasp lift subgoal must be between15 and30cm')
-    if settings.get('reach_tolerance_m', .04) not in (.04, .10):
-        raise ValueError('Reach tolerance must be native 0.10 m or legacy 0.04 m')
+    allowed_reach = (.04, .08, .10) if plan['version'] == PLAN_VERSION else (.04, .10)
+    if settings.get('reach_tolerance_m', .04) not in allowed_reach:
+        raise ValueError('Reach tolerance must be native 0.10 m, v4 internal margin 0.08 m, or legacy 0.04 m')
     if set(plan['checkpoints']) != {'grasp', 'carry', 'reach'}:
         raise ValueError('Frozen plan needs exactly three checkpoint records')
     for name, record in plan['checkpoints'].items():
@@ -346,8 +347,8 @@ def main():
     parser.add_argument('--grasp-proposal-mode', choices=('legacy', 'clearance-v2'), default='legacy')
     parser.add_argument('--carry-horizon', type=int, default=1200)
     parser.add_argument('--reach-horizon', type=int, default=150)
-    parser.add_argument('--reach-tolerance-m', type=float, choices=(.04, .10), default=.10,
-                        help='Native task acceptance (0.10 m), or explicit legacy 0.04 m; final hold required')
+    parser.add_argument('--reach-tolerance-m', type=float, choices=(.04, .08, .10), default=.10,
+                        help='Reach handover: native 0.10 m, internal 0.08 m margin, or legacy 0.04 m; final native 10 cm and 60-call hold unchanged')
     parser.add_argument('--delta-scale', type=float, default=.075)
     parser.add_argument('--planned-speed-scale', type=float, default=1.)
     parser.add_argument('--deadline-physics-ticks', type=int, default=15000)
