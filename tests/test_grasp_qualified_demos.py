@@ -234,3 +234,65 @@ def test_checkpoint_contract_separates_raw_spaces_features_and_rl_ancestry():
     assert result['model_predictions_during_inspection']==result['physical_interactions_during_inspection']==0
     model.observation_space.spaces['observation'].shape=(70,)
     with pytest.raises(ValueError,match='raw54'):collector.checkpoint_contract(model)
+
+
+def successor_fixture(monkeypatch,tmp_path):
+    cases = [dict(case_id=f'train_{layout:03d}_object_{obj:02d}', layout_id=f'train_{layout:03d}',
+                  partition='train', object_idx=obj) for layout in range(12) for obj in collector.OBJECTS]
+    monkeypatch.setattr(collector,'select_cases',lambda *a:deepcopy(cases))
+    base=collector.make_plan({}, {'sha256':'f'*64}, {'sha256':'d'*64},root=tmp_path)
+    previous=deepcopy(base);previous['plan_sha256']=collector.digest(previous)
+    status=dict(status='skipped_frozen_core_improved',plan_sha256=previous['plan_sha256'],
+                frozen_core_score=[52,38],selected_control_score=[51,47])
+    confirmation=dict(completed_cases=100,planned_cases=100,cost_accounting_complete=True,
+        successes=69,successes_within_deadline_including_initialization=53,
+        failed_cases=[{'case_id':'DO_NOT_IMPORT_TEST_CASE','trajectory':'DO_NOT_IMPORT'}])
+    paths=[tmp_path/'old.json',tmp_path/'status.json',tmp_path/'confirmation.json']
+    for path,value in zip(paths,[previous,status,confirmation]):path.write_text(json.dumps(value))
+    return base,previous,status,confirmation,paths
+
+
+def test_successor_keeps_skipped_plan_and_train_schedule_without_test_import(monkeypatch,tmp_path):
+    base,previous,status,confirmation,paths=successor_fixture(monkeypatch,tmp_path)
+    original=[p.read_bytes() for p in paths]
+    new=collector.successor_plan(base,previous,paths[0],status,paths[1],confirmation,paths[2])
+    assert new['schedule']==previous['schedule'] and new['settings']==previous['settings']
+    assert new['bc_refinement']==previous['bc_refinement']
+    assert new['development_comparison']['cases']==previous['development_comparison']['cases']
+    assert new['collection_run_id']=='phase2_grasp_qualified_demos03'
+    assert new['predecessor']['status']=='skipped_frozen_core_improved' and not new['predecessor']['old_gate_reopened']
+    assert not new['test_retirement']['retired_test_used_as_training']
+    assert new['test_retirement']['test_trajectory_imports']==0
+    assert 'DO_NOT_IMPORT' not in json.dumps(new)
+    assert [p.read_bytes() for p in paths]==original
+    assert new['motivation']['aggregate_only']['full_successes']==69
+    assert new['development_comparison']['acceptance_gate']['minimum_net_retained_transport_wins']==3
+    assert new['full60_followup']['maximum_evaluations']==1
+    assert new['full60_followup']['promotion_requires_full_successes_at_least']==57
+    assert new['full60_followup']['promotion_requires_inclusive_timed_successes_at_least']==38
+    with pytest.raises(ValueError,match='preserved skipped'):
+        collector.successor_plan(base,previous,paths[0],dict(status,status='running'),paths[1],confirmation,paths[2])
+    changed=deepcopy(base);changed['settings']['delta_scale']=.04
+    with pytest.raises(ValueError,match='preserve'):
+        collector.successor_plan(changed,previous,paths[0],status,paths[1],confirmation,paths[2])
+
+
+def test_successor_authorization_cannot_reuse_old_review_or_relax_old_gate(monkeypatch,tmp_path):
+    base,previous,status,confirmation,paths=successor_fixture(monkeypatch,tmp_path)
+    plan=collector.successor_plan(base,previous,paths[0],status,paths[1],confirmation,paths[2])
+    plan['plan_sha256']=collector.digest(plan)
+    review=dict(approved=True,scope='collection_only',plan_sha256=plan['plan_sha256'])
+    approval=dict(authorized=True,authorized_by='/root',scope='collection_only',
+                  plan_sha256=plan['plan_sha256'],development_phase=collector.DEVELOPMENT_PHASE)
+    collector.verify_development_gate(plan,review,approval)
+    with pytest.raises(ValueError,match='New independent'):
+        collector.verify_development_gate(plan,dict(review,plan_sha256=previous['plan_sha256']),approval)
+    for bad in [{},review,dict(approval,scope='training'),dict(approval,authorized_by='/other'),
+                dict(approval,plan_sha256=previous['plan_sha256']),dict(approval,development_phase='old')]:
+        with pytest.raises(ValueError,match='root collection'):collector.verify_development_gate(plan,review,bad)
+    # Even with a valid successor review, the predecessor remains closed by its old full-first rule.
+    control=dict(partition='validation',planned_cases=60,completed_cases=60,cost_accounting_complete=True,
+                 successes=51,successes_within_deadline_including_initialization=47)
+    old_review=dict(approved=True,scope='collection_only',plan_sha256=previous['plan_sha256'])
+    with pytest.raises(ValueError,match='beats'):
+        collector.verify_gate(previous,old_review,dict(control,successes=52,successes_within_deadline_including_initialization=38),control)

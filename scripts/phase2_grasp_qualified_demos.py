@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Conditionally collect real grasp prefixes qualified by subsequent TRAIN transport.
 
-Planning and tests run without physics. Collection requires a reviewed plan and
-a completed non-improving frozen-core result. No grasp transition is rewritten
+Planning and tests run without physics. Legacy collection requires its original
+non-improvement gate. A successor development phase requires its own exact-plan
+review and root authorization; it cannot reopen a previously skipped plan. No grasp transition is rewritten
 using its later transport outcome; open handover prefixes are BC data, not a
 fabricated terminal replay episode. All attempted prefixes remain available.
 """
@@ -39,6 +40,8 @@ from scripts.phase2_carry_demos import collect_episode
 from scripts.phase2_apple_retention_branches import contact_record
 
 PROTOCOL = 'transport-qualified-grasp-prefixes-v1'
+DEVELOPMENT_PHASE = 'post-retired-confirmation-grasp-qualification-v1'
+DEVELOPMENT_GATE = 'new-development-explicit-plan-authorization-v1'
 OBJECTS = [14, 5, 2, 7, 10]
 _GRASP = None
 
@@ -358,6 +361,80 @@ def make_plan(bank, grasp, old_data, root=ROOT):
         'new_optimizer_updates_at_plan_creation': 0}
 
 
+def successor_plan(base, previous, previous_path, previous_status, status_path,
+                   confirmation, confirmation_path):
+    """A new TRAIN phase, preserving the skipped predecessor and its old gate."""
+    if previous_status.get('status') != 'skipped_frozen_core_improved':
+        raise ValueError('Successor requires the preserved skipped predecessor')
+    if previous_status.get('plan_sha256') != previous['plan_sha256']:
+        raise ValueError('Skipped status belongs to a different predecessor')
+    if digest({k:v for k,v in previous.items() if k!='plan_sha256'}) != previous['plan_sha256']:
+        raise ValueError('Predecessor plan hash mismatch')
+    for key in ('schedule', 'settings', 'recording', 'bc_refinement', 'development_comparison'):
+        if base[key] != previous[key]:
+            raise ValueError('Successor must preserve the declared TRAIN protocol: '+key)
+    if (confirmation.get('completed_cases') != 100 or confirmation.get('planned_cases') != 100
+            or not confirmation.get('cost_accounting_complete')):
+        raise ValueError('Expected completed audited100-case retired confirmation')
+    result = deepcopy(base)
+    result.update(status='frozen_pending_new_independent_review_and_root_authorization',
+        development_phase=DEVELOPMENT_PHASE, collection_run_id='phase2_grasp_qualified_demos03',
+        predecessor={'path':str(previous_path), 'plan_sha256':previous['plan_sha256'],
+            'plan_file_sha256':sha256_file(previous_path), 'status':'skipped_frozen_core_improved',
+            'status_path':str(status_path), 'status_file_sha256':sha256_file(status_path),
+            'old_gate_reopened':False},
+        motivation={'kind':'failed_confirmation_followed_by_new_development_phase',
+            'retired_confirmation_summary_path':str(confirmation_path),
+            'retired_confirmation_summary_sha256':sha256_file(confirmation_path),
+            'aggregate_only':{'cases':100, 'full_successes':confirmation['successes'],
+                'inclusive_timed_successes':confirmation['successes_within_deadline_including_initialization'],
+                'carry_lost_grasp_failures_reported_by_root':24},
+            'milestone_met':False,
+            'reason':'Remaining retention failures motivate qualification of TRAIN grasp supervision.'},
+        test_retirement={'retired_test_used_as_training':False, 'test_trajectory_imports':0,
+            'test_case_parameters_used_for_training':0, 'aggregate_only_motivation':True,
+            'future_independent_confirmation_required':True},
+        launch_gate={'protocol':DEVELOPMENT_GATE, 'requires_independent_review_record':True,
+            'requires_root_authorization_record':True, 'scope':'collection_only',
+            'reuses_predecessor_nonimprovement_gate':False, 'automatic_launch':False})
+    result.pop('no_heldout_access', None)
+    result['new_heldout_rollouts'] = 0
+    result['retired_test_aggregate_read_for_motivation'] = True
+    result['development_comparison']['acceptance_gate'] = {
+        'minimum_net_retained_transport_wins':3,
+        'net_win_definition':'candidate-only successes minus control-only successes across all20 declared cases',
+        'no_new_preparation_failures':'Every case where control prepared_handover=True must also have candidate prepared_handover=True',
+        'preparation_includes':'original approach, learned grasp,50-call pickup hold and planned carry posture',
+        'missing_or_incomplete_case':'fail gate; never replace or omit',
+        'on_failure':'Close this BC-refinement hypothesis; no checkpoint retuning or retries'}
+    result['full60_followup'] = {
+        'requires_paired_development_gate_pass':True, 'maximum_evaluations':1,
+        'control_run_id':'phase2_system_encoder_gated192_frozen_040k01',
+        'control_full_successes':52, 'control_inclusive_timed_successes':38,
+        'promotion_requires_full_successes_at_least':57,
+        'promotion_requires_inclusive_timed_successes_at_least':38,
+        'report_all_paired_wins_losses_and_costs':True, 'new_heldout_test':False,
+        'reserve_partition_access':False, 'automatic_launch':False,
+        'on_failure':'Close this BC-refinement hypothesis; no checkpoint retuning or retries'}
+    return result
+
+
+def verify_development_gate(plan, review, authorization):
+    if (plan.get('development_phase') != DEVELOPMENT_PHASE
+            or plan['launch_gate'].get('protocol') != DEVELOPMENT_GATE
+            or plan.get('predecessor',{}).get('status') != 'skipped_frozen_core_improved'
+            or plan.get('predecessor',{}).get('old_gate_reopened') is not False):
+        raise ValueError('Unknown successor development protocol')
+    if (review.get('approved') is not True or review.get('scope') != 'collection_only'
+            or review.get('plan_sha256') != plan['plan_sha256']):
+        raise ValueError('New independent review required for exact successor plan')
+    if (authorization.get('authorized') is not True or authorization.get('authorized_by') != '/root'
+            or authorization.get('scope') != 'collection_only'
+            or authorization.get('plan_sha256') != plan['plan_sha256']
+            or authorization.get('development_phase') != DEVELOPMENT_PHASE):
+        raise ValueError('Explicit root collection authorization required for exact successor plan')
+
+
 def verify_gate(plan, review, frozen, control):
     if review.get('approved') is not True or review.get('scope') != 'collection_only' or review.get('plan_sha256') != plan['plan_sha256']:
         raise ValueError('Independent collection review record required for this exact plan')
@@ -377,11 +454,18 @@ def main():
     freeze = sub.add_parser('freeze-plan')
     freeze.add_argument('--directory', type=Path, default=ROOT/'runs/phase2_grasp_qualified_plan01/artifacts')
     freeze.add_argument('--bank', type=Path, default=ROOT/'configs/phase2_scene_bank_expanded.json')
+    successor = sub.add_parser('freeze-successor-plan')
+    successor.add_argument('--directory', type=Path, default=ROOT/'runs/phase2_grasp_qualified_plan03/artifacts')
+    successor.add_argument('--bank', type=Path, default=ROOT/'configs/phase2_scene_bank_expanded.json')
+    successor.add_argument('--previous-plan', type=Path, default=ROOT/'runs/phase2_grasp_qualified_plan02/artifacts/plan.json')
+    successor.add_argument('--previous-status', type=Path, default=ROOT/'runs/setup/qualified_grasp_collection_watcher_status.json')
+    successor.add_argument('--retired-confirmation-summary', type=Path, default=ROOT/'runs/phase2_system_confirmation_test01/artifacts/summary.json')
     execute = sub.add_parser('collect')
     execute.add_argument('--plan', type=Path, required=True)
     execute.add_argument('--review-record', type=Path, required=True)
+    execute.add_argument('--authorization-record', type=Path)
     args = parser.parse_args()
-    if args.mode == 'freeze-plan':
+    if args.mode in ('freeze-plan', 'freeze-successor-plan'):
         if args.directory.exists():
             raise ValueError('Refuse replacing frozen plan directory')
         args.directory.mkdir(parents=True)
@@ -395,16 +479,21 @@ def main():
         del model
         old = ROOT/'runs/phase2_grasp_demos06/artifacts/demonstrations.pkl'
         plan = make_plan(bank, grasp, {'path': str(old), 'sha256': sha256_file(old)})
+        if args.mode == 'freeze-successor-plan':
+            plan = successor_plan(plan, json.loads(args.previous_plan.read_text()), args.previous_plan.resolve(),
+                json.loads(args.previous_status.read_text()), args.previous_status.resolve(),
+                json.loads(args.retired_confirmation_summary.read_text()), args.retired_confirmation_summary.resolve())
         paths = list((ROOT/'pnr').glob('*.py')) + [Path(__file__),
             ROOT/'scripts/phase2_carry_demos.py', ROOT/'scripts/phase2_learned_carry_demos.py',
             ROOT/'scripts/phase2_apple_retention_branches.py', ROOT/'scripts/evaluate_system.py',
             ROOT/'scripts/phase2_evaluate_system.py']
         plan['source_hashes'] = {str(p.relative_to(ROOT)): sha256_file(p) for p in sorted(paths)}
         plan['scene_bank'] = {'path': str(args.bank.resolve()), 'file_sha256': sha256_file(args.bank)}
-        control_path = Path(plan['launch_gate']['selected_control_summary'])
-        control = json.loads(control_path.read_text())
-        plan['launch_gate']['selected_control_summary_sha256'] = sha256_file(control_path)
-        plan['launch_gate']['selected_control_score'] = [control['successes'], control['successes_within_deadline_including_initialization']]
+        if args.mode == 'freeze-plan':
+            control_path = Path(plan['launch_gate']['selected_control_summary'])
+            control = json.loads(control_path.read_text())
+            plan['launch_gate']['selected_control_summary_sha256'] = sha256_file(control_path)
+            plan['launch_gate']['selected_control_score'] = [control['successes'], control['successes_within_deadline_including_initialization']]
         plan['plan_sha256'] = digest(plan)
         atomic_json(args.directory/'plan.json', plan)
         print(json.dumps({'plan': str(args.directory/'plan.json'), 'sha256': plan['plan_sha256'], 'physics': 0}))
@@ -423,15 +512,30 @@ def main():
         raise ValueError('Scene bank changed')
     review = json.loads(args.review_record.read_text())
     gate = plan['launch_gate']
-    frozen = json.loads(Path(gate['frozen_core_summary']).read_text())
-    control = json.loads(Path(gate['selected_control_summary']).read_text())
-    if sha256_file(gate['selected_control_summary']) != gate['selected_control_summary_sha256']:
-        raise ValueError('Predeclared selected control changed')
-    frozen_plan = json.loads(Path(gate['frozen_core_summary']).with_name('evaluation_plan.json').read_text())
-    control_plan = json.loads(Path(gate['selected_control_summary']).with_name('evaluation_plan.json').read_text())
-    if frozen_plan['cases'] != control_plan['cases'] or frozen_plan['execution'] != control_plan['execution']:
-        raise ValueError('Conditional gate cases/execution differ from selected control')
-    verify_gate(plan, review, frozen, control)
+    evidence = {'review': review, 'review_record_sha256': sha256_file(args.review_record)}
+    if gate.get('protocol') == DEVELOPMENT_GATE:
+        if args.authorization_record is None:
+            raise ValueError('Successor collection requires --authorization-record')
+        authorization = json.loads(args.authorization_record.read_text())
+        verify_development_gate(plan, review, authorization)
+        predecessor = plan['predecessor']
+        if (sha256_file(predecessor['path']) != predecessor['plan_file_sha256']
+                or sha256_file(predecessor['status_path']) != predecessor['status_file_sha256']):
+            raise ValueError('Historical skipped-plan evidence changed')
+        evidence.update(authorization=authorization, authorization_record_sha256=sha256_file(args.authorization_record),
+                        development_phase=plan['development_phase'], predecessor=predecessor)
+    else:
+        if args.authorization_record is not None:
+            raise ValueError('An explicit successor authorization cannot replace the legacy gate')
+        frozen = json.loads(Path(gate['frozen_core_summary']).read_text())
+        control = json.loads(Path(gate['selected_control_summary']).read_text())
+        if sha256_file(gate['selected_control_summary']) != gate['selected_control_summary_sha256']:
+            raise ValueError('Predeclared selected control changed')
+        frozen_plan = json.loads(Path(gate['frozen_core_summary']).with_name('evaluation_plan.json').read_text())
+        control_plan = json.loads(Path(gate['selected_control_summary']).with_name('evaluation_plan.json').read_text())
+        if frozen_plan['cases'] != control_plan['cases'] or frozen_plan['execution'] != control_plan['execution']:
+            raise ValueError('Conditional gate cases/execution differ from selected control')
+        verify_gate(plan, review, frozen, control)
     directory = ROOT/'runs'/plan['collection_run_id']
     if directory.exists():
         raise ValueError('No retries, resumed collection or artifact replacement')
@@ -440,9 +544,10 @@ def main():
         budget=len(plan['schedule']), name='Transport-qualified grasp prefixes')
     out = directory/'artifacts'; out.mkdir(exist_ok=True)
     atomic_json(out/'plan.json', plan)
-    atomic_json(out/'launch_evidence.json', {'review': review,
-        'frozen_core_summary_sha256': sha256_file(gate['frozen_core_summary']),
-        'control_summary_sha256': sha256_file(gate['selected_control_summary'])})
+    if gate.get('protocol') != DEVELOPMENT_GATE:
+        evidence.update(frozen_core_summary_sha256=sha256_file(gate['frozen_core_summary']),
+                        control_summary_sha256=sha256_file(gate['selected_control_summary']))
+    atomic_json(out/'launch_evidence.json', evidence)
     results = []
     with ProcessPoolExecutor(max_workers=plan['workers'], mp_context=mp.get_context('spawn'),
                              initializer=initialize_worker, initargs=(plan['source_grasp'],)) as pool:
