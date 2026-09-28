@@ -33,7 +33,7 @@ class LearnedSystem:
     def __init__(self, native, policies: Mapping, *, grasp_horizon=600,
                  carry_horizon=1500, reach_horizon=150, on_step: Callable | None=None,
                  skill_factories: Mapping | None=None, controller_speed_scale=1.,
-                 reach_tolerance_m=.10):
+                 reach_tolerance_m=.10, grasp_proposal_mode='legacy'):
         if set(policies) != {'grasp','carry','reach'}:
             raise ValueError('Exactly grasp, carry, and reach policies are required')
         if any(not hasattr(policy,'predict') for policy in policies.values()):
@@ -48,7 +48,8 @@ class LearnedSystem:
         if reach_tolerance_m not in (.04, .10):
             raise ValueError('Reach tolerance must be native 0.10 m or legacy 0.04 m')
         self.reach_tolerance_m = float(reach_tolerance_m)
-        self.controller = ReferenceController(native,seed=native.seed,speed_scale=controller_speed_scale)
+        self.controller = ReferenceController(native,seed=native.seed,speed_scale=controller_speed_scale,
+                                              grasp_proposal_mode=grasp_proposal_mode)
         self.horizons = {'grasp':int(grasp_horizon),'carry':int(carry_horizon),'reach':int(reach_horizon)}
         if any(value < 1 for value in self.horizons.values()):
             raise ValueError('Skill horizons must be positive')

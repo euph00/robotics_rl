@@ -33,7 +33,8 @@ from scripts.evaluate_system import freeze_checkpoints, plain, resolve_checkpoin
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OBJECTS = [14, 5, 2, 7, 10]
-PLAN_VERSION = 'phase2-original-gripper-system-evaluation-v3'
+PLAN_VERSION = 'phase2-original-gripper-system-evaluation-v4'
+REACH_PLAN_VERSION = 'phase2-original-gripper-system-evaluation-v3'
 PREVIOUS_PLAN_VERSION = 'phase2-original-gripper-system-evaluation-v2'
 LEGACY_PLAN_VERSION = 'phase2-original-gripper-system-evaluation-v1'
 _WORKER_POLICIES = None
@@ -90,7 +91,7 @@ def select_cases(bank, partition, objects, *, allow_heldout=False, legacy_seeds=
 
 
 def verify_frozen_plan(plan, bank, *, allow_heldout=False, verify_checkpoints=True):
-    if plan.get('version') not in (PLAN_VERSION, PREVIOUS_PLAN_VERSION, LEGACY_PLAN_VERSION) or plan.get('status') != 'frozen':
+    if plan.get('version') not in (PLAN_VERSION, REACH_PLAN_VERSION, PREVIOUS_PLAN_VERSION, LEGACY_PLAN_VERSION) or plan.get('status') != 'frozen':
         raise ValueError('Evaluation requires a versioned frozen plan')
     if plan.get('plan_sha256') != plan_digest(plan):
         raise ValueError('Frozen evaluation plan digest mismatch')
@@ -118,11 +119,15 @@ def verify_frozen_plan(plan, bank, *, allow_heldout=False, verify_checkpoints=Tr
     required = {'delta_scale', 'planned_speed_scale', 'deadline_physics_ticks',
                 'grasp_horizon', 'carry_horizon', 'reach_horizon'}
     if plan['version'] != LEGACY_PLAN_VERSION: required.add('grasp_lift_m')
-    if plan['version'] == PLAN_VERSION: required.add('reach_tolerance_m')
-    if set(settings) != required or any(not np.isfinite(value) or value <= 0 for value in settings.values()):
+    if plan['version'] in (PLAN_VERSION, REACH_PLAN_VERSION): required.add('reach_tolerance_m')
+    if plan['version'] == PLAN_VERSION: required.add('grasp_proposal_mode')
+    numeric = {key:value for key,value in settings.items() if key!='grasp_proposal_mode'}
+    if set(settings) != required or any(not np.isfinite(value) or value <= 0 for value in numeric.values()):
         raise ValueError('Frozen execution settings must declare positive horizons, scales and deadline')
-    if any(int(settings[key]) != settings[key] for key in required - {'delta_scale', 'planned_speed_scale', 'grasp_lift_m', 'reach_tolerance_m'}):
+    if any(int(settings[key]) != settings[key] for key in required - {'delta_scale', 'planned_speed_scale', 'grasp_lift_m', 'reach_tolerance_m', 'grasp_proposal_mode'}):
         raise ValueError('Frozen horizons and deadline must be integer counts')
+    if settings.get('grasp_proposal_mode', 'legacy') not in ('legacy', 'clearance-v2'):
+        raise ValueError('Unknown grasp proposal mode')
     if not .15 <= settings.get('grasp_lift_m', .20) <= .30:
         raise ValueError('Grasp lift subgoal must be between15 and30cm')
     if settings.get('reach_tolerance_m', .04) not in (.04, .10):
@@ -142,6 +147,7 @@ def execution_settings(plan):
     settings = dict(plan['execution'])
     settings.setdefault('grasp_lift_m', .20)
     settings.setdefault('reach_tolerance_m', .04)
+    settings.setdefault('grasp_proposal_mode', 'legacy')
     return settings
 
 
@@ -268,6 +274,7 @@ def evaluate_case(case, execution, artifact_dir, video=False):
                 grasp_horizon=execution['grasp_horizon'], carry_horizon=execution['carry_horizon'],
                 reach_horizon=execution['reach_horizon'], on_step=observe,
                 reach_tolerance_m=execution.get('reach_tolerance_m', .04),
+                grasp_proposal_mode=execution.get('grasp_proposal_mode', 'legacy'),
                 controller_speed_scale=execution['planned_speed_scale'],
                 skill_factories={'grasp': partial(GeneralGraspEnv.bind, goal_lift_m=execution.get('grasp_lift_m', .20)),
                     'carry': partial(GeneralCarryEnv.bind, delta_scale=execution['delta_scale'])})
@@ -336,6 +343,7 @@ def main():
     parser.add_argument('--torch-threads', type=int, default=1)
     parser.add_argument('--grasp-horizon', type=int, default=600)
     parser.add_argument('--grasp-lift-m', type=float, default=.24)
+    parser.add_argument('--grasp-proposal-mode', choices=('legacy', 'clearance-v2'), default='legacy')
     parser.add_argument('--carry-horizon', type=int, default=1200)
     parser.add_argument('--reach-horizon', type=int, default=150)
     parser.add_argument('--reach-tolerance-m', type=float, choices=(.04, .10), default=.10,
@@ -354,7 +362,7 @@ def main():
     if args.frozen_config:
         overrides = {'--object-indices', '--legacy-seeds', '--grasp-horizon', '--carry-horizon',
                      '--reach-horizon', '--delta-scale', '--planned-speed-scale',
-                     '--deadline-physics-ticks', '--algorithm-label', '--grasp-lift-m', '--reach-tolerance-m'}
+                     '--deadline-physics-ticks', '--algorithm-label', '--grasp-lift-m', '--reach-tolerance-m', '--grasp-proposal-mode'}
         if overrides & {argument.split('=')[0] for argument in sys.argv[1:]}:
             parser.error('Execution settings and object selection cannot override a frozen plan')
         original = json.loads(args.frozen_config.read_text())
@@ -385,7 +393,7 @@ def main():
             parser.error('Provide all three checkpoints, or --frozen-config')
         paths = {name: resolve_checkpoint(getattr(args, name)) for name in ('grasp', 'carry', 'reach')}
         execution = {key: getattr(args, key) for key in ('grasp_horizon', 'carry_horizon', 'reach_horizon',
-                     'delta_scale', 'planned_speed_scale', 'deadline_physics_ticks', 'grasp_lift_m', 'reach_tolerance_m')}
+                     'delta_scale', 'planned_speed_scale', 'deadline_physics_ticks', 'grasp_lift_m', 'reach_tolerance_m', 'grasp_proposal_mode')}
         objects, algorithm, legacy_seeds = args.object_indices, args.algorithm_label, args.legacy_seeds
     artifact_dir = args.output / 'artifacts'
     if args.output.exists() and any(args.output.iterdir()):

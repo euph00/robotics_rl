@@ -10,7 +10,7 @@ from gymnasium import spaces
 from pnr.scenes import build_scene_bank
 from pnr.system import LearnedSystem
 from scripts.phase2_evaluate_system import (
-    DEFAULT_OBJECTS, PLAN_VERSION, PREVIOUS_PLAN_VERSION, LEGACY_PLAN_VERSION,
+    DEFAULT_OBJECTS, PLAN_VERSION, REACH_PLAN_VERSION, PREVIOUS_PLAN_VERSION, LEGACY_PLAN_VERSION,
     deadline_metrics, execution_settings, failure_result, plan_digest,
     select_cases, sha256_file, summarize_results, validate_policy_interfaces, verify_frozen_plan,
 )
@@ -33,7 +33,7 @@ def frozen_plan(bank, tmp_path, partition='milestone_test'):
             'checkpoints': records, 'original_start': True, 'inter_skill_resets': False,
             'teacher_at_inference': False, 'original_gripper': True, 'retain_all_failures': True,
             'execution': {'delta_scale': .075, 'planned_speed_scale': 1., 'deadline_physics_ticks': 15000,
-                          'grasp_horizon': 600, 'carry_horizon': 1200, 'reach_horizon': 150, 'grasp_lift_m': .24, 'reach_tolerance_m': .10}}
+                          'grasp_horizon': 600, 'carry_horizon': 1200, 'reach_horizon': 150, 'grasp_lift_m': .24, 'reach_tolerance_m': .10, 'grasp_proposal_mode': 'legacy'}}
     plan['plan_sha256'] = plan_digest(plan)
     return plan
 
@@ -127,7 +127,7 @@ def test_system_optional_factory_binds_live_state_without_reset(monkeypatch):
     native = SimpleNamespace(seed=42, step_count=0, substeps=5, drop_events=0)
     calls = []
     monkeypatch.setattr('pnr.system.ReferenceController',
-                        lambda env, seed, speed_scale: SimpleNamespace(env=env, seed=seed, speed_scale=speed_scale))
+                        lambda env, seed, speed_scale, grasp_proposal_mode: SimpleNamespace(env=env, seed=seed, speed_scale=speed_scale, mode=grasp_proposal_mode))
     class Wrapper:
         action_space = spaces.Box(-1., 1., (4,), dtype=np.float32)
         def _observation(self):
@@ -141,10 +141,11 @@ def test_system_optional_factory_binds_live_state_without_reset(monkeypatch):
     policies = {name: SimpleNamespace(predict=lambda observation, deterministic: (np.zeros(4), None))
                 for name in ('grasp', 'carry', 'reach')}
     system = LearnedSystem(native, policies, grasp_horizon=4,
-                           skill_factories={'grasp': factory}, controller_speed_scale=1.2)
+                           skill_factories={'grasp': factory}, controller_speed_scale=1.2, grasp_proposal_mode='clearance-v2')
     system._skill('grasp')
     assert calls == [(native, system.controller, 4)]
     assert system.controller.speed_scale == 1.2
+    assert system.controller.mode == 'clearance-v2'
     assert system.stage_results['grasp']['source_action_calls'] == 3
     assert system.stage_results['grasp']['success']
 
@@ -165,6 +166,7 @@ def test_legacy_frozen_plans_preserve_4cm_reach_and_lift(bank, tmp_path, version
     plan = frozen_plan(bank, tmp_path)
     plan['version'] = version
     del plan['execution']['reach_tolerance_m']
+    del plan['execution']['grasp_proposal_mode']
     if version == LEGACY_PLAN_VERSION:
         del plan['execution']['grasp_lift_m']
     plan['plan_sha256'] = plan_digest(plan)
@@ -194,3 +196,23 @@ def test_reach_tolerance_is_mandatory_frozen_and_bounded(bank, tmp_path):
     changed['plan_sha256'] = plan_digest(changed)
     with pytest.raises(ValueError, match='execution settings'):
         verify_frozen_plan(changed, bank, allow_heldout=True)
+
+
+def test_proposal_mode_is_frozen_and_legacy_v3_stays_legacy(bank, tmp_path):
+    plan = frozen_plan(bank, tmp_path)
+    plan['execution']['grasp_proposal_mode'] = 'clearance-v2'
+    with pytest.raises(ValueError, match='digest'):
+        verify_frozen_plan(plan, bank, allow_heldout=True)
+    plan['plan_sha256'] = plan_digest(plan)
+    verify_frozen_plan(plan, bank, allow_heldout=True)
+    plan['execution']['grasp_proposal_mode'] = 'unregistered'
+    plan['plan_sha256'] = plan_digest(plan)
+    with pytest.raises(ValueError, match='proposal mode'):
+        verify_frozen_plan(plan, bank, allow_heldout=True)
+    plan['version'] = REACH_PLAN_VERSION
+    del plan['execution']['grasp_proposal_mode']
+    plan['plan_sha256'] = plan_digest(plan)
+    verify_frozen_plan(plan, bank, allow_heldout=True)
+    expanded = execution_settings(plan)
+    assert expanded['grasp_proposal_mode'] == 'legacy'
+    assert expanded['reach_tolerance_m'] == .10
