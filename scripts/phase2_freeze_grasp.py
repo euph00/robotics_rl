@@ -18,12 +18,19 @@ def main():
     if status['status']!='complete':raise ValueError('Only completed pilots may be frozen by this script')
     cfg=json.loads((run/'config.json').read_text())
     result=json.loads((run/'artifacts/result.json').read_text())
-    selected=json.loads((run/'checkpoints/best_online_evaluation.json').read_text())
-    sources={'grasp':run/'checkpoints/best_online.zip','grasp_final':run/'checkpoints/final.zip',
-             'grasp_zero_online':run/'checkpoints/initialized.zip'}
-    evaluated={'grasp':Path(selected['evaluation']).resolve(),
-        'grasp_final':run/'artifacts'/f"evaluation_final_{result['online_decisions']:07d}.json",
-        'grasp_zero_online':run/'artifacts/evaluation_initialized_zero_online.json'}
+    if result.get('stage')=='bc_only':
+        selected_update=result['initialization']['bc']['selected_update']
+        sources={'grasp':run/'checkpoints/bc_initialized.zip'}
+        evaluated={'grasp':run/'artifacts'/f'evaluation_bc_{selected_update:06d}.json'}
+        selection='Selected completed BC check; no critic calibration or online updates.'
+    else:
+        selected=json.loads((run/'checkpoints/best_online_evaluation.json').read_text())
+        sources={'grasp':run/'checkpoints/best_online.zip','grasp_final':run/'checkpoints/final.zip',
+                 'grasp_zero_online':run/'checkpoints/initialized.zip'}
+        evaluated={'grasp':Path(selected['evaluation']).resolve(),
+            'grasp_final':run/'artifacts'/f"evaluation_final_{result['online_decisions']:07d}.json",
+            'grasp_zero_online':run/'artifacts/evaluation_initialized_zero_online.json'}
+        selection='Best online validation success, then lowest mean goal distance.'
     records={}
     for name,path in sources.items():
         data,_,_=load_from_zip_file(path,device='cpu')
@@ -35,6 +42,7 @@ def main():
         records[name]={'online_decisions':int(data['num_timesteps']),
             'online_gradient_updates':int(data['_n_updates']),
             'critic_initialization_updates':cfg['warmup_updates'],'training_workers':cfg['workers'],
+            'physical_training_workers_created':0 if result.get('stage')=='bc_only' else cfg['workers'],
             'bc_weight':cfg['bc_weight'],'validation_success_rate':report['validation_success_rate'],
             'validation_mean_goal_distance':report['validation_mean_goal_distance'],
             'observation_shapes':{k:list(v.shape) for k,v in data['observation_space'].spaces.items()},
@@ -51,7 +59,8 @@ def main():
         with (target/name).open('xb') as writer:writer.write(content)
         provenance[name]={'source':str(path),'sha256':hashlib.sha256(content).hexdigest()}
     manifest={'kind':'frozen_grasp_candidate','run':str(run),'checkpoints':frozen,
-        'algorithm':cfg['algorithm'],'selection':'Best online validation success, then lowest mean goal distance.',
+        'algorithm':cfg['algorithm'],'selection':selection,
+        'actor_features':cfg.get('actor_features','full70'),'critic_features':70,
         'grasp_proposal_mode':cfg['grasp_proposal_mode'],'goal_lift_m':cfg['eval_lift_m'],
         'control_version':cfg['control_version'],'teacher_at_inference':False,
         'grasp_protocol_signature':cfg['grasp_protocol_signature'],'artifacts':provenance}

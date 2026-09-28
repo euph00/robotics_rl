@@ -27,6 +27,7 @@ from pnr.demonstrations import seed_replay
 from pnr.general_manipulation import GraspSchema, GeneralGraspFeatures, MultiObjectGrasp, make_grasp_case
 from pnr.sac_initialization import calibrate_actor_std, critic_only_warmup
 from pnr.regularized_sac import RegularizedSAC
+from pnr.grasp_actor_ablation import CompactGraspActorPolicy
 from pnr.telemetry import RunLogger, atomic_json
 from pnr.train import GracefulStop, ignore_worker_stop_signals
 
@@ -199,6 +200,16 @@ class Progress(BaseCallback):
                          'online_decisions': int(self.model.num_timesteps), 'records': records,
                          'accounting': self.accounting()})
             self.run_logger.update(evaluation_cases_completed=len(records), evaluation_cases_total=len(self.cases))
+        if len(records) != len(self.cases):
+            path = self.run_logger.directory/'artifacts'/f'evaluation_{label}_interrupted.json'
+            atomic_json(path, {'scope': 'multi_object_full_pregrasp', 'status': 'incomplete',
+                'online_decisions': int(self.model.num_timesteps), 'records': records,
+                'expected_cases': len(self.cases), 'completed_cases': len(records),
+                'validation_success_rate': None, 'validation_mean_goal_distance': None,
+                'accounting': self.accounting()})
+            self.run_logger.artifact('artifacts/'+path.name, 'Incomplete grasp evaluation '+label)
+            self.run_logger.update(evaluation_status='incomplete')
+            return -float('inf'), float('inf')
         validation = [r for r in records if r['partition'] == 'validation']
         train = [r for r in records if r['partition'] == 'train']
         rate = float(np.mean([r['success'] for r in validation])) if validation else 0.
@@ -208,6 +219,7 @@ class Progress(BaseCallback):
                            'teacher_at_inference': False, 'records': records,
                            'validation_success_rate': rate, 'validation_mean_goal_distance': distance})
         self.run_logger.artifact('artifacts/'+path.name, 'Physical grasp evaluation '+label)
+        self.run_logger.update(evaluation_status='complete')
         self.run_logger.metric(self.model.num_timesteps, scope='skill', metric_source='evaluation',
                                evaluation_scope='multi_object_full_pregrasp', success_rate=rate,
                                mean_goal_distance=distance, eval_episodes=len(validation),
@@ -280,6 +292,7 @@ def main():
     parser.add_argument('--workers', type=int, default=8)
     parser.add_argument('--steps', type=int, default=40000)
     parser.add_argument('--bc-updates', type=int, default=8000)
+    parser.add_argument('--bc-only', action='store_true', help='Stop after BC selection/physical check; no critic calibration or online environments')
     parser.add_argument('--bc-eval-every', type=int, default=4000)
     parser.add_argument('--warmup-updates', type=int, default=2000)
     parser.add_argument('--batch-size', type=int, default=400)
@@ -296,6 +309,8 @@ def main():
     parser.add_argument('--bc-weight', type=float, default=0., help='Positive enables explicitly labeled ongoing demonstration regularization')
     parser.add_argument('--demo-batch-size', type=int, default=400)
     parser.add_argument('--actor-checkpoint', type=Path, help='Transfer actor only; critics and all optimizers remain fresh')
+    parser.add_argument('--actor-features', choices=['full70','compact28'], default='full70',
+                        help='Opt-in compact relational actor; critic and world-coordinate actions stay unchanged')
     parser.add_argument('--lift-range', nargs=2, type=float, default=[.20, .20])
     parser.add_argument('--eval-lift-m', type=float, default=.20)
     parser.add_argument('--grasp-proposal-mode', choices=['legacy','clearance-v2'], default='legacy')
@@ -324,7 +339,8 @@ def main():
     evaluation_cases = [{'object_idx': index, 'scene_seed': seed, 'partition': 'validation'}
                         for index in objects for seed in args.validation_seeds]
     evaluation_cases += [{'object_idx': index, 'scene_seed': 42, 'partition': 'train'} for index in objects]
-    algorithm = 'SAC+HER+demonstration regularization' if args.bc_weight > 0 else 'BC-initialized SAC+HER'
+    algorithm = ('Behavior cloning initializer; zero online updates' if args.bc_only else
+                 'SAC+HER+demonstration regularization' if args.bc_weight > 0 else 'BC-initialized SAC+HER')
     logger = RunLogger(args.run_id, kind='train', skill='grasp', algorithm=algorithm,
                        name='Phase 2 · multi-object SAC + HER grasp', budget=args.steps,
                        summary='Balanced object/phase actor initialization and measured full-pregrasp validation before '+algorithm+'.')
@@ -347,14 +363,16 @@ def main():
         'training_cases': training_cases, 'evaluation_cases': evaluation_cases,
         'observation_version': 'antipodal-relative-grasp-v1', 'gamma': .99,
         'n_sampled_goal': 1, 'alpha_initial': .005, 'target_entropy': -8.,
-        'supervised_loss_during_online_training': args.bc_weight > 0, 'independent_final_study_seed': False,
+        'supervised_loss_during_online_training': args.bc_weight > 0 and not args.bc_only, 'independent_final_study_seed': False,
         'bc_selection': 'Best validation success then goal distance at declared initialization checks.',
         'online_collapse_rule': 'Stop after two checks below40% if BC initial success at least80%; retain outcomes.'})
-    protocol = {key: config[key] for key in ['observation_version','control_version','grasp_proposal_mode',
+    protocol = {key: config[key] for key in ['observation_version','control_version','grasp_proposal_mode','actor_features',
                 'lift_range','eval_lift_m','demonstration_teacher_approach_control','demonstrations_sha256']}
     protocol['semantic_sources'] = {name: source_hashes[name] for name in [
         'pnr/env.py','pnr/skills.py','pnr/general_manipulation.py','pnr/reference.py',
         'pnr/planning.py','pnr/local_control.py','pnr/clearance_grasps.py']}
+    if args.actor_features == 'compact28':
+        protocol['semantic_sources']['pnr/grasp_actor_ablation.py'] = source_hashes['pnr/grasp_actor_ablation.py']
     protocol['sha256'] = hashlib.sha256(json.dumps(protocol, sort_keys=True).encode()).hexdigest()
     config['grasp_protocol_signature'] = protocol
     atomic_json(logger.directory/'config.json', config)
@@ -366,7 +384,8 @@ def main():
     model_class = RegularizedSAC if args.bc_weight > 0 else SAC
     regularization = {'bc_weight': args.bc_weight, 'demo_batch_size': args.demo_batch_size,
                       'gradient_diagnostics_interval': 25} if args.bc_weight > 0 else {}
-    model = model_class('MultiInputPolicy', schema, **regularization, learning_rate=args.learning_rate, buffer_size=150000,
+    policy_class = CompactGraspActorPolicy if args.actor_features == 'compact28' else 'MultiInputPolicy'
+    model = model_class(policy_class, schema, **regularization, learning_rate=args.learning_rate, buffer_size=150000,
                 learning_starts=0, batch_size=args.batch_size, tau=.01, gamma=.99,
                 train_freq=1, gradient_steps=1, ent_coef='auto_0.005', target_entropy=-8.,
                 replay_buffer_class=HerReplayBuffer,
@@ -374,9 +393,29 @@ def main():
                 policy_kwargs={'net_arch': [128, 128], 'features_extractor_class': GeneralGraspFeatures},
                 device=args.device, seed=args.seed)
     model._pnr_grasp_protocol_signature = protocol
+    transfer_reference = transfer_observations = transfer_verification = None
     if args.actor_checkpoint:
         source_model = SAC.load(args.actor_checkpoint, env=schema, device=args.device)
+        if source_model.actor.features_extractor.features_dim != model.actor.features_extractor.features_dim:
+            raise ValueError('Actor transfer cannot cross feature contracts; start a fresh actor for the ablation')
+        if type(source_model.actor.features_extractor) is not type(model.actor.features_extractor):
+            raise ValueError('Actor transfer feature classes differ')
         model.actor.load_state_dict(source_model.actor.state_dict())
+        tensor_equal = all(torch.equal(value, model.actor.state_dict()[key])
+                           for key,value in source_model.actor.state_dict().items())
+        indices = np.linspace(0, len(actions)-1, min(1024,len(actions)), dtype=int)
+        transfer_observations = {key:value[indices] for key,value in obs.items()}
+        with torch.no_grad():
+            transfer_reference = source_model.actor(transfer_observations, deterministic=True).clone()
+            action_equal = torch.equal(transfer_reference, model.actor(transfer_observations, deterministic=True))
+        if not tensor_equal or not action_equal:
+            raise AssertionError('Actor-only transfer did not preserve its state and deterministic TRAIN actions')
+        transfer_verification = {'source':str(args.actor_checkpoint),
+            'source_sha256':config['actor_checkpoint_sha256'], 'all_actor_state_tensors_identical_after_copy':True,
+            'deterministic_actions_identical_after_copy':True,'training_probe_examples':len(indices),
+            'validation_examples_used':0,'actor_features':args.actor_features}
+        model._pnr_actor_transfer_verification = transfer_verification
+        atomic_json(artifacts/'actor_transfer_verification.json', transfer_verification)
         del source_model
     if args.bc_weight > 0:
         demo_manifest = model.set_demonstrations(obs, actions, groups, seed=args.seed)
@@ -428,7 +467,27 @@ def main():
                 'supervised_examples': update*args.batch_size,
                 'actor_transfer_source': str(args.actor_checkpoint) if args.actor_checkpoint else None,
                 'wall_seconds': time.monotonic()-started}
+            if args.bc_only:
+                model.save(checkpoints/'bc_initialized')
+                record = {'stage': 'bc_only', 'online_decisions': 0, 'online_gradient_updates': 0,
+                    'critic_initialization_updates': 0, 'initialization': progress.initialization,
+                    'accounting': progress.accounting(), 'algorithm': algorithm,
+                    'actor_features': args.actor_features, 'critic_features': 70}
+                atomic_json(artifacts/'result.json', serial(record))
+                atomic_json(checkpoints/'latest.json', serial({'model': 'bc_initialized.zip',
+                    'initialization': progress.initialization, 'accounting': progress.accounting(),
+                    'grasp_protocol_signature': protocol, 'stage': 'bc_only',
+                    'replay_collected': False, 'critic_calibration_completed': False}))
+                logger.artifact('artifacts/result.json', 'BC-only actor and fixed physical evaluation; zero online updates')
+                logger.finish(summary='Fresh '+args.actor_features+' BC initializer physically checked; no critic calibration or online training.')
+                return
             progress.initialization['std_calibration'] = calibrate_actor_std(model, -3.)
+            if transfer_verification is not None and args.bc_updates == 0:
+                with torch.no_grad():
+                    unchanged = torch.equal(transfer_reference, model.actor(transfer_observations, deterministic=True))
+                if not unchanged: raise AssertionError('Std calibration changed deterministic actor actions')
+                transfer_verification['deterministic_actions_identical_after_std_calibration'] = True
+                atomic_json(artifacts/'actor_transfer_verification.json', transfer_verification)
             model.save(checkpoints/'bc_initialized')
             logger.update(summary='Importing all measured demonstrations and calibrating fresh critics with actor fixed.')
             replay_metadata = seed_replay(model, args.demonstrations)
@@ -438,6 +497,13 @@ def main():
             progress.initialization['critic_warmup'] = critic_only_warmup(model, args.warmup_updates,
                 args.batch_size, learning_rate=3e-4, log_every=200,
                 on_log=lambda row: logger.metric(0, scope='actor_initialization', metric_source='critic_initialization', **row))
+            if transfer_verification is not None and args.bc_updates == 0:
+                with torch.no_grad():
+                    unchanged = torch.equal(transfer_reference, model.actor(transfer_observations, deterministic=True))
+                if not unchanged: raise AssertionError('Critic calibration changed deterministic actor actions')
+                transfer_verification['deterministic_actions_identical_after_critic_calibration'] = True
+                atomic_json(artifacts/'actor_transfer_verification.json', transfer_verification)
+                logger.artifact('artifacts/actor_transfer_verification.json', 'BC actor preserved before online updates')
             progress.evaluate('initialized_zero_online')
             progress.checkpoint('initialized')
             if stop.requested: return
