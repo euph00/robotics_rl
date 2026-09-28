@@ -199,7 +199,7 @@ function renderArtifacts(runs) {
   const featured=state?.project?.featured_run;
   const all=runs.filter(run=>run.id===selectedId || run.id===featured || !['stopped','failed','interrupted'].includes(run.status)).flatMap(run=>(run.artifacts||[])
     .filter(item=>!(/\.mp4$/i.test(item.path) && (run.artifacts||[]).some(candidate=>candidate.path===item.path.replace(/\.mp4$/i,'.webm')))).map(item=>({
-    ...item,run_id:run.id,run_name:displayName(run),poster:posterPath(run),recordingLabel:run.scope==='validation_diagnostics'?'Validation recording':'Historical recording',historical:run.id===featured && run.id!==selectedId,
+    ...item,run_id:run.id,run_name:displayName(run),poster:posterPath(run),recordingLabel:(run.scope||run.metrics?.scope)==='validation_diagnostics'?'Validation recording':'Historical recording',historical:run.id===featured && run.id!==selectedId,
     mp4:/\.webm$/i.test(item.path) ? (run.artifacts||[]).find(candidate=>candidate.path===item.path.replace(/\.webm$/i,'.mp4'))?.path : null,
   })));
   const priority=item=>item.run_id===selectedId?0:item.run_id===featured?1:2;
