@@ -17,7 +17,7 @@ def check(path):
     assert meta['protocol']=='multimaze-physical-geometric-recovery-v1' and meta['partition']=='train'
     bank=json.loads((ROOT/'configs/phase2_scene_bank.json').read_text())
     layouts={r['layout_id']:r for r in bank['partitions']['train']}
-    records=[];calls=ticks=0;max_error=0.
+    records=[];calls=ticks=0;max_error=0.;westward_positions=[]
     for ep in data['episodes']:
         layout=layouts[ep['layout_id']];assert layout['maze_hash']==ep['maze_hash']
         assert ep['collection_mode']=='geometric-recovery' and ep['original_exit_goal'] and not ep['full_route']
@@ -40,7 +40,11 @@ def check(path):
             reward=float(schema.compute_reward(row['next_observation']['achieved_goal'],goal,row['info']))
             error=abs(reward-row['reward']);max_error=max(max_error,error);assert error<1e-5
             calls+=row['info']['action_calls_delta'];ticks+=row['info']['physics_ticks_delta']
-            west+=int(row['observation']['achieved_goal'][0]*20>3.5 and row['teacher_action'][0]<-.5)
+            measured_x=float(row['observation']['achieved_goal'][0])*20
+            is_west=measured_x>3.5 and row['teacher_action'][0]<-.5
+            west+=int(is_west)
+            if is_west and ep['success'] and ep['recovery_kind']=='interior_branch':
+                westward_positions.append((measured_x,ep['layout_id']))
         records.append(dict(layout_id=ep['layout_id'],kind=ep['recovery_kind'],success=ep['success'],rows=len(rows),
                             interior_west_rows=west,start_xy=prep['actual_start_xy'],
                             preparation_decisions=prep['preparation_decisions'],
@@ -58,7 +62,14 @@ def check(path):
     attempts=[attempt for summary in meta['summaries'] for attempt in summary['recovery_attempts']]
     failed_preparation=[dict(layout_id=summary['layout_id'],**attempt)
         for summary in meta['summaries'] for attempt in summary['recovery_attempts'] if attempt['status']=='failed_preparation']
-    return dict(dataset_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),layouts=meta['layouts_completed'],
+    coverage=[]
+    for low in np.arange(3.5,17.5,1.):
+        matched=[(x,layout) for x,layout in westward_positions if low<=x<low+1.]
+        coverage.append(dict(x_low_m=float(low),x_high_m=float(low+1),bc_rows=len(matched),
+                             layout_ids=sorted({layout for _,layout in matched})))
+    west_x=[x for x,_ in westward_positions]
+    return dict(westward_x_range_m=[min(west_x),max(west_x)] if west_x else None,
+        westward_x_coverage=coverage,dataset_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),layouts=meta['layouts_completed'],
         episodes=len(records),successful_episodes=sum(r['success'] for r in records),
         transitions=sum(r['rows'] for r in records),attempts=len(attempts),failed_preparation=failed_preparation,
         interior_episodes=sum(r['kind']=='interior_branch' for r in records),
@@ -74,7 +85,7 @@ def main():
     if args.output.exists():parser.error('Use a fresh audit path')
     report=check(args.dataset);args.output.parent.mkdir(parents=True,exist_ok=True)
     args.output.write_text(json.dumps(report,indent=2,allow_nan=False)+'\n')
-    print(json.dumps({k:v for k,v in report.items() if k not in ('records','failed_preparation')}))
+    print(json.dumps({k:v for k,v in report.items() if k not in ('records','failed_preparation','westward_x_coverage')}))
     print(json.dumps({'failed_preparations':len(report['failed_preparation'])}))
 
 
