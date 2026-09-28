@@ -140,7 +140,8 @@ def main():
                     draw.text((12,8),text,fill='white',font=font);writer.append_data(np.asarray(canvas))
             try:
                 system=LearnedSystem(env,policies,grasp_horizon=args.grasp_horizon,
-                    carry_horizon=args.carry_horizon,reach_horizon=args.reach_horizon,on_step=observe)
+                    carry_horizon=args.carry_horizon,reach_horizon=args.reach_horizon,
+                    reach_tolerance_m=.04,on_step=observe)
                 result=system.run();result['episode']=episode
                 if env.step_count%5:
                     final_observation=env.observe();final_info=env.evaluate()
