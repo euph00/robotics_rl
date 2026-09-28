@@ -290,6 +290,8 @@ def main():
     parser.add_argument('--checkpoint-every', type=int, default=5000)
     parser.add_argument('--validation-seeds', nargs='+', type=int, default=[43001, 43002])
     parser.add_argument('--seed', type=int, default=8101)
+    parser.add_argument('--shuffle-training-cases', action='store_true',
+                        help='Seeded case order broadens physical coverage in short pilots; exact order is logged')
     parser.add_argument('--device', default='cpu')
     parser.add_argument('--bc-weight', type=float, default=0., help='Positive enables explicitly labeled ongoing demonstration regularization')
     parser.add_argument('--demo-batch-size', type=int, default=400)
@@ -312,6 +314,8 @@ def main():
     training_cases = [{'object_idx': r['object_idx'], 'scene_seed': r['scene_seed']}
                       for r in dataset['metadata']['cases'] if r['case_status'] == 'complete']
     training_cases.sort(key=lambda case: (case['scene_seed'], case['object_idx']))
+    if args.shuffle_training_cases:
+        random.Random(args.seed).shuffle(training_cases)
     if not training_cases or len(training_cases) < args.workers:
         raise ValueError('Need at least one prepared training case per worker')
     if set(args.validation_seeds) & {case['scene_seed'] for case in training_cases}:
