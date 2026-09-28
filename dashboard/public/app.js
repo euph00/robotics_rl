@@ -24,6 +24,7 @@ function renderProject(project) {
 const displayName = run => state?.project?.run_labels?.[run.id] || (number(run.metrics?.regularization?.bc_weight) ? `${run.skill || 'Policy'} · regularized SAC (weight ${run.metrics.regularization.bc_weight})` : (run.name || run.id));
 const supervisedUpdates = row => row?.bc_updates ?? row?.updates;
 const runAccounting = run => run?.metrics?.accounting || run?.accounting;
+const plannedCases = (run, row=run?.metrics) => row?.planned_cases ?? run?.planned_cases;
 
 function chartData(run) {
   const initialization=run?.kind==='initialization'||run?.metrics?.scope==='actor_initialization';
@@ -40,15 +41,16 @@ function chartData(run) {
   const rows=(run?.series||[]).filter(row=>number(row.success_rate) && row.success_rate>=0 && row.success_rate<=1);
   const scope=rows.length ? metricScope(rows[rows.length-1]) : null;
   const updates=initialization && rows.some(row=>number(supervisedUpdates(row)));
-  const value=row=>updates ? supervisedUpdates(row) : row.transitions;
+  const cases=run?.kind==='evaluation' && number(plannedCases(run,rows[rows.length-1]));
+  const value=row=>updates ? supervisedUpdates(row) : cases ? row.eval_episodes ?? row.completed_cases : row.transitions;
   const points=rows.filter(row=>metricScope(row)===scope && number(value(row)))
     .map(row=>({x:Number(value(row)),y:Number(row.success_rate)}));
   const scopeName=run?.kind==='reference' ? 'Physical reference' : scopeLabel(scope);
-  return {points,title:initialization?'Actor initialization':'Evaluation progress',ylabel:'Evaluation success',
-    scope:points.length ? `${scopeName} · ${points.length} measurements` : 'No measurements yet',
+  return {points,title:initialization?'Actor initialization':'Evaluation progress',ylabel:cases?'Completion / planned cases':'Evaluation success',
+    scope:points.length ? (cases ? `${scopeName} · fixed ${count(plannedCases(run,rows[rows.length-1]))}-case denominator` : `${scopeName} · ${points.length} measurements`) : 'No measurements yet',
     xCaption:initialization ? (updates||!points.length?'Supervised updates':'Physical evaluation calls') :
-      run?.kind==='reference'?'Native action calls':run?.kind==='train'?'Online policy decisions · demonstrations excluded':'Environment interactions',
-    xUnit:initialization?(updates?'supervised updates':'evaluation calls'):run?.kind==='train'?'online decisions':run?.kind==='reference'?'native calls':'interactions',
+      cases?'Evaluated cases':run?.kind==='reference'?'Native action calls':run?.kind==='train'?'Online policy decisions · demonstrations excluded':'Environment interactions',
+    xUnit:initialization?(updates?'supervised updates':'evaluation calls'):cases?'evaluated cases':run?.kind==='train'?'online decisions':run?.kind==='reference'?'native calls':'interactions',
     percentage:true};
 }
 
@@ -82,10 +84,12 @@ function renderEvaluation(run) {
   $('eval-scope').textContent = (number(success) || measured) ? scopeName : '';
   if (!number(success)) { $('evaluation').replaceChildren(el('p','Awaiting evaluated episodes.','empty')); return; }
   const episodes = values.eval_episodes ?? values.episodes;
-  const hero = el('div'); hero.append(el('div',percent(success),'hero-metric'),el('p', `${scopeName} success${number(episodes) ? ` · ${count(episodes)} episodes` : ''}`,'hero-label'));
+  const planned=plannedCases(run,values),denominator=number(planned)?planned:episodes;
+  const resultLabel=number(planned) ? `${scopeName} completion · ${count(success*planned)} / ${count(planned)} planned cases` : `${scopeName} success${number(episodes) ? ` · ${count(episodes)} episodes` : ''}`;
+  const hero = el('div'); hero.append(el('div',percent(success),'hero-metric'),el('p',resultLabel,'hero-label'));
   if (measured && run?.kind==='train' && number(measured.transitions)) hero.append(el('p',`Evaluated at ${count(measured.transitions)} online decisions · ${ago(measured.timestamp)}`,'run-summary'));
   const metrics = el('dl',undefined,'metric-grid');
-  const deadlineCount=value=>number(episodes)?`${count(value*episodes)} / ${count(episodes)}`:percent(value);
+  const deadlineCount=value=>number(denominator)?`${count(value*denominator)} / ${count(denominator)}`:percent(value);
   const candidates = [
     ['Within 15k · incl. settling',values.success_rate_within_deadline_including_initialization,deadlineCount],
     ['Within 15k · action only',values.success_rate_within_deadline,deadlineCount],
@@ -102,12 +106,13 @@ function renderEvaluation(run) {
 
 function progressValue(run) {
   if (run.kind==='initialization'||run.metrics?.scope==='actor_initialization') return {value:supervisedUpdates(run.metrics),unit:'supervised updates',budget:null};
+  if (run.kind==='evaluation' && number(plannedCases(run))) return {value:run.metrics?.eval_episodes ?? run.metrics?.completed_cases ?? 0,unit:'evaluated cases',budget:plannedCases(run)};
   const collection=run.metrics?.scope==='training_data' || ['demonstration','correction_collection'].includes(run.metrics?.metric_source);
   return {value:run.transitions||0,unit:run.kind==='train'?'online decisions':collection?'data collection decisions':'interactions',budget:run.kind==='train'?run.budget:null};
 }
 
 function renderRunProgress(run) {
-  if (!run) { $('selected-run').replaceChildren(el('span','Training has not started.')); return; }
+  if (!run) { $('selected-run').replaceChildren(el('span','Awaiting experiment registration.')); return; }
   const node=el('div'),copy=el('div',undefined,'progress-copy');
   const progress=progressValue(run),initialization=run.kind==='initialization';
   const progressText=number(progress.value) ? (number(progress.budget) ? `${compact(progress.value)} / ${compact(progress.budget)} ${progress.unit}` : `${count(progress.value)} ${progress.unit}`) : 'Supervised updates pending';
@@ -118,7 +123,7 @@ function renderRunProgress(run) {
     ['new online SAC decisions',accounting?.new_online_transitions],
     ['physical evaluation calls',accounting?.new_evaluation_source_action_calls ?? run.metrics?.source_action_calls],
     ['evaluation physics ticks',accounting?.new_evaluation_physics_ticks ?? run.metrics?.physics_ticks],
-  ] : [[run.kind==='train'?'training native calls':'native calls',run.metrics?.source_action_calls],['physics ticks',run.metrics?.physics_ticks],['updates',run.metrics?.updates]];
+  ] : [[run.kind==='train'?'training native calls':'native calls',run.metrics?.source_action_calls ?? (progress.unit==='evaluated cases'?run.transitions:undefined)],['physics ticks',run.metrics?.physics_ticks],['updates',run.metrics?.updates]];
   const measured=counts.filter(item=>number(item[1]));
   if (measured.length) node.append(el('p',measured.map(([label,value])=>`${count(value)} ${label}`).join(' · '),'run-summary'));
   if (run.kind==='train' && number(run.inherited_transitions)) {
@@ -159,15 +164,18 @@ function renderRuns(runs) {
     const row=el('tr'),name=el('td'),button=el('button',displayName(run),'run-name');button.addEventListener('click',()=>{selectedId=run.id;renderSelected();});name.append(button);
     const status=el('td'),badge=el('span',run.status||'pending','status'); if (/^[a-z]+$/.test(run.status||'')) badge.classList.add(run.status);status.append(badge);
     const progress=progressValue(run);
-    const value=number(progress.value)?`${count(progress.value)}${number(progress.budget)?' / '+compact(progress.budget):''}${run.kind==='initialization'?' BC updates':progress.unit==='data collection decisions'?' collection decisions':''}`:'—';
+    const value=number(progress.value)?`${count(progress.value)}${number(progress.budget)?' / '+compact(progress.budget):''}${run.kind==='initialization'?' BC updates':progress.unit==='data collection decisions'?' collection decisions':progress.unit==='evaluated cases'?' cases':''}`:'—';
     row.append(name,el('td',[run.skill,run.algorithm||(run.kind||'')].filter(Boolean).join(' · ')),status,el('td',value),el('td',ago(run.updated_at)));return row;
   }));
 }
 
 function renderSelected() {
   const runs=state?.runs||[];
-  if (!runs.some(run=>run.id===selectedId)) selectedId=runs.find(run=>run.kind==='train' && run.status==='running')?.id || runs[0]?.id || null;
-  $('run-select').replaceChildren(...(runs.length ? runs.map(run=>{const option=el('option',displayName(run));option.value=run.id;return option;}) : [el('option','No experiments yet')]));
+  const pending=selectedId && !runs.some(run=>run.id===selectedId) && state?.project?.run_labels?.[selectedId];
+  if (!pending && !runs.some(run=>run.id===selectedId)) selectedId=runs.find(run=>run.kind==='train' && run.status==='running')?.id || runs.find(run=>run.status==='running')?.id || runs[0]?.id || null;
+  const options=runs.map(run=>{const option=el('option',displayName(run));option.value=run.id;return option;});
+  if (pending) {const option=el('option',`${pending} · awaiting start`);option.value=selectedId;options.unshift(option);}
+  $('run-select').replaceChildren(...(options.length ? options : [el('option','No experiments yet')]));
   $('run-select').value=selectedId||'';
   if (selectedId && new URLSearchParams(location.search).get('run') !== selectedId) {
     const url=new URL(location.href);url.searchParams.set('run',selectedId);history.replaceState(null,'',url);
@@ -189,8 +197,9 @@ function posterPath(run) {
 
 function renderArtifacts(runs) {
   const featured=state?.project?.featured_run;
-  const all=runs.filter(run=>run.id===selectedId || run.id===featured || !['stopped','failed','interrupted'].includes(run.status)).flatMap(run=>(run.artifacts||[]).map(item=>({
-    ...item,run_id:run.id,run_name:displayName(run),poster:posterPath(run),
+  const all=runs.filter(run=>run.id===selectedId || run.id===featured || !['stopped','failed','interrupted'].includes(run.status)).flatMap(run=>(run.artifacts||[])
+    .filter(item=>!(/\.mp4$/i.test(item.path) && (run.artifacts||[]).some(candidate=>candidate.path===item.path.replace(/\.mp4$/i,'.webm')))).map(item=>({
+    ...item,run_id:run.id,run_name:displayName(run),poster:posterPath(run),historical:run.id===featured && run.id!==selectedId,
     mp4:/\.webm$/i.test(item.path) ? (run.artifacts||[]).find(candidate=>candidate.path===item.path.replace(/\.webm$/i,'.mp4'))?.path : null,
   })));
   const priority=item=>item.run_id===selectedId?0:item.run_id===featured?1:2;
@@ -204,7 +213,7 @@ function renderArtifacts(runs) {
     else if(item.kind==='image'||/\.(png|jpe?g|gif)$/i.test(item.path)){const image=el('img');image.src=url;image.alt=item.label||'Experiment visualization';image.loading='lazy';figure.append(image);}
     const caption=el('figcaption'),link=el('a',item.label||item.path);link.href=url;link.target='_blank';link.rel='noopener';caption.append(link);
     if(isVideoArtifact(item) && item.mp4){const download=el('a','MP4 download');download.href=artifactUrl(item.run_id,item.mp4);download.download=item.mp4.split('/').pop();caption.append(document.createTextNode(' · '),download);}
-    caption.append(el('br'),document.createTextNode(item.run_name));figure.append(caption);return figure;
+    caption.append(el('br'),document.createTextNode(`${isVideoArtifact(item) && item.historical?'Historical recording · ':''}${item.run_name}`));figure.append(caption);return figure;
   }));
 }
 

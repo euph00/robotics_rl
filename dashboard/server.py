@@ -30,11 +30,15 @@ REPORTS = {
     "phase2_diverse_carry_preparation.md": REPO / "docs/phase2_diverse_carry_preparation.md",
     "phase2_carry_return_audit.md": REPO / "docs/phase2_carry_return_audit.md",
     "phase2_candidate.json": REPO / "configs/phase2_candidate.json",
+    "phase2_confirmation_test01.md": REPO / "docs/phase2_confirmation_test01.md",
+    "phase2_confirmation_bank.md": REPO / "docs/phase2_confirmation_bank.md",
+    "phase2_actor_spatial_freeze.md": REPO / "docs/phase2_actor_spatial_freeze.md",
+    "phase2_candidate02.json": REPO / "configs/phase2_candidate02.json",
 }
 
 MEDIA_EXTENSIONS = {".mp4", ".webm", ".png", ".jpg", ".jpeg", ".gif", ".csv", ".json", ".txt", ".pdf"}
 STATE_KEYS = {"schema_version", "id", "name", "kind", "algorithm", "skill", "seed", "status", "started_at",
-              "updated_at", "finished_at", "transitions", "budget", "summary", "metrics", "artifacts", "accounting", "inherited_transitions"}
+              "updated_at", "finished_at", "transitions", "budget", "summary", "metrics", "artifacts", "accounting", "inherited_transitions", "planned_cases"}
 DEFAULT_PROJECT = {
     "schema_version": 1, "phase": "setup", "summary": "First milestone: one physically valid SAC + HER system.",
     "milestones": [{"id": key, "label": label, "status": "pending"} for key, label in (
@@ -156,8 +160,9 @@ def safe_report(name):
 def report_link(target, runs_root):
     if target in REPORTS and safe_report(target):
         return "/reports/" + quote(target)
-    if target == "../configs/phase2_candidate.json" and safe_report("phase2_candidate.json"):
-        return "/reports/phase2_candidate.json"
+    config_reports = {"../configs/" + name: name for name in ("phase2_candidate.json", "phase2_candidate02.json")}
+    if target in config_reports and safe_report(config_reports[target]):
+        return "/reports/" + config_reports[target]
     if target.startswith("../runs/"):
         parts = target.split("/", 3)
         if len(parts) == 4 and safe_artifact(runs_root, parts[2], parts[3]):

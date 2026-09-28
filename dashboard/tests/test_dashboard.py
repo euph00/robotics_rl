@@ -9,7 +9,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from dashboard.server import DashboardServer, get_runs, read_metrics, read_records, safe_artifact, safe_report, render_report
+from dashboard.server import DashboardServer, get_runs, read_metrics, read_records, safe_artifact, safe_report, report_link, render_report
 from pnr.telemetry import RunLogger, update_project
 
 
@@ -39,7 +39,7 @@ class DashboardTests(unittest.TestCase):
 
     def test_logger_round_trip_and_duplicate_guard(self):
         run = RunLogger("pilot-1", root=self.root, kind="train", skill="carry",
-                        inherited_transitions=40, accounting={"total_source_action_calls_known": 120})
+                        inherited_transitions=40, planned_cases=100, accounting={"total_source_action_calls_known": 120})
         run.metric(100, success_rate=0.2, episodes=5, scope="skill",
                    accounting={"total_source_action_calls_known": 300})
         run.event("Physical pickup verified")
@@ -47,6 +47,7 @@ class DashboardTests(unittest.TestCase):
         runs, events = get_runs(self.root)
         self.assertEqual(runs[0]["transitions"], 100)
         self.assertEqual(runs[0]["inherited_transitions"], 40)
+        self.assertEqual(runs[0]["planned_cases"], 100)
         self.assertEqual(runs[0]["metrics"]["accounting"]["total_source_action_calls_known"], 300)
         self.assertEqual(runs[0]["accounting"]["total_source_action_calls_known"], 120)
         self.assertEqual(runs[0]["status"], "complete")
@@ -93,6 +94,28 @@ class DashboardTests(unittest.TestCase):
             alias.symlink_to(report)
             with patch.dict("dashboard.server.REPORTS", {"alias.md": alias}):
                 self.assertIsNone(safe_report("alias.md"))
+
+    def test_confirmation_report_allowlist_and_escaped_links(self):
+        report = self.root / "confirmation.md"
+        candidate = self.root / "candidate02.json"
+        candidate.write_text('{"schema_version": 1}')
+        missing = self.root / "not_published.md"
+        report.write_text('[Candidate](../configs/phase2_candidate02.json)\n\n'
+                          '[Unpublished](phase2_confirmation_test01.md)\n\n'
+                          '[Private](../configs/secrets.json)\n\n'
+                          '[Unsafe](https://example.test/?q="onmouseover="alert)\n')
+        with patch.dict("dashboard.server.REPORTS", {"phase2_candidate02.json": candidate,
+                                                   "phase2_confirmation_test01.md": missing}):
+            self.assertEqual(report_link("../configs/phase2_candidate02.json", self.root),
+                             "/reports/phase2_candidate02.json")
+            self.assertIsNone(safe_report("phase2_confirmation_test01.md"))
+            self.assertIsNone(report_link("../configs/secrets.json", self.root))
+            self.assertIsNone(report_link("../configs/../configs/phase2_candidate02.json", self.root))
+            rendered = render_report(report, self.root).decode()
+            self.assertIn('href="/reports/phase2_candidate02.json"', rendered)
+            self.assertNotIn('href="phase2_confirmation_test01.md"', rendered)
+            self.assertNotIn('href="../configs/secrets.json"', rendered)
+            self.assertIn('&quot;onmouseover=&quot;', rendered)
 
     def test_server_api_static_media_ranges_and_traversal(self):
         run = RunLogger("pilot", root=self.root, kind="reference")
