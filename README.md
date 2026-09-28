@@ -12,6 +12,8 @@ The foundation is [NUS-LinS-Lab/Pick-Nav-Reach-Default-Project](https://github.c
 
 This is a **demonstration-assisted SAC + HER pilot**. Carry was refined with supervised demonstrations after its SAC checkpoint; later ordinary SAC updates did not retain the route. Stabilizing that continuation and the held-out algorithm/gripper comparison remain next-stage work. Planned pregrasp and carry-posture assistance are declared; learned navigation receives no route waypoints or teacher corrections.
 
+Current development uses `scripts/phase2_*` for diverse-maze and multi-object training. Superseded one-off trainers and diagnostics were removed after Git snapshot `7650b3e`; recover them from that revision when reproducing historical runs. Small feature modules needed to load frozen milestone-1 policies remain.
+
 ## Environment
 
 Run commands from the repository root. This host already has the Python 3.10 environment and dependencies:
