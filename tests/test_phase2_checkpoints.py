@@ -45,7 +45,8 @@ def method():
     result={key:0 for key in METHOD_FIELDS}
     result.update(workers=2,layouts=2,seed=37,horizon=6,delta_scale=.075,batch_size=8,
         learning_rate=3e-4,gamma=.995,shaping_weight=2.,target_entropy=-4.,n_sampled_goal=1,
-        demonstrations_sha256='d'*64,scene_bank_sha256='b'*64,buffer_size=128)
+        demonstrations_sha256='d'*64,scene_bank_sha256='b'*64,buffer_size=128,
+        preparation_mode='reference',preparation_grasp_sha256=None,preparation_settings=None,training_cases_sha256=None)
     return result
 
 
@@ -286,3 +287,61 @@ def test_object_sampling_mode_is_resume_checked_and_legacy_defaults_unbalanced(b
     for before,after in [(old,balanced),(balanced,old)]:
         with pytest.raises(ValueError,match='balance_objects'):
             check_signature(before,after)
+
+
+def test_learned_preparation_pins_grasp_cases_settings_and_sources(bundle):
+    from pnr.phase2_checkpoints import PREPARATION_FIELDS,check_signature
+    _,_,_,source,config,sig=bundle
+    old=copy.deepcopy(sig)
+    for key in PREPARATION_FIELDS:old['method'].pop(key)
+    check_signature(old,sig)
+    for name in ('learned_carry','system','general_manipulation','skills','clearance_grasps','policies','features','grasp_actor_ablation'):
+        (source/f'pnr/{name}.py').write_text('# fixed preparation source\n')
+    learned=dict(config,preparation_mode='learned-grasp',preparation_grasp_sha256='g'*64,
+        preparation_settings={'lift_m':.24,'restore_calls':5},training_cases_sha256='c'*64)
+    signature_one=signature(learned,source)
+    assert 'pnr/learned_carry.py' in signature_one['semantic_sources']
+    assert 'pnr/learned_carry.py' not in sig['semantic_sources']
+    for key,value in [('preparation_grasp_sha256','h'*64),('training_cases_sha256','x'*64),
+                      ('preparation_settings',{'lift_m':.24,'restore_calls':0})]:
+        with pytest.raises(ValueError,match=key):
+            check_signature(signature_one,signature(dict(learned,**{key:value}),source))
+    (source/'pnr/learned_carry.py').write_text('# altered preparation semantics\n')
+    with pytest.raises(ValueError,match='learned_carry'):
+        check_signature(signature_one,signature(learned,source))
+    with pytest.raises(ValueError,match='immutable'):
+        signature(dict(learned,training_cases_sha256=None),source)
+
+
+def test_replay_object_sampling_is_signature_checked_and_legacy_compatible(bundle):
+    from pnr.phase2_checkpoints import check_signature
+    _,_,_,source,config,sig=bundle
+    old=copy.deepcopy(sig);old['method'].pop('balance_replay_objects')
+    check_signature(old,sig)
+    (source/'pnr/object_balanced_her.py').write_text('# object-balanced HER source\n')
+    balanced=signature(dict(config,balance_replay_objects=True),source)
+    assert 'pnr/object_balanced_her.py' in balanced['semantic_sources']
+    with pytest.raises(ValueError,match='balance_replay_objects'):
+        check_signature(old,balanced)
+
+
+def test_resume_replay_class_and_declared_objects_are_validated(bundle):
+    from pnr.object_balanced_her import ObjectBalancedHerReplayBuffer
+    model,_,logger,_,_,sig=bundle
+    checkpoint=load_checkpoint(logger.directory,sig)
+    checkpoint['state']['resume_signature']['method']['balance_replay_objects']=True
+    with pytest.raises(ValueError,match='replay class'):
+        validate_loaded_model(model,checkpoint,2)
+    replacement=ObjectBalancedHerReplayBuffer(128,model.observation_space,model.action_space,
+        n_envs=2,env=model.env,device='cpu',copy_info_dict=True,n_sampled_goal=1,object_indices=[14,5,2,7,10])
+    replacement.pos=checkpoint['state']['replay_position']
+    replacement._current_ep_start[:]=replacement.pos
+    model.replay_buffer=replacement
+    validate_loaded_model(model,checkpoint,2)
+    checkpoint['state']['resume_signature']['method']['balance_replay_objects']=False
+    with pytest.raises(ValueError,match='replay class'):
+        validate_loaded_model(model,checkpoint,2)
+    checkpoint['state']['resume_signature']['method']['balance_replay_objects']=True
+    replacement.object_indices=(14,5,2,7)
+    with pytest.raises(ValueError,match='five declared objects'):
+        validate_loaded_model(model,checkpoint,2)

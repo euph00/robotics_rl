@@ -61,3 +61,28 @@ identity is sampling metadata only, never added to the policy observation.
 Resume validation checks this sampling mode; old runs default to unbalanced.
 Twenty-four merge/checkpoint tests pass, including unchanged default behavior,
 failed-label exclusion, explicit object admission and sampling-mode mismatch.
+
+
+The five-object learned-handover union now contains503,901 transitions from1,795
+real episodes. `phase2_carry_learned_init01` refines the expanded actor with8,000
+object-balanced BC batches and no online decisions; isolated reference-prepared
+navigation remains12/12. Its full uninterrupted validation is evaluated
+separately. The archive retains all18 physical failure endpoints.
+
+The next declared branch uses this frozen actor, fresh critics with2,000
+warmup updates (tau0.1), and weight100 continuing demonstration regularization.
+Both BC and original HER transition sampling give each of the five objects
+20% probability. This corrects the merged buffer's96.1% foam exposure without
+changing goal relabeling, rewards, physics or observations. The online worlds
+use the first eight fixed TRAIN layouts crossed with all five objects and the
+frozen clearance01 grasp. Every preparation failure and physical cost remains
+recorded; a worker or object with no valid handover stops training. Restored
+states receive the declared, counted five-call physical contact refresh.
+The initial budget is40,000 online decisions, with checkpoints every8,000.
+Reference-prepared navigation remains a diagnostic; full-task validation is
+needed to assess object retention and select a system candidate.
+
+Preparation checkpoint SHA, settings, exact ordered cases, replay class and
+sampling mode are resume-checked.41 focused replay, seeding, checkpoint and
+learned-cache tests cover this integration. This remains SAC+HER with continuing
+demonstration-action regularization, not ordinary unregularized SAC.

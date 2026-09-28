@@ -25,7 +25,7 @@ from stable_baselines3.common.logger import configure
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from pnr.general_carry import GeneralCarryEnv
 from pnr.multi_carry import CarrySchema, MultiSceneCarry
-from pnr.scenes import load_scene_bank, scene_records
+from pnr.scenes import load_scene_bank, scene_records, case_specs
 from pnr.spatial_features import CarrySpatialExtractor
 from pnr.navigation_features import NavigationSpatialExtractor
 from pnr.sac_initialization import calibrate_actor_std,critic_only_warmup
@@ -230,6 +230,10 @@ def main():
     p.add_argument('--validation-layouts',type=int,default=4)
     p.add_argument('--navigation-only',action='store_true')
     p.add_argument('--balance-objects',action='store_true',help='Uniform TRAIN-object BC sampling before per-object direction strata')
+    p.add_argument('--balance-replay-objects',action='store_true',help='Uniform original-object sampling before standard HER relabeling')
+    p.add_argument('--preparation-grasp',help='Opt-in frozen learned grasp for conditional five-object carry training')
+    p.add_argument('--training-layouts',type=int,help='Number of first selected TRAIN layouts used for learned handovers; default8')
+    p.add_argument('--training-objects',type=int,nargs='+',default=[14,5,2,7,10])
     p.add_argument('--buffer-size',type=int,default=100000)
     p.add_argument('--bc-weight',type=float,default=0.);p.add_argument('--demo-batch-size',type=int,default=256)
     args=p.parse_args()
@@ -242,21 +246,43 @@ def main():
         if Path(args.resume_run).name!=args.resume_run:p.error('Use a run ID for --resume-run')
         parent_config=json.loads((ROOT/'runs'/args.resume_run/'config.json').read_text())
         explicit={token.split('=')[0] for token in sys.argv[1:] if token.startswith('--')}
-        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts','navigation_only','buffer_size','critic_warmup_tau','balance_objects'):
+        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts','navigation_only','buffer_size','critic_warmup_tau','balance_objects','preparation_grasp','training_layouts','training_objects','balance_replay_objects'):
             if '--'+key.replace('_','-') not in explicit:setattr(args,key,parent_config.get(key,getattr(args,key)))
+        if '--preparation-grasp' not in explicit and parent_config.get('frozen_preparation_grasp'):
+            args.preparation_grasp=parent_config['frozen_preparation_grasp']
         if args.critic_warmup_tau!=parent_config.get('critic_warmup_tau',.01):
             p.error('Cannot change completed critic-warmup provenance on resume')
     if not args.demonstrations:p.error('--demonstrations required for a fresh run')
     if args.buffer_size<1:p.error('--buffer-size must be positive')
+    if args.balance_replay_objects and not args.preparation_grasp:p.error('Object-balanced replay requires declared learned five-object handover training')
     if args.workers>args.layouts:p.error('Each worker needs at least one selected layout')
     torch.set_num_threads(1);np.random.seed(args.seed);random.seed(args.seed);torch.manual_seed(args.seed)
-    bank=load_scene_bank(args.bank);layouts=scene_records(bank,'train')[:args.layouts]
+    bank=load_scene_bank(args.bank);available_layouts=scene_records(bank,'train')
+    if not 1<=args.layouts<=len(available_layouts):p.error('Selected layout count must fit the frozen TRAIN partition')
+    layouts=available_layouts[:args.layouts]
+    preparation_cases=None;preparation_settings=None;preparation_sha=None;cases_sha=None
+    if args.preparation_grasp:
+        from pnr.learned_carry import PREPARATION_SETTINGS, CACHE_RESTORE_SETTINGS
+        args.training_layouts=min(8,args.layouts) if args.training_layouts is None else args.training_layouts
+        if not 1<=args.training_layouts<=len(layouts):p.error('Learned preparation layout count must fit selected TRAIN layouts')
+        if set(args.training_objects)!={14,5,2,7,10} or len(args.training_objects)!=5:p.error('Learned handovers require all five declared original objects')
+        selected_ids={layout['layout_id'] for layout in layouts[:args.training_layouts]}
+        preparation_cases=[case for case in case_specs(bank,'train',object_indices=args.training_objects) if case['layout_id'] in selected_ids]
+        if len(preparation_cases)<args.workers:p.error('Every worker needs at least one declared learned-handover case')
+        preparation_settings=dict(PREPARATION_SETTINGS,cache_restore=dict(CACHE_RESTORE_SETTINGS))
+        if args.delta_scale!=preparation_settings['carry_delta_scale']:p.error('Learned preparation requires its frozen carry action scale')
+        preparation_sha=hashlib.sha256(Path(args.preparation_grasp).read_bytes()).hexdigest()
+        cases_sha=hashlib.sha256(json.dumps(preparation_cases,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    elif args.training_layouts is not None:p.error('--training-layouts requires --preparation-grasp')
     validation=scene_records(bank,'validation')[:args.validation_layouts]
     if not 1<=args.validation_layouts<=len(scene_records(bank,'validation')):p.error('Invalid validation layout count')
-    config=dict(vars(args),gamma=.995,shaping_weight=2.,alpha_initial=.005,target_entropy=-4.,online_tau=.01,
+    config=dict(vars(args),preparation_mode='learned-grasp' if preparation_cases else 'reference',
+        preparation_grasp_sha256=preparation_sha,preparation_settings=preparation_settings,training_cases_sha256=cases_sha,
+        carry_training_scope='conditional on physically prepared learned grasp; failures and costs retained' if preparation_cases else 'reference-prepared foam',
+        gamma=.995,shaping_weight=2.,alpha_initial=.005,target_entropy=-4.,online_tau=.01,
         n_sampled_goal=1,demonstrations_sha256=hashlib.sha256(Path(args.demonstrations).read_bytes()).hexdigest(),
         scene_bank_sha256=bank['manifest_sha256'],supervised_loss_during_online_training=args.bc_weight>0,
-        independent_final_study_seed=False,scene_cache_policy='prime all assigned physical scenes once before learning',critic_initialization='fresh with fixed-actor Bellman warmup',
+        independent_final_study_seed=False,scene_cache_policy='prime declared learned handovers once; counted restore hold before each full-goal episode' if preparation_cases else 'prime all assigned physical scenes once before learning',critic_initialization='fresh with fixed-actor Bellman warmup',
         gpu_numerics='cuDNN benchmark enabled; non-bitwise GPU training; float32 matmul high',
         initial_checkpoint_sha256=None if not args.initial_checkpoint else hashlib.sha256(Path(args.initial_checkpoint).read_bytes()).hexdigest())
     current_signature=signature(config,ROOT)
@@ -270,6 +296,13 @@ def main():
         transitions=inherited,name=f'Carry · regularized SAC (weight {args.bc_weight:g})' if args.bc_weight>0 else 'Spatial multi-maze SAC + HER',
         summary='Resuming ordinary SAC+HER.' if resumed else 'Initializing map-aware actor from diverse physical demonstrations.')
     (logger.directory/'artifacts').mkdir();(logger.directory/'checkpoints').mkdir();archive_sources(logger.directory)
+    frozen_grasp=None
+    if preparation_cases is not None:
+        frozen_grasp=logger.directory/'artifacts/preparation_grasp.zip'
+        shutil.copy2(args.preparation_grasp,frozen_grasp)
+        if hashlib.sha256(frozen_grasp.read_bytes()).hexdigest()!=preparation_sha:raise ValueError('Preparation grasp changed while freezing')
+        atomic_json(logger.directory/'artifacts/training_cases.json',{'cases':preparation_cases,'sha256':cases_sha,'settings':preparation_settings})
+        config['frozen_preparation_grasp']=str(frozen_grasp.resolve())
     atomic_json(logger.directory/'config.json',config)
     dataset=pickle.loads(Path(args.demonstrations).read_bytes())
     allowed={l['maze_hash'] for l in layouts}
@@ -284,6 +317,12 @@ def main():
         obs={key:torch.as_tensor(np.stack([r['observation'][key] for r in rows]),device=args.device) for key in CarrySchema().observation_space.spaces}
         targets=torch.as_tensor(np.stack([r['teacher_action'] for r in rows]),device=args.device)
     schema=DummyVecEnv([lambda:CarrySchema() for _ in range(args.workers)])
+    replay_class=HerReplayBuffer
+    replay_kwargs={'n_sampled_goal':1,'goal_selection_strategy':'future','copy_info_dict':True}
+    if args.balance_replay_objects:
+        from pnr.object_balanced_her import ObjectBalancedHerReplayBuffer
+        replay_class=ObjectBalancedHerReplayBuffer
+        replay_kwargs['object_indices']=list(args.training_objects)
     if resumed is not None:
         model=learner.load(resumed['model'],env=schema,device=args.device)
         model.load_replay_buffer(resumed['replay'],truncate_last_traj=True)
@@ -291,8 +330,7 @@ def main():
     else:
         model=learner('MultiInputPolicy',schema,learning_rate=args.learning_rate,buffer_size=args.buffer_size,
             learning_starts=0,batch_size=args.batch_size,tau=.01,gamma=.995,train_freq=1,gradient_steps=1,
-            ent_coef='auto_0.005',target_entropy=-4.,replay_buffer_class=HerReplayBuffer,
-            replay_buffer_kwargs={'n_sampled_goal':1,'goal_selection_strategy':'future','copy_info_dict':True},
+            ent_coef='auto_0.005',target_entropy=-4.,replay_buffer_class=replay_class,replay_buffer_kwargs=replay_kwargs,
             policy_kwargs={'net_arch':[128,128],'features_extractor_class':NavigationSpatialExtractor if args.navigation_only else CarrySpatialExtractor,
                 'features_extractor_kwargs':{'features_dim':128,'channels':32}},device=args.device,seed=args.seed)
         if args.initial_checkpoint:
@@ -356,10 +394,14 @@ def main():
                 logger.update(summary='Measuring initialized actor on training and separate validation layouts.')
                 callback.evaluate('bc_zero_online')
                 logger.update(summary='Seeding real HER replay and fitting fresh critics with actor fixed.')
-                callback.initialization['demonstrations']=seed_replay(model,args.demonstrations)
+                callback.initialization['demonstrations']=seed_replay(model,args.demonstrations,object_labels=args.balance_replay_objects)
+                if args.balance_replay_objects:
+                    callback.initialization['replay_sampling_before_warmup']=model.replay_buffer.sampling_report()
                 callback.initialization['critic']=critic_only_warmup(model,args.warmup_updates,args.batch_size,
                     learning_rate=3e-4,warmup_tau=args.critic_warmup_tau,log_every=200,
                     on_log=lambda row:logger.metric(0,scope='actor_initialization',metric_source='critic_initialization',**row))
+                if args.balance_replay_objects:
+                    callback.initialization['replay_sampling_after_warmup']=model.replay_buffer.sampling_report()
                 callback.checkpoint('initialized')
                 if stop.requested:return
                 if args.steps==0:
@@ -373,7 +415,13 @@ def main():
                     return
             parent_pid=os.getpid()
             def make(index):
+                torch.set_num_threads(1)
                 ignore_worker_stop_signals(parent_pid)
+                if preparation_cases is not None:
+                    from pnr.learned_carry import LearnedMultiCaseCarry
+                    return LearnedMultiCaseCarry(preparation_cases[index::args.workers],grasp_checkpoint=str(frozen_grasp.resolve()),
+                        grasp_sha256=preparation_sha,seed=args.seed+index,episodes_per_case=1,
+                        horizon=args.horizon,delta_scale=args.delta_scale)
                 return MultiSceneCarry(layouts[index::args.workers],seed=args.seed+index,cache_size=4,
                     episodes_per_scene=4,horizon=args.horizon,delta_scale=args.delta_scale)
             physical=SubprocVecEnv([lambda i=i:make(i) for i in range(args.workers)],start_method='spawn')
@@ -388,6 +436,12 @@ def main():
             logger.update(summary='Preparing all training scenes in parallel; each physical setup is counted.')
             priming=physical.env_method('prime_cache')
             atomic_json(logger.directory/'artifacts/scene_cache_setup.json',plain(priming))
+            if preparation_cases is not None:
+                counts={str(obj):sum(int(row['valid_object_counts'].get(str(obj),0)) for row in priming) for obj in args.training_objects}
+                atomic_json(logger.directory/'artifacts/preparation_coverage.json',{'declared_cases':len(preparation_cases),
+                    'valid_object_counts':counts,'all_declared_failures_retained':True,'full_task_success':False})
+                if any(not row.get('ready_for_training',False) for row in priming):raise RuntimeError('A learned-handover worker has no valid prepared case; see persisted priming reports')
+                if any(count==0 for count in counts.values()):raise RuntimeError('No valid learned handover for a declared object: '+str(counts))
             if resumed is not None:
                 restore_rng(resumed['rng'])
                 callback.checkpoint('resumed_before_additional_online')
@@ -401,7 +455,8 @@ def main():
             atomic_json(logger.directory/'artifacts/result.json',plain({'status':'stopped' if stop.requested else 'complete',
                 'online_decisions':model.num_timesteps,'online_updates':model._n_updates,'initialization':callback.initialization,
                 'accounting':callback.accounting(),'ancestry':callback.ancestry,'inherited_accounting':callback.inherited_accounting,
-                'best_checkpoint':callback.best_checkpoint,'best_validation':callback.best if np.isfinite(callback.best[1]) else None}))
+                'best_checkpoint':callback.best_checkpoint,'best_validation':callback.best if np.isfinite(callback.best[1]) else None,
+                'replay_sampling':model.replay_buffer.sampling_report() if args.balance_replay_objects else None}))
             logger.artifact('artifacts/result.json','Training and accounting result')
             logger.finish('stopped' if stop.requested else 'complete','Bounded multi-maze SAC+HER experiment finished; see validation results.')
         except BaseException as exc:

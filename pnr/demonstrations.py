@@ -7,7 +7,7 @@ import pickle
 import numpy as np
 
 
-def seed_replay(model, path):
+def seed_replay(model, path, *, object_labels=False):
     """Import a trusted local dataset into a fresh vector HER replay buffer.
 
     Whole demonstration episodes are assigned to worker streams. Only real
@@ -30,15 +30,24 @@ def seed_replay(model, path):
         if not (transitions[-1]['terminated'] or transitions[-1]['truncated']):
             raise ValueError('Dataset episodes must end explicitly')
         stream=min(streams,key=len)
-        stream.extend(transitions)
+        if object_labels:
+            obj=episode.get('object_idx')
+            if isinstance(obj,bool) or not isinstance(obj,(int,np.integer)) or not 0<=obj<15:
+                raise ValueError('Object-balanced replay needs each real episode original object_idx')
+            source=str(episode.get('collection_mode','demonstration'))
+            stream.extend((row,int(obj),source) for row in transitions)
+        else:
+            stream.extend(transitions)
     length=min(map(len,streams))
     if not length:
         raise ValueError('Need at least one physical episode per vector worker')
     if length>=replay.buffer_size:
         raise ValueError('Seed data must fit the configured replay capacity')
     action_calls=physics_ticks=collector_timeouts=0
+    imported_objects={}
     for index in range(length):
-        records=[stream[index] for stream in streams]
+        entries=[stream[index] for stream in streams]
+        records=[entry[0] for entry in entries] if object_labels else entries
         observations={key:np.stack([record['observation'][key] for record in records]).astype(np.float32)
                       for key in model.observation_space.spaces}
         following={key:np.stack([record['next_observation'][key] for record in records]).astype(np.float32)
@@ -52,6 +61,11 @@ def seed_replay(model, path):
             if not np.isfinite(observations[key]).all() or not np.isfinite(following[key]).all():
                 raise ValueError('Nonfinite demonstration observation')
         infos=[dict(record['info']) for record in records]
+        if object_labels:
+            for info,(_,obj,source) in zip(infos,entries):
+                if 'object_idx' in info and info['object_idx']!=obj:raise ValueError('Transition and episode object labels disagree')
+                info.update(object_idx=obj,replay_source=source)
+                imported_objects[str(obj)]=imported_objects.get(str(obj),0)+1
         dones=np.array([record['terminated'] or record['truncated'] for record in records],dtype=bool)
         for worker,(record,info) in enumerate(zip(records,infos)):
             timeout=bool(record['truncated'] and not record['terminated'])
@@ -72,7 +86,8 @@ def seed_replay(model, path):
         'transitions_collected':available,'transitions_imported':length*model.n_envs,
         'transitions_omitted_from_replay':available-length*model.n_envs,
         'imported_source_action_calls':action_calls,'imported_physics_ticks':physics_ticks,
-        'collector_timeouts':collector_timeouts,
+        'collector_timeouts':collector_timeouts,'object_labels_added':bool(object_labels),
+        'imported_object_transition_counts':imported_objects,
         'teacher_at_evaluation':False,'hindsight_at_evaluation':False,'reward_roundoff_atol':1e-5}
 
 
