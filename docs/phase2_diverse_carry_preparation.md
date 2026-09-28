@@ -49,3 +49,25 @@ This tests training duration separately from the broader-data branch. Full-task
 validation is planned at total 80k, 120k and 200k decisions; every attempted case
 and timed result will be retained. Neither run is a new independent final-study
 seed.
+
+The completed collection retained 230/240 handovers and 175/230 teacher
+transports. Deterministic, first sampled and second sampled variants completed
+60/80, 64/80 and 51/80 declared routes respectively. Sampling therefore supplies
+diversity; it is not established as a better inference strategy. All ten failed
+preparations and 55 carry-loss episodes remain recorded. Independent auditing
+matched every replay row to its raw preparation shard and 13,263 measured trace
+endpoints; all seeds, actor digests, native counters and 2,976,075 physics ticks
+reconciled (`phase2_diverse_collection_audit01`).
+
+The merged dataset contains 576,522 rows in 2,025 episodes (SHA256
+`3bd28e114176be0c4d1a24dd33e11785a31df65f13c14587d04330a2caefd10a`).
+`phase2_carry_diverse01` uses the same zero-online actor initializer, no additional
+BC updates, 2,000 fresh-critic warmup updates, object-balanced HER, and continuing
+BC weight100. Its fixed budget is 200,000 online decisions, with full60 validation
+at40k,120k and200k. The replay capacity is800k to hold the broader data and online
+experience. No inference action, observation or reward contract changes.
+
+Preparation-source balancing was rejected: at40k it completed46/60 tasks,
+43/60 within15k ticks including settling, versus51/60 and47/60 for object-only
+balancing. Its8k endpoint was also worse. The diverse-data branch retains
+object-only replay balancing.
