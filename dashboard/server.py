@@ -240,7 +240,7 @@ class Handler(BaseHTTPRequestHandler):
             project = dict(DEFAULT_PROJECT)
             raw = read_json(self.server.runs_root / "project.json")
             if raw:
-                project.update({key: raw[key] for key in ("schema_version", "phase", "summary", "milestones", "updated_at", "run_labels") if key in raw})
+                project.update({key: raw[key] for key in ("schema_version", "phase", "summary", "milestones", "updated_at", "run_labels", "featured_run") if key in raw})
             runs, events = get_runs(self.server.runs_root)
             state = {"timestamp": utcnow(), "project": project, "runs": runs, "events": events,
                      "resources": self.server.resources.get()}

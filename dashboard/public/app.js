@@ -185,11 +185,13 @@ function posterPath(run) {
 }
 
 function renderArtifacts(runs) {
-  const all=runs.filter(run=>!['stopped','failed','interrupted'].includes(run.status)).flatMap(run=>(run.artifacts||[]).map(item=>({
-    ...item,run_id:run.id,run_name:run.name||run.id,poster:posterPath(run),
+  const featured=state?.project?.featured_run;
+  const all=runs.filter(run=>run.id===selectedId || run.id===featured || !['stopped','failed','interrupted'].includes(run.status)).flatMap(run=>(run.artifacts||[]).map(item=>({
+    ...item,run_id:run.id,run_name:displayName(run),poster:posterPath(run),
     mp4:/\.webm$/i.test(item.path) ? (run.artifacts||[]).find(candidate=>candidate.path===item.path.replace(/\.webm$/i,'.mp4'))?.path : null,
   })));
-  const rank=item=>item.kind==='video'?(item.run_id===selectedId?0:1):item.kind==='image'?(item.run_id===selectedId?2:3):4;
+  const priority=item=>item.run_id===selectedId?0:item.run_id===featured?1:2;
+  const rank=item=>isVideoArtifact(item)?priority(item):item.kind==='image'?3+priority(item):6;
   const items=all.sort((a,b)=>rank(a)-rank(b)).slice(0,6);
   const key=JSON.stringify(items);if(key===artifactKey)return;artifactKey=key;
   if(!items.length){$('artifacts').replaceChildren(el('p','Reference and learned-policy recordings will appear here.','empty'));return;}

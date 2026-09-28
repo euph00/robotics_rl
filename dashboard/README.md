@@ -50,7 +50,7 @@ runs/
 
 | File | Fields |
 | --- | --- |
-| `project.json` | `schema_version: 1`, `updated_at` (UTC ISO), `phase`, `summary`, `milestones: [{id, label, status}]` |
+| `project.json` | `schema_version: 1`, `updated_at` (UTC ISO), `phase`, `summary`, `milestones: [{id, label, status}]`; optional `run_labels` and `featured_run` |
 | `status.json` | `schema_version: 1`, `id`, `name`, `kind`, `algorithm`, `skill`, `seed`, `status`, `started_at`, `updated_at`, `finished_at`, `transitions`, `budget`, `summary`, `metrics`, `artifacts: [{label, path, kind}]` |
 | `metrics.jsonl` | One object per row: `timestamp`, `transitions`, numeric metrics, optional `scope`. `success_rate` is a fraction in `[0,1]`. |
 | `events.jsonl` | One object per row: `timestamp`, `level`, `message` |
@@ -64,3 +64,5 @@ Accounting uses the latest `metrics.accounting`, falling back to top-level `acco
 Success charts only join points with the latest evaluation's scope. JSONL is preferred; `metrics.csv` with the same column names is accepted when JSONL is absent. Rows are bounded to a 2 MiB tail and the chart is downsampled to at most 240 measurements.
 
 `GET /api/state` returns project state, runs, event tail, and cached host resources. Only the three bundled public files and registered run artifact directories are exposed; directory listings, arbitrary repo files, traversal, escaped symlinks, and write methods are unavailable. Media types are restricted, and video byte ranges support seeking. Resource measurements include all host jobs; they are not exclusive allocations.
+
+`featured_run` places that run’s video after any explicitly selected run’s video. Run labels also appear in media captions, so a failed reproduction can be labeled clearly. The selected experiment and active-training defaults are unchanged.
