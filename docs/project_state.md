@@ -49,8 +49,10 @@ scored 47/60 and 35/60 at 40k, then 46/60 and 38/60 at 80k; it is not promoted.
 
 The [pretraining audit](phase2_carry_bc_curriculum.md) found that the historical
 best inherited 60k BC updates, versus 16k for the fresh encoder comparison.
-A staged 52k map-pretraining + 8k object-adaptation experiment is running.
-A separate [actor map-core freeze](phase2_actor_spatial_freeze.md) tests whether
+The staged 52k map-pretraining + 8k object-adaptation experiment scored
+49/60 full and 44/60 timed, with no navigation timeouts but nine carry drops
+and two reach drops. It missed its predeclared 50/60 screen and was stopped
+without online training. A separate [actor map-core freeze](phase2_actor_spatial_freeze.md) tests whether
 retaining learned map features prevents harmful SAC drift. No improved candidate
 has been selected. The eventual SAC/TD3 × original/modified gripper × three-seed study
 still requires independent replications and matched assistance/data protocols.
