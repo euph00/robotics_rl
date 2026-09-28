@@ -51,6 +51,55 @@ def recovery_targets(layout,episodes):
     return result
 
 
+def geometric_recovery_targets(layout,interior_limit=2):
+    """TRAIN-only off-solution branches plus gate-independent entry-room coverage.
+
+    Grid connectivity selects candidates, never fabricates physical states. The
+    collector still plans and executes the full preparation and recovery paths.
+    """
+    from collections import deque
+    maze=np.asarray(layout['maze_map']);entrance=tuple(layout['maze_entrance_cell'])
+    exit_cell=tuple(layout['maze_exit_cell'])
+    def distances(origin):
+        distance={origin:0};parent={origin:None};queue=deque([origin])
+        while queue:
+            cell=queue.popleft()
+            for dr,dc in ((0,-1),(0,1),(-1,0),(1,0)):
+                nxt=(cell[0]+dr,cell[1]+dc)
+                if (0<=nxt[0]<maze.shape[0] and 0<=nxt[1]<maze.shape[1]
+                        and maze[nxt]==0 and nxt not in distance):
+                    distance[nxt]=distance[cell]+1;parent[nxt]=cell;queue.append(nxt)
+        return distance,parent
+    from_entry,_=distances(entrance);to_exit,parent=distances(exit_cell)
+    if exit_cell not in from_entry:raise ValueError('TRAIN layout entrance and exit are disconnected')
+    shortest=from_entry[exit_cell]
+    solution={cell for cell in from_entry if cell in to_exit and from_entry[cell]+to_exit[cell]==shortest}
+    candidates=[]
+    for cell in sorted(from_entry):
+        if cell not in to_exit or cell in solution or not 8<=cell[1]<=19:continue
+        path=[cell]
+        while path[-1]!=exit_cell:path.append(parent[path[-1]])
+        west=sum(b[1]<a[1] for a,b in zip(path[:-1],path[1:]))
+        if not west:continue
+        attachment=next(node for node in path if node in solution)
+        detour=from_entry[cell]+to_exit[cell]-shortest
+        candidates.append({'recovery_kind':'interior_branch','target_xy':[cell[1]-3.5,5.5-cell[0]],
+            'target_cell':list(cell),'grid_extra_path_m':detour,'grid_westward_return_m':west,
+            'solution_attachment_cell':list(attachment),'geometry_skip':None,
+            'selection_basis':'TRAIN connectivity: off every shortest entry-exit path; shortest return includes west'})
+    candidates.sort(key=lambda item:(-item['grid_westward_return_m'],-item['grid_extra_path_m'],item['target_cell']))
+    selected=[]
+    for candidate in candidates:
+        if any(candidate['solution_attachment_cell']==old['solution_attachment_cell'] for old in selected):continue
+        selected.append(candidate)
+        if len(selected)>=interior_limit:break
+    # These positions span the room regardless of the gate's y-coordinate.
+    for y in (-4.25,4.25):
+        selected.append({'recovery_kind':'entry_extreme','target_xy':[1.5,y],'geometry_skip':None,
+                         'selection_basis':'fixed TRAIN entry-room extremes, independent of gate offset'})
+    return selected
+
+
 def prepare_recovery(env,target,summary,stop_path,max_decisions=250):
     """Execute a physical path; preserve the task goal and all retention history."""
     observation,reset_info=env.reset(options={'full':True})
@@ -209,7 +258,8 @@ def worker(task):
                     if hashlib.sha256(checkpoint.read_bytes()).hexdigest()!=record['sha256']:
                         raise ValueError('Frozen learner checkpoint hash mismatch')
                     policies.append(load_policy_checkpoint(checkpoint,device='cpu'))
-            candidates=(recovery_targets(layout,config['episodes']) if config['mode']=='recovery'
+            candidates=(geometric_recovery_targets(layout) if config['mode']=='geometric-recovery' else
+                        recovery_targets(layout,config['episodes']) if config['mode']=='recovery'
                         else [None]*(len(policies) if policies else config['episodes']))
             for e,candidate in enumerate(candidates):
                 if stop_path.exists():summary['stopped']=True;break
@@ -221,7 +271,8 @@ def worker(task):
                     if candidate['geometry_skip']:
                         attempt['status']='skipped_geometry';continue
                     try:
-                        obs,preparation=prepare_recovery(env,candidate['target_xy'],summary,stop_path)
+                        obs,preparation=prepare_recovery(env,candidate['target_xy'],summary,stop_path,
+                            max_decisions=600 if config['mode']=='geometric-recovery' else 250)
                         attempt.update(preparation,status='prepared')
                     except Exception as error:
                         attempt.update(status='stopped' if isinstance(error,InterruptedError) else 'failed_preparation',
@@ -250,13 +301,16 @@ def worker(task):
                     episode={'layout_id':layout['layout_id'],'maze_hash':layout['maze_hash'],'object_idx':14,
                         'full_route':full,'original_exit_goal':original_goal,'collection_mode':config['mode'],
                         'corrective_noise_std':noise_scale,'success':succeeded,'transitions':rows}
-                    if candidate is not None:episode['recovery_start']=dict(candidate,**preparation)
+                    if candidate is not None:
+                        episode['recovery_start']=dict(candidate,**preparation)
+                        episode['recovery_kind']=candidate.get('recovery_kind','entry_offset')
                     if diagnostics is not None:
                         episode.update(on_policy_recovery=diagnostics,learner=config['learner_records'][e])
                     episodes.append(episode)
                     brief={'full_route':full,'original_exit_goal':original_goal,'success':succeeded,
                         'transitions':len(rows),'failure_reason':info.get('failure_reason'),
-                        'goal_distance':info.get('goal_distance'),'collection_mode':config['mode']}
+                        'goal_distance':info.get('goal_distance'),'collection_mode':config['mode'],
+                        'recovery_kind':episode.get('recovery_kind')}
                     if diagnostics is not None:
                         brief.update(on_policy_recovery=diagnostics,learner=config['learner_records'][e])
                     summary['episodes'].append(brief)
@@ -297,7 +351,7 @@ def main():
     p.add_argument('--layout-ids',nargs='+',default=None)
     p.add_argument('--workers',type=int,default=6);p.add_argument('--episodes',type=int,default=4)
     p.add_argument('--delta-scale',type=float,default=.075)
-    p.add_argument('--mode',choices=['standard','recovery','on-policy-recovery'],default='standard')
+    p.add_argument('--mode',choices=['standard','recovery','on-policy-recovery','geometric-recovery'],default='standard')
     p.add_argument('--recovery-noise-std',type=float,default=.12)
     p.add_argument('--learner-checkpoints',nargs='+',default=[])
     p.add_argument('--learner-budget',type=int,default=450)
@@ -327,9 +381,11 @@ def main():
             p.error('Noise needs std in[0,1],rho in[0,1),and nonnegative seed')
     elif args.learner_checkpoints:p.error('Learner checkpoints require on-policy-recovery mode')
     logger=RunLogger(args.run_id,kind='reference',skill='carry',algorithm='Physical training demonstrations',
-        name='Learner-induced TRAIN carry recovery' if args.mode=='on-policy-recovery' else
+        name='TRAIN branch and entry-room recovery' if args.mode=='geometric-recovery' else
+             'Learner-induced TRAIN carry recovery' if args.mode=='on-policy-recovery' else
              'Physical carry recovery data' if args.mode=='recovery' else 'Multi-maze carry data',
-        summary='TRAIN-only frozen-learner states and expert recovery; actual actions and separate labels.' if args.mode=='on-policy-recovery' else
+        summary='TRAIN-only geometric branch starts and full-room starts, all physically reached.' if args.mode=='geometric-recovery' else
+                'TRAIN-only frozen-learner states and expert recovery; actual actions and separate labels.' if args.mode=='on-policy-recovery' else
                 'TRAIN layouts only; physical off-route preparation and original-goal recovery.' if args.mode=='recovery'
                 else 'TRAIN layouts only; physical demonstrations with corrective action noise.')
     out=logger.directory/'artifacts';out.mkdir()
@@ -373,7 +429,8 @@ def main():
                 logger.event(f"Collected {summary['layout_id']}: {len(data['episodes'])} episodes"+
                              (f"; {summary['error']}" if 'error' in summary else ''))
         stopped=stop.requested
-    metadata={'protocol':'multimaze-physical-onpolicy-recovery-v1' if args.mode=='on-policy-recovery' else
+    metadata={'protocol':'multimaze-physical-geometric-recovery-v1' if args.mode=='geometric-recovery' else
+                          'multimaze-physical-onpolicy-recovery-v1' if args.mode=='on-policy-recovery' else
                           'multimaze-physical-originalgoal-recovery-v1' if args.mode=='recovery' else 'multimaze-physical-corrective-v2',
         'partition':'train','bank_sha256':bank['manifest_sha256'],'configuration':configuration,
         'layouts_requested':len(layouts),'layouts_completed':len(summaries),'cancelled_layouts':cancelled,

@@ -96,3 +96,20 @@ def test_duplicate_content_cannot_double_count_costs(tmp_path):
     data=pickle.dumps(dataset([episode()]));paths=[tmp_path/'first.pkl',tmp_path/'renamed.pkl']
     for path in paths:path.write_bytes(data)
     with pytest.raises(ValueError,match='Duplicate'):merge_carry_datasets(paths,tmp_path/'out.pkl')
+
+
+def test_westward_return_group_is_disjoint_and_preserves_existing_mixture_ratios():
+    interior=episode(recovery=True)
+    interior.update(collection_mode='geometric-recovery',recovery_kind='interior_branch')
+    interior['transitions'][2]['teacher_action']=np.array([-1.,0.],np.float32)
+    extreme=episode(recovery=True)
+    extreme.update(collection_mode='geometric-recovery',recovery_kind='entry_extreme')
+    source=dataset([episode(),episode(recovery=True),interior,extreme])
+    rows,groups,probabilities,stats=carry_supervision(source)
+    assert list(groups)==['westward_return','recovery_prefix','turn_or_vertical','straight','hold']
+    np.testing.assert_allclose(probabilities,[.2,.24,.28,.196,.084])
+    assert len(groups['westward_return'])==1 and stats['westward_return_rows']==1
+    row=rows[groups['westward_return'][0]]
+    assert float(row['observation']['achieved_goal'][0])*20>3.5 and row['teacher_action'][0]<-.5
+    assert len(groups['recovery_prefix'])==4
+    assert sorted(np.concatenate(list(groups.values())).tolist())==list(range(len(rows)))

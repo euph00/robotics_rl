@@ -83,32 +83,43 @@ def carry_supervision(dataset):
     A recovery prefix lasts until the FIRST observed base x>3.5 m, using only
     actual stored achieved goals (scale20). This is training-only sampling
     metadata, not an additional actor input or an inference-time waypoint.
+    Successful geometric interior recoveries reserve20% for measured westward
+    return actions; all other group probabilities retain their prior proportions.
     """
-    rows=[];prefix=[];failed=0;successful=0
+    rows=[];prefix=[];interior_recovery=[];failed=0;successful=0
     for episode in dataset['episodes']:
         if not episode.get('success',False):
             failed+=1;continue
         successful+=1
-        before_crossing=episode.get('collection_mode')=='recovery'
+        before_crossing=(episode.get('collection_mode')=='recovery' or
+                         (episode.get('collection_mode')=='geometric-recovery' and episode.get('recovery_kind')=='entry_extreme'))
+        interior=(episode.get('collection_mode')=='geometric-recovery' and episode.get('recovery_kind')=='interior_branch')
         for row in episode['transitions']:
             if before_crossing and float(row['observation']['achieved_goal'][0])*20>3.5:
                 before_crossing=False
-            rows.append(row);prefix.append(before_crossing)
+            rows.append(row);prefix.append(before_crossing);interior_recovery.append(interior)
     if not rows:raise ValueError('No successful carry demonstrations for supervision')
     actions=np.stack([row['teacher_action'] for row in rows])
     if actions.shape!=(len(rows),2) or not np.isfinite(actions).all() or np.max(np.abs(actions))>1.:
         raise ValueError('Carry teacher labels must be finite normalized two-dimensional actions')
     prefix=np.asarray(prefix,dtype=bool);norm=np.linalg.norm(actions,axis=1)
     base=[(norm>.5)&(np.abs(actions[:,1])>.15),(norm>.5)&(np.abs(actions[:,1])<=.15),norm<=.5]
-    groups={name:np.flatnonzero(mask&~prefix) for name,mask in zip(('turn_or_vertical','straight','hold'),base)}
+    westward=(np.asarray(interior_recovery,dtype=bool)&(actions[:,0]<-.5)&
+              (np.asarray([row['observation']['achieved_goal'][0] for row in rows])*20>3.5))
+    groups={name:np.flatnonzero(mask&~prefix&~westward) for name,mask in zip(('turn_or_vertical','straight','hold'),base)}
     if any(not len(indices) for indices in groups.values()):
         raise ValueError('Carry supervision needs non-prefix turns/verticals, straights and holds')
     probabilities=np.array([.5,.35,.15],dtype=np.float64)
     if np.any(prefix):
         groups={'recovery_prefix':np.flatnonzero(prefix),**groups}
         probabilities=np.r_[.3,.7*probabilities]
+    if np.any(westward):
+        groups={'westward_return':np.flatnonzero(westward),**groups}
+        probabilities=np.r_[.2,.8*probabilities]
     stats={'successful_episodes_for_bc':successful,'failed_episodes_excluded_from_bc':failed,
            'all_episodes_retained_for_replay':True,'bc_transitions':len(rows),
+           'westward_return_rows':int(westward.sum()),
+           'westward_return_rule':'successful geometric interior recovery, teacher x<-.5 and observed base x>3.5m',
            'recovery_prefix_rows':int(prefix.sum()),'prefix_end_rule':'first observed base x>3.5m',
            'strata_counts':{name:len(indices) for name,indices in groups.items()},
            'strata_probabilities':dict(zip(groups,probabilities.tolist()))}

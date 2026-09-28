@@ -51,3 +51,25 @@ def test_prepare_moves_physically_without_changing_goal_or_restoring_after_start
     assert report['preparation_decisions']*5==env.native.step_count
     assert report['start_error_m']<.075
     np.testing.assert_array_equal(observation['desired_goal'],original)
+
+
+def test_geometric_targets_are_off_solution_west_returns_and_fixed_room_extremes():
+    from scripts.phase2_carry_demos import geometric_recovery_targets
+    maze=np.ones((12,22),dtype=int);maze[5,6:22]=0
+    maze[5:9,10]=0;maze[8,10:13]=0
+    maze[2:6,16]=0;maze[2,16:19]=0
+    layout=dict(maze_map=maze.tolist(),maze_entrance_cell=[5,6],maze_exit_cell=[5,21])
+    targets=geometric_recovery_targets(layout)
+    branches=[target for target in targets if target['recovery_kind']=='interior_branch']
+    assert len(branches)==2
+    assert {tuple(target['target_cell']) for target in branches}=={(8,12),(2,18)}
+    assert all(target['grid_westward_return_m']>=2 and target['grid_extra_path_m']>0 for target in branches)
+    assert [target['target_xy'] for target in targets[-2:]]==[[1.5,-4.25],[1.5,4.25]]
+    assert all(maze[tuple(target['target_cell'])]==0 for target in branches)
+
+
+def test_geometric_targets_do_not_invent_branches_in_straight_corridor():
+    from scripts.phase2_carry_demos import geometric_recovery_targets
+    maze=np.ones((12,22),dtype=int);maze[5,6:22]=0
+    targets=geometric_recovery_targets(dict(maze_map=maze.tolist(),maze_entrance_cell=[5,6],maze_exit_cell=[5,21]))
+    assert len(targets)==2 and all(target['recovery_kind']=='entry_extreme' for target in targets)
