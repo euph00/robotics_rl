@@ -24,4 +24,29 @@ The motivation has precedent in RLPD's separate offline/online sampling experime
 
 Audit artifacts and the reproducible read-only script are in `runs/phase2_gated_replay_audit01/artifacts/`. Replay SHA-256: 40k `93244f1de0ac7845ab1fac3066d92af3fa87be8514c590be60be119a24f1362f`; 80k `78949c7884d0e3fa36a8c3b038aa5f8994a6f6a34111f3b490a6737d4345ae46`. The audit used zero replay samples, policy predictions, training updates or physical interactions. Focused tests cover distributions, empty/incomplete partitions, exact native real/HER rewards and timeouts, same-object episode isolation, ring overwrite, immutable data import, serialization, CLI rejection and conditional resume signatures. A separate diversity run remains a separate experiment.
 
-Validation: all 72 affected replay, seeding, reward-relabel and checkpoint tests pass. Independent review found no blocking defects and passed its 65 selected checks. Actual historical gated, ordinary object-balanced, and discount-trial signatures remain compatible. No experiment has been launched as part of this implementation.
+Validation: all 72 affected replay, seeding, reward-relabel and checkpoint tests pass. Independent review found no blocking defects and passed its 65 selected checks. Actual historical gated, ordinary object-balanced, and discount-trial signatures remain compatible. The completed, separately authorized experiment is reported below.
+
+
+## Completed 80k trial
+
+The predeclared run `phase2_carry_encoder_gated192_demofloor01` completed 80,000 online decisions / 10,000 updates. It transferred the exact zero-online 16k-BC gated actor, added no BC updates, seeded the original 503,901-row dataset, warmed fresh critics for 2,000 updates, and retained γ=.995, β=100, eight TRAIN layouts × five deterministic learned handovers. All 40 preparations succeeded; all subsequent failures remain recorded. The plan SHA-256 is `de35284dcd3d52e3ad1b9ef95f450bc1f0cf075756668fa45e3e95ea42e652e4`.
+
+| Validation policy | Full / 60 | ≤15k ticks, including initialization | ≤15k action ticks |
+|---|---:|---:|---:|
+| Historical CNN candidate | 51 | 47 | 50 |
+| Gated end-of-BC initializer | 50 | 43 | 44 |
+| Gated ordinary replay, 40k | 51 | 39 | 42 |
+| Minimum demo fraction, 40k / 4,999 updates | 47 | 35 | 39 |
+| Minimum demo fraction, 80k / 10,000 updates | 46 | 38 | 40 |
+
+The floor checkpoints have **60/60 identical recorded pre-carry prefixes with each other and the historical candidate**, but only **11/60 with the gated initializer or ordinary-replay gated40k**. The other 49 first differ during grasp (46), pickup hold (2), or planned carry posture (1), before this sampler or carry policy executes. Thus the fresh gated controls cannot establish an isolated sampler effect; the historical candidate matches the observed preparation but differs in actor architecture/initialization. These are every-five-native-call traces plus timing-stripped stage records, not proof of equality of unlogged velocities, forces or solver state.
+
+Within the floor run, 40k→80k rescues three cases and loses four. Carry losses decrease 11→9, but three carry horizons appear; the same one grasp horizon and one reach drop persist. Neither checkpoint improves on the historical candidate. **Retain this as a negative, single-seed diagnostic; do not promote the sampler or extend this branch.** The already declared initialization and frozen-map-core trials address separate hypotheses.
+
+Actual saved replay and ZIP audits pass at both checkpoints. All **502,432 imported rows remain eligible**, zero are overwritten, and all 40 TRAIN cases have online rows. Model counters, explicit origin labels, native episode boundaries and saved draw reports agree. Final eligible online counts for foam/banana/can/apple/mug are **15,381 / 16,206 / 15,614 / 14,142 / 16,555**. Intended demo fractions are **96.914% / 50% / 50% / 50% / 50%**; the object-averaged fraction is 59.383%. Across online updates, measured demo draws are **98.434% / 57.378% / 56.433% / 56.939% / 57.049%**. Values above the floor include the earlier nonbinding period. Exactly **512,000 critic-warmup + 2,560,000 online replay draws** reconcile; independent BC batches are separate.
+
+Costs: training plus preparation/initialization **2,192,135 physics ticks**; in-run reference validation **1,666,330**; the two full-system validations **812,310 + 878,350**. Total new physical cost is **5,549,125 ticks**, excluding inherited demonstration generation. There were no heldout tests, rerolls or substituted checkpoints. The read-only audit added no predictions, replay samples or physical interactions.
+
+Model SHA-256: 40k `2d0644500eeef614d74758faff789844562f3cf70c1de3ca5991f20a18e165c2`; 80k `083072ee2ac69c6104fdbc0ad9d0ff68959de43ad801688ad5bfd0a4d5a1fe9d`. Final replay SHA-256: `dcfc4bdc750bb7a479ec636b1e2a3bff8df2e50277ef12d5e28d8ff69058fbc2`. Evidence is in both `phase2_system_encoder_gated192_demofloor_{040k,080k}01/artifacts/` directories: `checkpoint_audit.json`, `prefix_reproducibility_audit.json`, and `replay_origin_audit.json`; the 40k initializer comparison is `initializer_prefix_audit.json`. Reproduce the final read-only checks with `runs/setup/audit_demofloor_checkpoint.py --tag 080k`.
+
+After both evaluations completed, the watcher caught its own successful `SystemExit(0)` in a broad exception handler and incorrectly wrote `watcher_error`. The original status/log remain intact; `runs/setup/demofloor01_watcher_exit_annotation.json` records the verified bookkeeping correction. This did not interrupt either evaluation or trigger a retry.
