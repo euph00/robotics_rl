@@ -73,10 +73,11 @@ cost was 2,024,915 physics ticks. The earlier conditional plan remains skipped.
 The [retention prediction screen](phase2_retention_feedback.md) failed: the
 fixed classifier was worse than object prevalence and ranked within-case
 variants at 0.52 (required 0.65). No auxiliary action-value critic is proceeding.
-A distinct direct on-policy retention-feedback protocol passed proposal review
-and is being implemented with synthetic checks. Its two matched SAC+HER arms
-will differ only in whether the extra grasp update includes transport outcomes.
-No policy training or physics has started for that hypothesis. Small gains on the reused 60-case validation
+The distinct direct on-policy retention-feedback pilot passed synthetic checks
+and independent implementation review. Two matched SAC+HER branches launched
+at 22:31:52 UTC on 28 September; only one includes transport outcomes in its
+extra grasp update. Four fixed rounds and a 40-pair TRAIN comparison have a
+two-hour physical cap. No improved performance has been established yet. Small gains on the reused 60-case validation
 bank are insufficient evidence of better generalization. The eventual SAC/TD3 × original/modified gripper × three-seed study
 still requires independent replications and matched assistance/data protocols.
 Current development runs are not those replications.

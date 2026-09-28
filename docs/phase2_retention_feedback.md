@@ -28,9 +28,10 @@ screen does not establish fundamental unobservability; it does not justify
 optimizing an action-value critic from these data either.
 
 The next experiment adds direct feedback from actual transport outcomes alongside
-unchanged SAC+HER. Its prospective protocol has passed independent review for
-implementation; synthetic tests and implementation review must pass before
-training starts. No new policy fitting or physics has started for this experiment.
+unchanged SAC+HER. Synthetic checks and independent implementation review passed. The two matched
+branches launched at 22:31:52 UTC on 28 September 2026; their fixed endpoint
+comparison follows only if both finish all four rounds. No improved performance
+has been established yet.
 
 Two matched arms start from the original grasp checkpoint. Each receives four
 rounds of 3,000 native pickup decisions followed by 120 fresh stochastic
@@ -50,7 +51,8 @@ reserve will be used. High variance and limited useful action variation remain
 reasons this experiment could fail.
 
 [Exact prospective protocol](../runs/phase2_grasp_retention_pg_plan01/artifacts/proposal.md) ·
-[Independent proposal review](../runs/phase2_grasp_retention_pg_plan01/artifacts/independent_proposal_review_scene_bank.json).
+[Independent implementation review](../runs/phase2_grasp_retention_pg_plan01/artifacts/independent_implementation_review_scene_bank.json) ·
+[Frozen execution](../runs/phase2_grasp_retention_pg_plan01/artifacts/execution_v1.json).
 
 [Frozen screen](../runs/phase2_grasp_retention_predictor_plan01/artifacts/plan_v2.json) ·
 [Results and all folds](../runs/phase2_grasp_retention_predictor01/artifacts/report.md) ·
