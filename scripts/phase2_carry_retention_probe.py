@@ -31,14 +31,14 @@ from pnr.reference import ReferenceController
 from pnr.scenes import load_scene_bank, scene_records
 from pnr.telemetry import RunLogger, atomic_json
 
-MODES = {'stationary': 0., 'reference': .045, 'general045': .045, 'general060': .060, 'general075': .075,
-         'slew075': .075, 'turnslow075': .075}
+MODES = {'capture': 0., 'general020': .020, 'general030': .030, 'general040': .040, 'stationary': 0., 'reference': .045, 'general045': .045, 'general060': .060, 'general075': .075,
+         'slew075': .075, 'turnslow075': .075, 'slip_reactive075': .075}
 
 
 def worker(task):
-    case, mode, grasp_source, out, horizon, grasp_checkpoint, carry_posture, closure_margin_mm, observe_subticks = task
+    case, mode, grasp_source, out, horizon, grasp_checkpoint, carry_posture, closure_margin_mm, observe_subticks, capture_grip, close_distance_mm = task
     out = Path(out)
-    name = f'{case["layout_id"]}_object_{case["object_idx"]:02d}_{grasp_source}_{mode}_margin{int(round(closure_margin_mm*1000)):04d}um'
+    name = f'{case.get("diagnostic_id", case["layout_id"])}_object_{case["object_idx"]:02d}_{grasp_source}_{mode}_margin{int(round(closure_margin_mm*1000)):04d}um_gate{int(round(close_distance_mm*1000)):05d}um'
     env = None
     rows = []
     subtick_rows = []
@@ -49,17 +49,19 @@ def worker(task):
               'teacher_at_inference': True, 'learned_policy_evaluation': grasp_source == 'learned',
               'complete_learned_system': False, 'navigation_controller': 'physical_teacher',
               'grasp_checkpoint': grasp_checkpoint, 'carry_posture': carry_posture,
-              'closure_margin_mm': closure_margin_mm,
+              'closure_margin_mm': closure_margin_mm, 'teacher_close_distance_mm': close_distance_mm,
               'closure_protocol': 'originalzero' if closure_margin_mm == 0 else 'measuredopening-minus-margin-frozen-at-carry-start',
               'source_action_calls': 0, 'physics_ticks': 0, 'initialization_physics_ticks': 0}
     with (out / f'{name}.log').open('w') as log:
         os.dup2(log.fileno(), 1); os.dup2(log.fileno(), 2)
         try:
-            env = PickNavReachEnv(seed=42, object_idx=case['object_idx'], maze_seed=case['maze_seed'])
-            controller = ReferenceController(env, seed=42)
+            env = PickNavReachEnv(seed=case.get('scene_seed',42), object_idx=case['object_idx'], maze_seed=case['maze_seed'])
+            controller = ReferenceController(env, seed=case.get('scene_seed',42))
             stage = 'setup'
             previous_velocity = np.zeros(2)
             current_action = None
+            current_limiter_scale = 1.
+            payload_anchor = None
             carry_finger_targets = None
             decision = -1
             original_step = env.step
@@ -103,7 +105,9 @@ def worker(task):
                 linear, angular = env.p.getBaseVelocity(env.object_id)
                 rows.append({'call': env.step_count, 'physics_tick': env.physics_steps,
                     'stage': controller.stage if stage == 'setup' else stage, 'decision': decision,
-                    'action': current_action, 'base_xy': controller.base_position().tolist(),
+                    'action': current_action, 'carry_limiter_scale': current_limiter_scale,
+                    'payload_shift_from_carry_start_m': None if payload_anchor is None else float(np.linalg.norm(relative-payload_anchor)),
+                    'base_xy': controller.base_position().tolist(),
                     'base_velocity': velocity.tolist(), 'base_acceleration': acceleration.tolist(),
                     'object_xyz': obs['object_pos'].tolist(), 'ee_xyz': ee.tolist(),
                     'object_in_hand_xyz': relative.tolist(), 'object_in_hand_quat': relative_quat.tolist(),
@@ -124,7 +128,7 @@ def worker(task):
                     raise RuntimeError('Reference grasp/lift failed')
             else:
                 grasp_env = GeneralGraspEnv.bind(env, controller, horizon=200)
-                teacher = ContactGraspTeacher(grasp_env)
+                teacher = ContactGraspTeacher(grasp_env, close_distance=close_distance_mm/1000.)
                 if grasp_source == 'learned':
                     import torch
                     from pnr.policies import load_policy_checkpoint
@@ -134,6 +138,11 @@ def worker(task):
                 for _ in range(200):
                     action, _ = (predictor.predict(obs, deterministic=True) if grasp_source == 'learned'
                                  else teacher.action(obs))
+                    if action[-1] < 0 and 'first_close_command' not in result:
+                        measured_ee = controller.planner.ee_pose()[0]
+                        result['first_close_command'] = {'before_source_call': env.step_count,
+                            'ee_xyz': measured_ee.tolist(), 'object_xyz': env.observe()['object_pos'].tolist(),
+                            'proposal_target_error_m': float(np.linalg.norm(grasp_env.measured_grasp_target()-measured_ee))}
                     obs, _, terminated, truncated, info = grasp_env.step(action)
                     if info['is_success'] and info['bilateral_contact']:
                         break
@@ -157,15 +166,49 @@ def worker(task):
             result['carry_start'] = {'source_action_calls': env.step_count, 'metrics': env.evaluate(),
                                       'trace': rows[-1]}
             carry_start = env.step_count
+            payload_anchor = np.asarray(rows[-1]['object_in_hand_xyz'])
+            if mode == 'slip_reactive075':
+                result['speed_limiter'] = {
+                    'protocol': 'latched payload displacement in measured hand frame',
+                    'threshold_m': .002, 'fast_delta_m': .075, 'slow_delta_m': .020,
+                    'observed_at': 'before each carry policy decision',
+                    'object_identity_used': False,
+                    'initial_payload_in_hand_m': payload_anchor.tolist(),
+                    'trigger': None}
             measured_opening = env.agent_qpos[env.finger_slots].copy()
             if closure_margin_mm > 0:
                 carry_finger_targets = np.clip(measured_opening - closure_margin_mm/1000., 0., .05)
             result['initial_measured_finger_positions'] = measured_opening.tolist()
             result['carry_finger_target_positions'] = [0., 0.] if carry_finger_targets is None else carry_finger_targets.tolist()
+            if capture_grip:
+                import imageio.v2 as imageio
+                ee, ee_quaternion = controller.planner.ee_pose()
+                object_position, object_quaternion = env.p.getBasePositionAndOrientation(env.object_id)
+                hand_rotation = Rotation.from_quat(ee_quaternion)
+                can_axis = Rotation.from_quat(object_quaternion).apply([0.,0.,1.])
+                pinch_axis = hand_rotation.apply([0.,1.,0.])
+                contact_points = env.p.getContactPoints(env.robot_id, env.object_id)
+                contacts = [{'robot_link': int(c[3]), 'object_world_position': list(c[6]),
+                    'object_hand_position': hand_rotation.inv().apply(np.asarray(c[6])-ee).tolist(),
+                    'normal_world': list(c[7]), 'normal_force': c[9]} for c in contact_points]
+                result['grip_geometry'] = {'ee_world': ee.tolist(), 'ee_quaternion': ee_quaternion.tolist(),
+                    'object_world': list(object_position), 'object_quaternion': list(object_quaternion),
+                    'object_center_in_hand': hand_rotation.inv().apply(np.asarray(object_position)-ee).tolist(),
+                    'object_local_z_axis_world': can_axis.tolist(), 'pinch_axis_world': pinch_axis.tolist(),
+                    'can_axis_to_vertical_deg': float(np.degrees(np.arccos(np.clip(abs(can_axis[2]),0,1)))),
+                    'can_axis_to_pinch_deg': float(np.degrees(np.arccos(np.clip(abs(np.dot(can_axis,pinch_axis)),0,1)))),
+                    'pinch_axis_to_world_x_deg': float(np.degrees(np.arccos(np.clip(abs(pinch_axis[0]),0,1)))),
+                    'contacts': contacts, 'finger_pad_half_extents_in_hand_m': [.0315,.006,.012]}
+                for view, yaw, pitch in [('side',0,-5),('front',90,-5),('top',0,-89)]:
+                    imageio.imwrite(out/f'{name}_{view}.png', env.render_rgb(camera='grasp',target=ee,
+                        distance=.42,yaw=yaw,pitch=pitch,width=800,height=600,shadow=False))
             result['object_mass_kg'] = env.p.getDynamicsInfo(env.object_id, -1)[0]
             result['object_dynamics'] = list(env.p.getDynamicsInfo(env.object_id, -1))
             stage = 'carry'
-            if mode == 'stationary':
+            if mode == 'capture':
+                success = env.contacts()['bilateral_contact'] and not env.drop_events
+                result['capture_only'] = True
+            elif mode == 'stationary':
                 controller.hold(3500, 'hold')
                 success = env.contacts()['bilateral_contact'] and not env.drop_events
             elif mode == 'reference':
@@ -182,7 +225,22 @@ def worker(task):
                 success = False
                 for decision in range(horizon):
                     action = route_action(path, obs['achieved_goal'] * carry.goal_scale, goal, carry.delta_scale)
-                    if mode == 'slew075':
+                    if mode == 'slip_reactive075':
+                        payload_shift = np.asarray(rows[-1]['object_in_hand_xyz']) - payload_anchor
+                        if result['speed_limiter']['trigger'] is None and np.linalg.norm(payload_shift) > .002:
+                            result['speed_limiter']['trigger'] = {
+                                'before_decision': decision, 'before_source_action_call': env.step_count,
+                                'before_physics_tick': env.physics_steps,
+                                'carry_source_action_calls': env.step_count-carry_start,
+                                'payload_shift_vector_m': payload_shift.tolist(),
+                                'payload_shift_norm_m': float(np.linalg.norm(payload_shift)),
+                                'bilateral_contact': bool(rows[-1]['bilateral_contact']),
+                                'finger_normal_forces': rows[-1]['finger_normal_forces'],
+                                'base_xy': rows[-1]['base_xy']}
+                        if result['speed_limiter']['trigger'] is not None:
+                            current_limiter_scale = .020/.075
+                            action *= current_limiter_scale
+                    elif mode == 'slew075':
                         # Teacher-only proposal: needs observed controller memory if later learned.
                         change = action - previous_action
                         action = previous_action + change * min(1., .18 / max(np.linalg.norm(change), 1e-9))
@@ -246,17 +304,22 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--bank', default='configs/phase2_scene_bank.json')
+    parser.add_argument('--scene-seed', type=int, default=42, help='Point-cloud and planner seed')
+    parser.add_argument('--development-layouts', nargs='+', help='Explicit TRAIN/validation layout IDs only')
     parser.add_argument('--objects', type=int, nargs='+', default=[2, 14])
     parser.add_argument('--train-layouts', type=int, default=2)
     parser.add_argument('--skip-legacy', action='store_true')
     parser.add_argument('--modes', nargs='+', choices=MODES, default=['reference', 'general045', 'general060', 'general075'])
     parser.add_argument('--grasp-source', choices=['reference', 'contact', 'learned'], default='reference')
     parser.add_argument('--grasp-checkpoint', type=Path)
+    parser.add_argument('--close-distances-mm', type=float, nargs='+', default=[18.],
+                        help='Contact-teacher closure trigger distance; no change to learned grasp checkpoints')
     parser.add_argument('--carry-posture', choices=['original', 'centered', 'pinch_x'], default='original')
     parser.add_argument('--closure-margins-mm', type=float, nargs='+', default=[0.],
                         help='0 retains original zero target; positive margin is subtracted from measured opening')
     parser.add_argument('--controls-legacy-only', action='store_true',
                         help='Restrict non-tomato control objects to the course-legacy scene')
+    parser.add_argument('--capture-grip', action='store_true', help='Save carry-start grip geometry and three camera views')
     parser.add_argument('--observe-subticks', action='store_true', help='Read-only240Hz dynamics observation for first500carryticks')
     parser.add_argument('--workers', type=int, default=6)
     parser.add_argument('--horizon', type=int, default=1400)
@@ -265,6 +328,10 @@ def main():
         parser.error('Use1..8 CPU workers and at most the first2TRAIN layouts')
     if any(not np.isfinite(margin) or not 0 <= margin <= 3 for margin in args.closure_margins_mm):
         parser.error('This bounded closure diagnostic supports margins0..3mm')
+    if any(not np.isfinite(distance) or not 5 <= distance <= 20 for distance in args.close_distances_mm):
+        parser.error('Closure-distance probe supports5..20mm gates')
+    if args.grasp_source != 'contact' and args.close_distances_mm != [18.]:
+        parser.error('Nondefault closure-distance gates require contact teacher')
     if args.output.exists() and any(args.output.iterdir()):
         parser.error('Use a new diagnostic output directory')
     if (args.grasp_source == 'learned') != (args.grasp_checkpoint is not None):
@@ -273,7 +340,12 @@ def main():
     layouts = [{'layout_id': 'course_legacy42', 'maze_seed': None}] if not args.skip_legacy else []
     layouts += [{'layout_id': row['layout_id'], 'maze_seed': row['maze_seed']}
                 for row in scene_records(bank, 'train')[:args.train_layouts]]
-    cases = [dict(layout, object_idx=obj) for layout in layouts for obj in args.objects
+    if args.development_layouts:
+        available = {row['layout_id']: row for partition in ('train','validation') for row in scene_records(bank,partition)}
+        if len(args.development_layouts)>2 or any(name not in available for name in args.development_layouts):
+            parser.error('Choose at most2 declared TRAIN/validation layout IDs; heldout layouts forbidden')
+        layouts = [{'layout_id': name, 'maze_seed': available[name]['maze_seed']} for name in args.development_layouts]
+    cases = [dict(layout, object_idx=obj, scene_seed=args.scene_seed) for layout in layouts for obj in args.objects
              if not args.controls_legacy_only or obj == 2 or layout['maze_seed'] is None]
     out = args.output / 'artifacts'; out.mkdir(parents=True)
     checkpoint_record = None
@@ -282,14 +354,15 @@ def main():
         shutil.copy2(args.grasp_checkpoint, frozen)
         checkpoint_record = {'source': str(args.grasp_checkpoint), 'frozen_path': str(frozen.resolve()),
                              'sha256': hashlib.sha256(frozen.read_bytes()).hexdigest()}
+    shutil.copy2(Path(__file__), out/'probe_source.py')
     logger = RunLogger(args.output.name, root=args.output.parent, kind='reference', skill='carry',
                        name='Carry retention diagnostic', algorithm='Physical teacher diagnostic',
-                       summary='Original physics; tomato can and foam control; TRAIN/legacy layouts only.')
+                       summary='Original physics; fixed selected objects; declared development layouts only.')
     atomic_json(args.output / 'config.json', dict(vars(args), output=str(args.output),
                 grasp_checkpoint=str(args.grasp_checkpoint) if args.grasp_checkpoint else None,
                 bank_sha256=bank['manifest_sha256'], cases=cases, selected_test_objects_unchanged=True))
-    tasks = [(case, mode, args.grasp_source, str(out), args.horizon, checkpoint_record, args.carry_posture, margin, args.observe_subticks)
-             for case in cases for mode in args.modes for margin in args.closure_margins_mm]
+    tasks = [(case, mode, args.grasp_source, str(out), args.horizon, checkpoint_record, args.carry_posture, margin, args.observe_subticks, args.capture_grip, gate)
+             for case in cases for mode in args.modes for margin in args.closure_margins_mm for gate in args.close_distances_mm]
     results = []
     with ProcessPoolExecutor(max_workers=args.workers, mp_context=mp.get_context('spawn')) as pool:
         futures = {pool.submit(worker, task): task for task in tasks}
