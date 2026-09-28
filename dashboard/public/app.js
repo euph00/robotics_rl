@@ -21,7 +21,7 @@ function renderProject(project) {
   }));
 }
 
-const displayName = run => number(run.metrics?.regularization?.bc_weight) ? `${run.skill || 'Policy'} · regularized SAC (weight ${run.metrics.regularization.bc_weight})` : (run.name || run.id);
+const displayName = run => state?.project?.run_labels?.[run.id] || (number(run.metrics?.regularization?.bc_weight) ? `${run.skill || 'Policy'} · regularized SAC (weight ${run.metrics.regularization.bc_weight})` : (run.name || run.id));
 const supervisedUpdates = row => row?.bc_updates ?? row?.updates;
 const runAccounting = run => run?.metrics?.accounting || run?.accounting;
 
