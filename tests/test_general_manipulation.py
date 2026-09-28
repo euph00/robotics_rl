@@ -91,8 +91,62 @@ def test_multiobject_goal_sampling_changes_recorded_goal_and_checks_resume_contr
         np.testing.assert_array_equal(observation['desired_goal'], wrapper.active.goal.astype(np.float32))
         state = wrapper.get_training_state()
         wrapper.set_training_state(state)
+        with pytest.raises(ValueError, match='proposal mode'):
+            wrapper.set_training_state(dict(state, grasp_proposal_mode='clearance-v2'))
         changed = dict(state, lift_range=(.20,.26))
         with pytest.raises(ValueError, match='goal distribution'):
             wrapper.set_training_state(changed)
     finally:
         wrapper.close()
+
+
+def test_clearance_curriculum_reaches_tilted_starts_and_physically_picks():
+    from pnr.general_manipulation import make_grasp_case, ContactGraspTeacher
+    env = make_grasp_case(2, 42, seed=61000, horizon=100, evaluation=True,
+                          goal_lift_m=.24, grasp_proposal_mode='clearance-v2')
+    try:
+        assert env.controller.stage_results['grasp_generation']['selected_variant'] == 'tilted_clearance'
+        for distance, snapshot in env.snapshots:
+            env.native.restore_state(snapshot, reset_counters=True)
+            actual = env.controller.planner.ee_pose()[0]
+            expected = env.controller.pregrasp_position(distance)
+            assert np.linalg.norm(actual-expected) < .02
+            if distance == .17:
+                assert np.linalg.norm((actual-env.controller.grasp.position)[:2]) > .12
+        observation, _ = env.reset(seed=42, options={'full_pregrasp':True})
+        env.goal = env.base_goal.copy(); observation = env._observation()
+        teacher = ContactGraspTeacher(env)
+        for _ in range(100):
+            action, _ = teacher.action(observation)
+            observation, _, terminated, truncated, info = env.step(action)
+            assert not terminated
+            if truncated: break
+        metrics = env.native.evaluate()
+        assert metrics['lifted'] and metrics['bilateral_contact']
+        assert metrics['stable_hold_steps'] >= 50 and metrics['drop_events'] == 0
+        assert info['goal_distance'] < env.tolerance
+    finally:
+        env.close()
+
+
+def test_training_ray_control_preserves_topdown_labels_and_tilt_direction():
+    from types import SimpleNamespace
+    from scipy.spatial.transform import Rotation
+    from pnr.general_manipulation import ContactGraspTeacher
+    delta = np.array([.14,-.018,-.08])
+    environment = SimpleNamespace(
+        controller=SimpleNamespace(planner=SimpleNamespace(ee_pose=lambda: (np.zeros(3),None))),
+        native=SimpleNamespace(contacts=lambda: {'bilateral_contact':False}),
+        measured_grasp_target=lambda: delta, delta_scale=.012,
+        orientation=Rotation.from_euler('y',90,degrees=True).as_quat())
+    old = ContactGraspTeacher(environment)
+    ray = ContactGraspTeacher(environment, approach_control='ray-tilted')
+    np.testing.assert_array_equal(old.action({})[0],ray.action({})[0])
+    environment.orientation=Rotation.from_euler('y',30,degrees=True).as_quat()
+    action,_=ray.action({})
+    np.testing.assert_allclose(np.cross(action[:3],delta),0.,atol=1e-8)
+    assert np.isclose(np.linalg.norm(action[:3]),.65)
+    assert action[3] == 1.
+    environment.native.contacts=lambda: {'bilateral_contact':True}
+    observation={'desired_goal':delta,'achieved_goal':np.zeros(3)}
+    np.testing.assert_array_equal(old.action(observation)[0],ray.action(observation)[0])

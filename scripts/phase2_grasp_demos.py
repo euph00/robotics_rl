@@ -36,7 +36,8 @@ def collect_case(config):
     episodes, env, native = [], None, None
     try:
         native = PickNavReachEnv(seed=scene_seed, object_idx=object_idx)
-        controller = ReferenceController(native, seed=config['seed'])
+        controller = ReferenceController(native, seed=config['seed'],
+                                         grasp_proposal_mode=config['grasp_proposal_mode'])
         metadata['initialization_physics_ticks'] = native.settle_steps
         env = GeneralGraspEnv(native=native, controller=controller,
                               seed=config['seed'], horizon=config['horizon'], evaluation=True)
@@ -45,14 +46,18 @@ def collect_case(config):
                         initialization_physics_ticks=env.native.settle_steps,
                         scene=env.native.scene_manifest(), object_name=env.native.object_name,
                         proposal=env.controller.grasp.as_dict(),
-                        observation_version=env.observation_version)
-        teacher = ContactGraspTeacher(env)
+                        observation_version=env.observation_version,
+                        grasp_proposal_mode=controller.grasp_proposal_mode,
+                        grasp_generation=controller.stage_results['grasp_generation'])
+        teacher = ContactGraspTeacher(env, approach_control=config['teacher_approach_control'])
         rng = np.random.default_rng(config['seed']+scene_seed+100*object_idx)
         for episode_idx in range(config['repetitions']*len(env.snapshots)):
             seed = config['seed']+scene_seed+100*object_idx+episode_idx
             env.reset(seed=seed)
             height, snapshot = env.snapshots[episode_idx % len(env.snapshots)]
             env.native.restore_state(snapshot, reset_counters=True)
+            start_world_offset = env.controller.planner.ee_pose()[0]-env.controller.grasp.position
+            commanded_world_offset = env.controller.pregrasp_position(height)-env.controller.grasp.position
             env.goal = env.base_goal.copy()
             lift = float(rng.uniform(*config['lift_range']))
             env.goal[2] += lift-.20
@@ -94,7 +99,12 @@ def collect_case(config):
                           and transitions[-1]['info']['goal_distance'] < env.tolerance)
             summary = {'episode': episode_idx, 'object_idx': object_idx,
                        'object_name': env.native.object_name, 'scene_seed': scene_seed, 'seed': seed,
-                       'start_height_m': float(height), 'goal_lift_m': lift, 'start_jitter_m': jitter.tolist(),
+                       'start_height_m': float(commanded_world_offset[2]),
+                       'start_approach_distance_m': float(height),
+                       'start_commanded_world_offset_m': commanded_world_offset.tolist(),
+                       'start_measured_world_offset_m': start_world_offset.tolist(),
+                       'grasp_proposal_mode': controller.grasp_proposal_mode,
+                       'teacher_approach_control': config['teacher_approach_control'], 'goal_lift_m': lift, 'start_jitter_m': jitter.tolist(),
                        'perturbation_error': perturbation_error,
                        'perturbation_source_action_calls': perturbation_calls,
                        'successful_physical_lift_and_hold': passed,
@@ -139,6 +149,8 @@ def main():
     parser.add_argument('--jitter-xy', type=float, default=0.)
     parser.add_argument('--seed', type=int, default=61000)
     parser.add_argument('--lift-range', nargs=2, type=float, default=[.20, .20])
+    parser.add_argument('--grasp-proposal-mode', choices=['legacy','clearance-v2'], default='legacy')
+    parser.add_argument('--teacher-approach-control', choices=['component','ray-tilted'], default='component')
     args = parser.parse_args()
     if not 1 <= args.workers <= 8 or not 0 <= args.jitter_xy <= .02 or not .15 <= args.lift_range[0] <= args.lift_range[1] <= .30:
         raise ValueError('Use at most eight workers and two centimeters start jitter')
@@ -156,7 +168,7 @@ def main():
                                  'policy_observation': GeneralObservationDescription,
                                  'no_hidden_maze_evaluation': True}
     source_files = ['scripts/phase2_grasp_demos.py', 'pnr/general_manipulation.py', 'pnr/planning.py',
-                    'pnr/skills.py', 'pnr/env.py', 'pnr/reference.py', 'pnr/local_control.py']
+                    'pnr/skills.py', 'pnr/env.py', 'pnr/reference.py', 'pnr/local_control.py', 'pnr/clearance_grasps.py']
     configuration['source_hashes'] = {}
     for name in source_files:
         content = (ROOT/name).read_bytes()

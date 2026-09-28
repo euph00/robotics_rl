@@ -67,6 +67,7 @@ class GeneralGraspEnv(ManipulationSkillEnv):
         if skill != 'grasp':
             raise ValueError('GeneralGraspEnv currently supports grasp only')
         super().__init__(skill=skill, **kwargs)
+        self.grasp_proposal_mode = self.controller.grasp_proposal_mode
         self.goal_lift_m = float(goal_lift_m)
         self.base_goal[2] += self.goal_lift_m-.20
         self.goal = self.base_goal.copy()
@@ -142,10 +143,13 @@ class GeneralGraspFeatures(RelativeGoalExtractor):
 
 class ContactGraspTeacher:
     """Training-only current-state approach, closure and held-goal controller."""
-    def __init__(self, env, max_action=.65, close_distance=.018):
+    def __init__(self, env, max_action=.65, close_distance=.018, approach_control='component'):
         self.env = env
         self.max_action = float(max_action)
         self.close_distance = float(close_distance)
+        if approach_control not in ('component', 'ray-tilted'):
+            raise ValueError('Unsupported demonstration approach control')
+        self.approach_control = approach_control
 
     def action(self, observation):
         env = self.env
@@ -159,8 +163,14 @@ class ContactGraspTeacher:
             close = np.linalg.norm(delta) <= self.close_distance
             finger = -1. if close else 1.
             phase = 'close' if close else 'approach'
-        return np.r_[np.clip(delta/env.delta_scale, -self.max_action, self.max_action),
-                     finger].astype(np.float32), phase
+        translation = np.clip(delta/env.delta_scale, -self.max_action, self.max_action)
+        if (self.approach_control == 'ray-tilted' and phase != 'held_goal_correction'
+                and abs(Rotation.from_quat(env.orientation).apply([1.,0.,0.])[2]) < .999):
+            # Componentwise saturation can leave a checked tilted approach ray
+            # and request an unreachable sideways/downward move. This changes
+            # training-teacher labels only; learned inference is never projected.
+            translation = delta/max(env.delta_scale, np.linalg.norm(delta)/self.max_action)
+        return np.r_[translation, finger].astype(np.float32), phase
 
 
 class GraspSchema(gym.Env):
@@ -183,13 +193,13 @@ class GraspSchema(gym.Env):
 
 
 def make_grasp_case(object_idx, scene_seed, seed=0, horizon=100, evaluation=False, *,
-                    goal_lift_m=.20, bounded_ik_fallback=True):
+                    goal_lift_m=.20, bounded_ik_fallback=True, grasp_proposal_mode='legacy'):
     """Construct a physical case, preserving costs even on setup exceptions."""
     from .env import PickNavReachEnv
     from .reference import ReferenceController
     native = PickNavReachEnv(seed=scene_seed, object_idx=object_idx)
     try:
-        controller = ReferenceController(native, seed=seed)
+        controller = ReferenceController(native, seed=seed, grasp_proposal_mode=grasp_proposal_mode)
         env = GeneralGraspEnv(native=native, controller=controller, seed=seed,
                               horizon=horizon, evaluation=evaluation, goal_lift_m=goal_lift_m,
                               bounded_ik_fallback=bounded_ik_fallback)
@@ -206,12 +216,15 @@ def make_grasp_case(object_idx, scene_seed, seed=0, horizon=100, evaluation=Fals
 class MultiObjectGrasp(GraspSchema):
     """Cached physically prepared object/point-sampling cases; no hidden mazes."""
     def __init__(self, cases, seed=0, horizon=100, cache_size=4, episodes_per_case=4,
-                 lift_range=(.20, .20)):
+                 lift_range=(.20, .20), grasp_proposal_mode='legacy'):
         super().__init__()
         from collections import OrderedDict
         if not cases:
             raise ValueError('At least one training case is required')
         self.cases = list(cases)
+        if grasp_proposal_mode not in ('legacy', 'clearance-v2'):
+            raise ValueError('Unsupported grasp proposal mode')
+        self.grasp_proposal_mode = grasp_proposal_mode
         self.lift_range = tuple(float(value) for value in lift_range)
         if len(self.lift_range) != 2 or not .15 <= self.lift_range[0] <= self.lift_range[1] <= .30:
             raise ValueError('Grasp lift range must be ordered and within15–30cm')
@@ -234,7 +247,8 @@ class MultiObjectGrasp(GraspSchema):
                 _, old = self.cache.popitem(last=False)
                 old.close()
             try:
-                env = make_grasp_case(*key, seed=self.seed+index, horizon=self.horizon)
+                env = make_grasp_case(*key, seed=self.seed+index, horizon=self.horizon,
+                                      grasp_proposal_mode=self.grasp_proposal_mode)
             except Exception as error:
                 costs = getattr(error, 'setup_accounting', {})
                 self.setup_action_calls += costs.get('source_action_calls', 0)
@@ -265,11 +279,14 @@ class MultiObjectGrasp(GraspSchema):
     def get_training_state(self):
         return {'protocol': 'multi-object-grasp-v1', 'reset_count': self.reset_count,
                 'rng_state': self.rng.bit_generator.state, 'lift_range': self.lift_range,
+                'grasp_proposal_mode': self.grasp_proposal_mode,
                 'failed_setup_attempts': self.failed_setup_attempts}
 
     def set_training_state(self, state):
         if state['protocol'] != 'multi-object-grasp-v1':
             raise ValueError('Wrong manipulation training protocol')
+        if state.get('grasp_proposal_mode', 'legacy') != self.grasp_proposal_mode:
+            raise ValueError('Cannot silently change resumed grasp proposal mode')
         if tuple(state.get('lift_range', (.20, .20))) != self.lift_range:
             raise ValueError('Cannot silently change resumed grasp goal distribution')
         self.reset_count = int(state['reset_count'])

@@ -88,3 +88,23 @@ A paired closure diagnostic also compared the physical teacher, the frozen BC ac
 
 
 The variable-goal collection completed **238/240** successful measured lift/hold episodes: can, banana, apple and mug48/48 each; foam brick46/48. Its24,000 decisions generated72,000 native demonstration calls,12,666 setup calls and2,645 physically executed perturbation calls, plus14,400 initialization-settling ticks. All240 attempts remain in the dataset/replay;238 successful episodes provide supervised action labels. Dataset SHA256:`953257e3017397b002f86fd5fd9c370593ae72419b955901cb2374860b3902e4`. The separate `phase2_sac_grasp_regularized01` run preserves the old BC actor as a zero-refinement comparator and adds8,000 declared BC-refinement updates,2,000 fresh-critic warmup updates and at most12,000 online decisions.
+
+
+## Completed regularized legacy pilot
+
+`phase2_sac_grasp_regularized01` completed12,000 actual online decisions and2,000 full SAC updates with weight200. The zero-online initializer, all seven scheduled online checks, and the final checkpoint pass the same10/10 fixed grasp-validation cases and5/5 training checks. This establishes stability on this small repeated bank; it does not show an increase in success rate or establish full-task generalization. The earlier ordinary-SAC pilot had collapsed, but data/controller/goal changes also separate the runs, so they are not a controlled regularization ablation.
+
+The declared success-then-distance selection chose the3,030-decision/504-update checkpoint. Its immutable ZIP is `runs/phase2_sac_grasp_regularized01/candidate/grasp.zip`, SHA256`779a7eefd15ae06bd41e63eef1b91802943d0fa1b8f5005e706f85b341aa099a`. The12k final actor and zero-online actor are separately frozen beside it, together with evaluation records, exact saved update counters, configuration and source hashes. Inference requires the54-state adapter, bounded IK,24cm subgoal and **legacy** proposals. No teacher acts at inference.
+
+The online SB3 CSV records the regularizer actively opposing critic drift: at update75, RL-gradient norm31.12 and weighted-BC norm30.86 had cosine−.988. This explains why the result must be labeled SAC+HER+demonstration regularization. A separate opt-in clearance-v2 dataset will address the can's contact geometry; it does not overwrite these legacy results.
+
+
+## Opt-in clearance curriculum and corrected teacher data
+
+The separately validated `clearance-v2` controller requires approach distances along its selected grasp axis. The shared curriculum now calls `controller.pregrasp_position(distance)`; legacy mode returns exactly the old vertical offsets. Builder, cached training environment, collector and trainer record the explicit proposal mode. Reset/resume rejects a mode change, and the trainer rejects mismatched dataset geometry. Eight focused tests pass, including an actual tilted can pickup from the four physically prepared approach offsets.
+
+`phase2_grasp_demos05` produced236/240 successful lifts. Two can42001 full-pregrasp attempts stalled with98–99 rejected actions: clipping each XYZ action component separately left the checked tilted approach direction. The paired TRAIN diagnostic `phase2_tilt_approach_probe01` reproduced both failures and fixed both with vector-norm saturation before bilateral contact, with zero rejections. This is a training-teacher change only. Learned inference remains the original continuous action mapping with the same IK/collision checks. Top-down and held-goal teacher actions are exactly unchanged; a focused regression checks this.
+
+All48 can episodes were recollected under the declared `ray-tilted` teacher option and passed. `phase2_grasp_demos06` combines them with the192 unchanged top-down records from05, giving238/240 successes. It executes zero new physics during composition; every source dataset, episode index and reused/new collection cost is explicit. An integrity audit verifies all24,000 transitions against their declared original arrays/actions/rewards/terminal flags. The old05 attempts remain intact. Dataset SHA256:`08615ac324a8e8bc774e4d2eb9945f66d4e1f4579985408f18ed7f08a3405ded`.
+
+`phase2_sac_grasp_clearance01` starts from the frozen legacy zero-online actor and uses fresh critics,8k declared BC refinement,2k critic calibration and a12k-decision regularized SAC pilot. Its ZIP/config/checkpoint metadata embeds `_pnr_grasp_protocol_signature`, including proposal mode, goals, demonstration teacher control, dataset hash and semantic source hashes. One of six training can point-cloud seeds uses the controller's explicit legacy fallback; the mode does not guarantee every can proposal is tilted.

@@ -70,7 +70,7 @@ class ManipulationSkillEnv(gym.Env):
             # Difficult starts remain available for later curriculum levels.
             self.snapshots.append((.17,self.native.save_state()))
             for height in [.09,.04,.008]:
-                self.controller.move_ee(grasp.position+[0,0,height],self.orientation,
+                self.controller.move_ee(self.controller.pregrasp_position(height, grasp),self.orientation,
                     stage='curriculum_setup',closed=False)
                 self.snapshots.append((height,self.native.save_state()))
             self.snapshots.sort(key=lambda item:item[0])
