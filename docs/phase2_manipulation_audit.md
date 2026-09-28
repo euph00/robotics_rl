@@ -155,3 +155,27 @@ Before changing the contract, `phase2_grasp_history_transport01` compared the fi
 All ten pairs have exactly matching first-contact qpos, qvel, object poses, hand-relative positions, action prefixes, and native-call indices. Full retained transport is **8/10 in both branches**. Settling rescues can TRAIN000 from a carry grip loss, but turns apple TRAIN000 from a complete transport success into a planned-posture grip loss. Mug TRAIN000 fails pickup in both; the other seven pairs pass both. There are no wall/table contacts. Thus the bounded test does not support a universal settling teacher or a new history-based training branch, despite the earlier improvement on two development apple cases.
 
 All 20 attempts and native contact traces are preserved, with completed branch pickle backups written before JSON serialization. Exact cost is 49,623 native calls / 248,115 physics ticks, plus 9,600 initialization ticks, totaling 257,715 ticks. The checkpoint and protocol are frozen in the run artifacts. Production inference, observations, teacher labels, datasets, and original physics remain unchanged.
+
+
+The compact SAC pilot completed **12,000 online decisions / 2,000 full SAC updates**, following 2,000 fresh-critic initialization updates and no further BC refinement. The transferred actor, initialized actor, all scheduled online checks, and final actor retained **10/10 development validation and 5/5 TRAIN pickup/hold**. This demonstrates stability on the repeated skill bank; it does not establish improved transport or full-task success. At update 2,000, weighted BC and RL actor-gradient norms were 14.51 and 10.18, with cosine -0.886, showing that demonstration regularization remained an active constraint.
+
+The success-then-distance rule selected 7,038 decisions / 1,172 SAC updates. Immutable checkpoint: `runs/phase2_sac_grasp_compact01/candidate/grasp.zip`, SHA256 `9c22b7f232bcbd9851ca378e110a817c4b28595862d1d56221a2842d7c826912`. Final and zero-online controls, matching evaluations, exact counters, compact28/full70 metadata and source hashes are frozen alongside it. Its BC predecessor remains unchanged. No new full-system evaluation was run for the SAC candidate at this point.
+
+The pilot executed 36,000 training native calls, 15,540 training-setup calls, 27,084 evaluation calls, and 6,550 evaluation-setup calls, plus 24,480 initialization ticks: **450,350 new physics ticks** total. Previously collected demonstrations are reused, with their collection costs reported separately. The bounded online phase visited 30 of 48 shuffled TRAIN cases, spanning all five objects; six further cases were physically prepared by final VecEnv auto-resets but received no policy actions. All 48 cases remained available through measured demonstration replay and actor regularization. This distinction is documented in `artifacts/online_case_coverage.json`; shuffled case availability is not claimed as full online visitation.
+
+
+## Bounded TRAIN final-approach speed grid
+
+`phase2_grasp_approach_speed01` fixes the first four TRAIN layouts across all five objects and independently executes three common teacher settings per case. The ordinary 0.65 action cap changes to 0.40 or 0.20 only within 3 cm of the live proposal target before bilateral contact. The 18 mm closure gate, clearance-v2 proposals, ray-tilted approach rule, 24 cm goal, original physics, planned handover, full 0.075 m carry teacher, and final 50-call hold remain fixed. These 60 branches are diagnostic teacher executions; no new learning dataset or inference behavior is introduced.
+
+| Near-contact cap | Full retained transport | Measured mean TCP speed | Pickup success |
+| --- | --- | --- | --- |
+| 0.65 | 13/20 | 0.122 m/s | 20/20 |
+| 0.40 | 15/20 | 0.079 m/s | 19/20 |
+| 0.20 | 17/20 | 0.039 m/s | 20/20 |
+
+All twenty proposal triples match exactly. The slowest setting adds a mean 39 grasp physics ticks versus the ordinary teacher (range 15–60). On the ten cases retained under every setting, complete transport costs a mean 47.5 additional ticks. Comparing successful-only averages across different survivor sets would confound this tradeoff, so the paired costs are reported separately.
+
+The 0.20 setting rescues six ordinary-teacher failures but introduces two regressions. By object, transport changes from foam 4/4 to 3/4, banana 3/4 to 2/4, can 1/4 to 4/4, apple 2/4 to 4/4, and mug 3/4 to 4/4. This supports investigating a single slower shared teacher on additional fixed TRAIN cases; it does not justify an object-specific winner lookup or claim uniformly improved seating. No production teacher, reward, observation contract, or dataset has changed.
+
+All 60 outcomes, first-contact seating, every-native contact centroids/margins, and measured action/approach-speed records are preserved. Every completed branch is backed up before JSON serialization. Exact cost is 141,504 native calls / 707,520 physics ticks plus 28,800 initialization ticks, totaling 736,320 ticks. Summary and paired comparisons are in `runs/phase2_grasp_approach_speed01/artifacts/summary.json` and `review_metrics.json`.
