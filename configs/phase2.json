@@ -75,5 +75,14 @@
     "gate_passed": false,
     "full_validation_launched": false,
     "hypothesis_status": "closed_without_retuning"
+  },
+  "retention_feedback_pilot": {
+    "status": "implementation_and_synthetic_verification",
+    "protocol": "runs/phase2_grasp_retention_pg_plan01/artifacts/proposal.json",
+    "protocol_sha256": "59e67e27996ada5c95e35a7a29c76d3cc823ccf96e5963a4c8b5d02de5cce7bf",
+    "arms": "matched SAC+HER; extra BC step with retention weight 0 versus 1",
+    "policy_training_launched": false,
+    "physical_interactions_launched": false,
+    "full_validation_launched": false
   }
 }

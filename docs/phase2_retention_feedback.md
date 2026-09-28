@@ -21,17 +21,36 @@ object-specific training-fold prevalence. Within-case ranking is averaged over
 
 All fits converged, but the classifier lost to object prevalence on seven of
 eight excluded layouts. Independent checks reproduced input identities, scaling,
-case weights, coefficients and predictions. Computation took 0.62 CPU seconds;
+case weights, coefficients and predictions. The eight fits took 0.62 seconds, excluding preparation and auditing;
 there were no policy updates, policy inference or physics interactions. No
 hyperparameter, feature or cohort search followed. This small negative linear
 screen does not establish fundamental unobservability; it does not justify
 optimizing an action-value critic from these data either.
 
-The next proposal considers direct on-policy credit from actually measured
-transport outcomes, without a learned retention predictor. It would remain
-separate from native SAC+HER and retain actual observations, native ending flags
-and all delayed physical costs. Its variance, exploration/deployment mismatch
-and feasible development gate require review before any policy training.
+The next experiment adds direct feedback from actual transport outcomes alongside
+unchanged SAC+HER. Its prospective protocol has passed independent review for
+implementation; synthetic tests and implementation review must pass before
+training starts. No new policy fitting or physics has started for this experiment.
+
+Two matched arms start from the original grasp checkpoint. Each receives four
+rounds of 3,000 native pickup decisions followed by 120 fresh stochastic
+original-start transport attempts on TRAIN layouts. Both get the same extra
+imitation step; only one also uses the measured transport outcome to update its
+grasp policy. Each collection uses a frozen actor and is consumed once. A strict
+change limit accepts or restores the single proposed update. Native HER rewards
+and ending flags remain unchanged; all preparation and transport costs count.
+
+The fixed endpoints will face 40 paired TRAIN cases with deterministic actions.
+The candidate must retain at least 36/40 objects, improve on its matched control,
+and avoid new preparation failures. A passing result can authorize one full
+60-case development evaluation, requiring at least 57 complete tasks and 38
+within the inclusive tick limit. The physical pilot is capped at two hours.
+These are development checks; neither retired test bank nor the final-study
+reserve will be used. High variance and limited useful action variation remain
+reasons this experiment could fail.
+
+[Exact prospective protocol](../runs/phase2_grasp_retention_pg_plan01/artifacts/proposal.md) ·
+[Independent proposal review](../runs/phase2_grasp_retention_pg_plan01/artifacts/independent_proposal_review_scene_bank.json).
 
 [Frozen screen](../runs/phase2_grasp_retention_predictor_plan01/artifacts/plan_v2.json) ·
 [Results and all folds](../runs/phase2_grasp_retention_predictor01/artifacts/report.md) ·
