@@ -86,3 +86,15 @@ Preparation checkpoint SHA, settings, exact ordered cases, replay class and
 sampling mode are resume-checked.41 focused replay, seeding, checkpoint and
 learned-cache tests cover this integration. This remains SAC+HER with continuing
 demonstration-action regularization, not ordinary unregularized SAC.
+
+
+A post-run accounting check found that the initial balanced BC run still used
+the older fixed-floor group batch allocation: each256-row batch contained49
+examples each for can, banana, apple and mug, and60 for foam, because all integer
+rounding remainder went to the final stratum. This is approximately object
+balanced, not exactly20% in expectation. Its archived run/source remain intact.
+Future balanced BC initialization uses multinomial group counts to honor the
+declared probabilities in expectation. Online demonstration regularization and
+object-balanced HER already used categorical draws and need no correction.
+The active balanced online branch has zero additional BC updates and is
+unaffected; its parent initializer's actual allocation is disclosed here.

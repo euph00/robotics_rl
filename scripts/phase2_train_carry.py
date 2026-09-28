@@ -371,8 +371,11 @@ def main():
                 rng=np.random.default_rng(args.seed);losses=[];bc_started=time.monotonic()
                 update=0
                 for update in range(1,args.bc_updates+1):
-                    sizes=[int(args.batch_size*probability) for probability in probabilities[:-1]]
-                    sizes.append(args.batch_size-sum(sizes))
+                    if args.balance_objects:
+                        sizes=rng.multinomial(args.batch_size,probabilities)
+                    else:
+                        sizes=[int(args.batch_size*probability) for probability in probabilities[:-1]]
+                        sizes.append(args.batch_size-sum(sizes))
                     indices=np.concatenate([rng.choice(s,size=n,replace=True) for s,n in zip(strata,sizes)])
                     batch={k:v[indices] for k,v in obs.items()}
                     predicted=model.actor(batch,deterministic=True)
@@ -386,7 +389,8 @@ def main():
                     if stop.requested:break
                 callback.initialization['bc']={'parent_checkpoint':args.initial_checkpoint,
                     'parent_checkpoint_sha256':config['initial_checkpoint_sha256'],'updates':update,'batch_size':args.batch_size,'examples':update*args.batch_size,
-                    'wall_seconds':time.monotonic()-bc_started,'supervision':supervision}
+                    'wall_seconds':time.monotonic()-bc_started,'supervision':supervision,
+                    'batch_strata_sampler':'multinomial' if args.balance_objects else 'fixed_floor_last_remainder'}
                 callback.initialization['std_calibration']=calibrate_actor_std(model,-3.)
                 model.save(logger.directory/'checkpoints/bc_initialized')
                 atomic_json(logger.directory/'artifacts/initialization.json',plain(callback.initialization))
