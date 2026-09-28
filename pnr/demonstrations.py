@@ -7,13 +7,82 @@ import pickle
 import numpy as np
 
 
-def seed_replay(model, path, *, object_labels=False, preparation_sources_by_mode=None):
+def _discount_relabel_contract(model, data, target_gamma):
+    """Validate source rewards before insertion; schema computation runs no physics."""
+    from .multi_carry import CarrySchema
+    if (isinstance(target_gamma, bool) or not isinstance(target_gamma, (int, float, np.floating))
+            or target_gamma != .999 or getattr(model, 'gamma', None) != target_gamma):
+        raise ValueError('Discount relabeling requires explicit target gamma .999 matching the learner')
+    metadata = data.get('metadata', {})
+    expected = {'partition': 'train', 'gamma': .995, 'shaping_weight': 2.,
+                'delta_scale': .075, 'repeat': 5}
+    if any(metadata.get(key) != value for key, value in expected.items()):
+        raise ValueError('Discount relabeling requires the declared original TRAIN carry reward/action contract')
+    source = CarrySchema(gamma=.995, shaping_weight=2.)
+    target = CarrySchema(gamma=float(target_gamma), shaping_weight=2.)
+    if (model.action_space.shape != (2,) or
+            {key: space.shape for key, space in model.observation_space.spaces.items()} !=
+            {key: space.shape for key, space in source.observation_space.spaces.items()}):
+        raise ValueError('Discount relabeling supports only the unchanged 580-state carry contract')
+    count = 0
+    maximum_error = 0.
+    for episode in data['episodes']:
+        rows = episode.get('transitions', [])
+        if not rows:
+            raise ValueError('Empty demonstration episode')
+        achieved = np.stack([row['next_observation']['achieved_goal'] for row in rows])
+        desired = np.stack([row['observation']['desired_goal'] for row in rows])
+        infos = [row['info'] for row in rows]
+        # The potential must use the actual previous achieved goal, including HER.
+        if any('previous_achieved_goal' not in row['info'] or
+               not np.array_equal(row['info']['previous_achieved_goal'], row['observation']['achieved_goal'])
+               for row in rows):
+            raise ValueError('Carry reward relabeling requires the recorded previous physical achieved goal')
+        stored = np.asarray([row['reward'] for row in rows], dtype=np.float32)
+        recomputed = source.compute_reward(achieved, desired, infos)
+        if not np.allclose(stored, recomputed, atol=1e-5, rtol=0.):
+            raise ValueError('Stored source reward differs from the declared original gamma .995 contract')
+        maximum_error = max(maximum_error, float(np.max(np.abs(stored.astype(float)-recomputed))))
+        count += len(rows)
+    # Pure reward queries distinguish gamma, potential weight and absorbing failure
+    # cost even for a degenerate dataset; these probes never enter replay.
+    achieved = np.array([[.2, 0.], [.2, 0.], [.5, 0.]], dtype=np.float32)
+    desired = np.array([[.5, 0.]] * 3, dtype=np.float32)
+    infos = [dict(previous_achieved_goal=np.array([.1, 0.], dtype=np.float32),
+                  bilateral_contact=True, retention_ok=not failed, physical_failure=failed)
+             for failed in (False, True, False)]
+    expected_rewards = target.compute_reward(achieved, desired, infos)
+    actual = model.env.env_method('compute_reward', achieved, desired, infos, indices=[0])[0]
+    if not np.allclose(actual, expected_rewards, atol=1e-5, rtol=0.):
+        raise ValueError('Active target reward must use gamma .999, shaping 2 and matching failure cost 1000')
+    return target, {'protocol': 'carry-discount-replay-relabel-v1',
+        'source_gamma': .995, 'target_gamma': float(target_gamma),
+        'source_shaping_weight': 2., 'target_shaping_weight': 2.,
+        'source_failure_cost': source.reward_proxy.failure_cost,
+        'target_failure_cost': target.reward_proxy.failure_cost,
+        'source_transitions_verified': count, 'source_reward_max_abs_error': maximum_error,
+        'real_rewards_recomputed': 0, 'changed_real_rewards': 0,
+        'reward_delta_sum': 0., 'reward_delta_abs_sum': 0.,
+        'reward_delta_min': None, 'reward_delta_max': None,
+        'new_physical_interactions': 0, 'source_dataset_mutated': False,
+        'relabeling_changes_reward_only': True,
+        'existing_seeding_and_timeout_rules_unchanged': True,
+        'hindsight_reward_provider': 'active target environment compute_reward',
+        'schema_probes_inserted_into_replay': 0}
+
+
+def seed_replay(model, path, *, object_labels=False, preparation_sources_by_mode=None,
+                reward_relabel_gamma=None):
     """Import a trusted local dataset into a fresh vector HER replay buffer.
 
     Whole demonstration episodes are assigned to worker streams. Only real
     transitions are used. Unequal streams are cropped to the shortest stream;
     the final prefix of each unfinished episode gets a collector timeout, so
     subsequent online resets cannot connect unrelated physical trajectories.
+
+    Opt-in reward_relabel_gamma=.999 verifies the original declared .995 carry
+    rewards before importing recomputed real rewards. Native HER keeps using
+    the active target environment. The default import path is unchanged.
     """
     if preparation_sources_by_mode is not None:
         if not object_labels:raise ValueError('Preparation labels require explicit original object labels')
@@ -26,6 +95,9 @@ def seed_replay(model, path, *, object_labels=False, preparation_sources_by_mode
     replay=model.replay_buffer
     if replay.pos or replay.full:
         raise ValueError('Demonstrations can only seed a fresh replay buffer')
+    relabel_schema=relabel_report=None
+    if reward_relabel_gamma is not None:
+        relabel_schema,relabel_report=_discount_relabel_contract(model,data,reward_relabel_gamma)
     streams=[[] for _ in range(model.n_envs)]
     for episode in data['episodes']:
         transitions=episode['transitions']
@@ -89,11 +161,26 @@ def seed_replay(model, path, *, object_labels=False, preparation_sources_by_mode
             physics_ticks+=int(info['physics_ticks_delta'])
         rewards=np.asarray([record['reward'] for record in records],dtype=np.float32)
         recomputed=model.env.env_method('compute_reward',following['achieved_goal'],observations['desired_goal'],infos,indices=[0])[0]
-        if not np.allclose(rewards,recomputed,atol=1e-5,rtol=0.):
-            raise ValueError('Dataset reward differs from the active environment contract')
+        if relabel_report is None:
+            if not np.allclose(rewards,recomputed,atol=1e-5,rtol=0.):
+                raise ValueError('Dataset reward differs from the active environment contract')
+        else:
+            target_rewards=relabel_schema.compute_reward(following['achieved_goal'],observations['desired_goal'],infos)
+            if not np.allclose(recomputed,target_rewards,atol=1e-5,rtol=0.):
+                raise ValueError('Active environment differs from declared target carry reward contract')
+            target_rewards=np.asarray(recomputed,dtype=np.float32)
+            delta=target_rewards.astype(np.float64)-rewards.astype(np.float64)
+            relabel_report['real_rewards_recomputed']+=len(rewards)
+            relabel_report['changed_real_rewards']+=int(np.count_nonzero(target_rewards!=rewards))
+            relabel_report['reward_delta_sum']+=float(delta.sum())
+            relabel_report['reward_delta_abs_sum']+=float(np.abs(delta).sum())
+            low,high=float(delta.min()),float(delta.max())
+            relabel_report['reward_delta_min']=low if relabel_report['reward_delta_min'] is None else min(low,relabel_report['reward_delta_min'])
+            relabel_report['reward_delta_max']=high if relabel_report['reward_delta_max'] is None else max(high,relabel_report['reward_delta_max'])
+            rewards=target_rewards
         replay.add(observations,following,actions,rewards,dones,infos)
     available=sum(len(stream) for stream in streams)
-    return {'method':'physical_demonstration_replay_seed','actor_behavior_cloning':False,
+    report={'method':'physical_demonstration_replay_seed','actor_behavior_cloning':False,
         'path':str(path),'sha256':hashlib.sha256(path.read_bytes()).hexdigest(),
         'dataset_metadata':data.get('metadata',{}),'episodes_collected':len(data['episodes']),
         'transitions_collected':available,'transitions_imported':length*model.n_envs,
@@ -104,6 +191,13 @@ def seed_replay(model, path, *, object_labels=False, preparation_sources_by_mode
         'preparation_sources_by_mode':preparation_sources_by_mode,
         'imported_preparation_transition_counts':imported_preparations,
         'teacher_at_evaluation':False,'hindsight_at_evaluation':False,'reward_roundoff_atol':1e-5}
+
+    if relabel_report is not None:
+        relabel_report['source_dataset_sha256']=report['sha256']
+        relabel_report['reward_delta_mean']=relabel_report['reward_delta_sum']/relabel_report['real_rewards_recomputed']
+        relabel_report['reward_delta_mean_abs']=relabel_report['reward_delta_abs_sum']/relabel_report['real_rewards_recomputed']
+        report['reward_relabeling']=relabel_report
+    return report
 
 
 def _carry_supervision_single(dataset):
