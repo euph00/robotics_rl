@@ -54,4 +54,10 @@ requires a new recorded protocol.
 [Frozen evaluation plan](../runs/phase2_confirmation_test_plan01/artifacts/evaluation_plan.json) ·
 [All outcomes](../runs/phase2_system_confirmation_test01/artifacts/summary.json) ·
 [Independent audit](../runs/phase2_system_confirmation_test01/artifacts/independent_result_audit.json) ·
-[Outcome matrix](../runs/phase2_system_confirmation_test01/artifacts/validation_matrix.png).
+[Outcome matrix](../runs/phase2_system_confirmation_test01/artifacts/confirmation_matrix.png).
+
+Five predeclared validation recordings show the revised policy on the first
+validation maze: banana, can and mug complete; foam and apple drop during carry.
+All five match their original validation traces and costs exactly; all ten
+video files decode successfully. These are diagnostics, not additional unseen
+cases. [Recording set](../runs/phase2_candidate02_recordings01/artifacts/summary.json).

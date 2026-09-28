@@ -62,8 +62,12 @@ temperature learned for 40k online decisions. Its fresh 100-case confirmation
 completed 69 tasks, with 24 of 31 failures caused by carry grasp loss. The
 independent audit passed; the milestone did not. This confirmation is now
 retired after informing refinement, with no test trajectories used in training.
-A new TRAIN-only grasp-qualification protocol is being prepared; the earlier
-conditional plan remains skipped. Small gains on the reused 60-case validation
+The independently reviewed TRAIN-only grasp-qualification Plan03 is
+collecting 120 original-start preparations; the earlier conditional plan remains
+skipped. Any BC fit is fixed at 2,000 updates and requires completed-data review.
+A 20-case paired retention screen must improve by at least three net successes
+without preparation regressions; one permitted full 60-case follow-up would then need
+at least 57 complete and 38 timed successes before consideration of another test. Small gains on the reused 60-case validation
 bank are insufficient evidence of better generalization. The eventual SAC/TD3 × original/modified gripper × three-seed study
 still requires independent replications and matched assistance/data protocols.
 Current development runs are not those replications.
@@ -74,11 +78,12 @@ Dashboard: **http://127.0.0.1:8766**. From another machine, forward that port to
 this host with SSH; see [instructions](../dashboard/README.md). Server PID/logs
 are in `dashboard/.runtime/`.
 
-The featured 40k-policy recording is one of three predeclared successful diagnostic
-repeats. An earlier first-case recording dropped during reach and is preserved;
-its discrepancy remains unresolved. The three later repeats had identical logged
-actions and physical states across rendered/non-rendered execution. They are
-reproduction diagnostics, not extra held-out cases.
+The featured revised-policy recordings cover all five objects on the first
+validation maze, fixed before the confirmation results. Banana, can and mug
+complete; foam and apple drop while carrying. All five recordings reproduce
+the saved validation trajectories and tick counts exactly. They are
+visualization diagnostics, not additional unseen cases. Older recordings,
+including the historical reach-drop discrepancy, remain preserved.
 
 Models, replay, data, videos and immutable source snapshots live under ignored
 `runs/`; preserve those directories when transferring experiments. Source and
