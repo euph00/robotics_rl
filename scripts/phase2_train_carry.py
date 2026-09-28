@@ -252,6 +252,8 @@ def main():
     p.add_argument('--encoder',choices=('cnn32','gated48-k20-f5'),default='cnn32',
                    help='Opt-in fixed GPPN-inspired map core; default CNN architecture is unchanged')
     p.add_argument('--navigation-only',action='store_true')
+    p.add_argument('--freeze-actor-spatial',action='store_true',
+                   help='Opt-in: freeze only the gated actor map core after BC; fusion, critics and temperature keep learning')
     p.add_argument('--balance-objects',action='store_true',help='Uniform TRAIN-object BC sampling before per-object direction strata')
     p.add_argument('--balance-replay-objects',action='store_true',help='Uniform original-object sampling before standard HER relabeling')
     p.add_argument('--balance-replay-sources',action='store_true',help='Uniform fixed preparation families within each replay object')
@@ -274,7 +276,7 @@ def main():
         if Path(args.resume_run).name!=args.resume_run:p.error('Use a run ID for --resume-run')
         parent_config=json.loads((ROOT/'runs'/args.resume_run/'config.json').read_text())
         explicit={token.split('=')[0] for token in sys.argv[1:] if token.startswith('--')}
-        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts','encoder','navigation_only','buffer_size','critic_warmup_tau','balance_objects','preparation_grasp','training_layouts','training_objects','balance_replay_objects','balance_replay_sources','preparation_variants','preparation_seed','gamma','relabel_demo_rewards','min_demo_fraction'):
+        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts','encoder','navigation_only','buffer_size','critic_warmup_tau','balance_objects','preparation_grasp','training_layouts','training_objects','balance_replay_objects','balance_replay_sources','preparation_variants','preparation_seed','gamma','relabel_demo_rewards','min_demo_fraction','freeze_actor_spatial'):
             if '--'+key.replace('_','-') not in explicit:setattr(args,key,parent_config.get(key,getattr(args,key)))
         if '--preparation-grasp' not in explicit and parent_config.get('frozen_preparation_grasp'):
             args.preparation_grasp=parent_config['frozen_preparation_grasp']
@@ -282,6 +284,12 @@ def main():
             p.error('Cannot change completed critic-warmup provenance on resume')
     if (args.gamma!=.995)!=bool(args.relabel_demo_rewards):p.error('The gamma .999 ablation requires explicit --relabel-demo-rewards; default gamma does not relabel')
     if not args.demonstrations:p.error('--demonstrations required for a fresh run')
+    if args.freeze_actor_spatial:
+        if args.encoder!='gated48-k20-f5' or args.bc_weight<=0:
+            p.error('--freeze-actor-spatial requires gated48-k20-f5 and positive --bc-weight')
+        if args.resume_run and not parent_config.get('freeze_actor_spatial',False):
+            p.error('Actor spatial freeze requires a fresh branch from a zero-online BC actor')
+
     if args.buffer_size<1:p.error('--buffer-size must be positive')
     if args.balance_replay_sources and not args.balance_replay_objects:p.error('Source balancing requires explicit object-balanced replay')
     if args.min_demo_fraction is not None:
@@ -330,6 +338,11 @@ def main():
     # Legacy resumes retain their original signature vocabulary. New runs record the encoder.
     if args.resume_run and 'encoder' not in parent_config and '--encoder' not in explicit:
         config.pop('encoder')
+    if args.freeze_actor_spatial:
+        from pnr.frozen_spatial_sac import FREEZE_PROTOCOL
+        config['spatial_freeze_protocol']=FREEZE_PROTOCOL
+    else:
+        config.pop('freeze_actor_spatial',None)
     if args.min_demo_fraction is None:
         config.pop('min_demo_fraction',None)  # Preserve existing default signature vocabulary.
     else:
@@ -348,6 +361,10 @@ def main():
                   cumulative_online_budget=inherited+args.steps)
     algorithm='SAC+HER+demonstration regularization' if args.bc_weight>0 else 'BC-initialized SAC+HER'
     learner=RegularizedSAC if args.bc_weight>0 else SAC
+    if args.freeze_actor_spatial:
+        from pnr.frozen_spatial_sac import FrozenSpatialRegularizedSAC
+        learner=FrozenSpatialRegularizedSAC
+        algorithm+=' + frozen actor map core'
     logger=RunLogger(args.run_id,kind='train',skill='carry',algorithm=algorithm,budget=inherited+args.steps,
         transitions=inherited,name=f'Carry · regularized SAC (weight {args.bc_weight:g})' if args.bc_weight>0 else 'Spatial multi-maze SAC + HER',
         summary='Resuming ordinary SAC+HER.' if resumed else 'Initializing map-aware actor from diverse physical demonstrations.')
@@ -456,6 +473,9 @@ def main():
                     'batch_strata_sampler':'multinomial' if args.balance_objects else 'fixed_floor_last_remainder',
                     'encoder':args.encoder,'encoder_settings':encoder_policy_kwargs(args.encoder,args.navigation_only)['features_extractor_kwargs']}
                 callback.initialization['std_calibration']=calibrate_actor_std(model,-3.)
+                if args.freeze_actor_spatial:
+                    callback.initialization['actor_spatial_freeze']=model.freeze_actor_spatial()
+                    callback.initialization['gradient_diagnostic_scope']='trainable actor fusion and action heads; spatial core frozen'
                 model.save(logger.directory/'checkpoints/bc_initialized')
                 atomic_json(logger.directory/'artifacts/initialization.json',plain(callback.initialization))
                 if stop.requested:return

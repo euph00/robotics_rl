@@ -47,6 +47,18 @@ def _normalized_method(method):
     weight=float(result.get('bc_weight',0.))
     if not np.isfinite(weight) or weight<0:raise ValueError('Invalid checkpoint bc_weight')
     result['bc_weight']=weight
+    freeze=result.get('freeze_actor_spatial',False)
+    if not isinstance(freeze,bool):raise ValueError('Invalid actor spatial freeze flag')
+    if freeze:
+        from pnr.frozen_spatial_sac import FREEZE_PROTOCOL
+        if result.get('spatial_freeze_protocol')!=FREEZE_PROTOCOL:
+            raise ValueError('Unknown actor spatial freeze protocol')
+        if result.get('encoder')!='gated48-k20-f5' or weight<=0:
+            raise ValueError('Actor spatial freeze requires the gated encoder and positive regularization')
+    else:
+        if result.get('spatial_freeze_protocol') is not None:
+            raise ValueError('Actor spatial freeze protocol requires an explicit freeze flag')
+        result.pop('freeze_actor_spatial',None);result.pop('spatial_freeze_protocol',None)
     result['navigation_only']=bool(result.get('navigation_only',False))
     result['balance_objects']=bool(result.get('balance_objects',False))
     result['balance_replay_objects']=bool(result.get('balance_replay_objects',False))
@@ -86,7 +98,7 @@ def _method(config):
     result={key:config[key] for key in BASE_METHOD_FIELDS}
     result.update({key:config[key] for key in ('bc_weight','demo_batch_size','navigation_only','buffer_size','balance_objects','balance_replay_objects','balance_replay_sources')+PREPARATION_FIELDS if key in config})
     if 'encoder' in config:result['encoder']=config['encoder']
-    for key in ('min_demo_fraction','demo_floor_protocol'):
+    for key in ('min_demo_fraction','demo_floor_protocol','freeze_actor_spatial','spatial_freeze_protocol'):
         if key in config:result[key]=config[key]
     return _normalized_method(result)
 
@@ -101,7 +113,8 @@ def _semantic_sources(method):
     gated=method.get('encoder','cnn32')=='gated48-k20-f5'
     encoder_sources=('pnr/gated_spatial_features.py',) if gated else ()
     navigation_sources=('pnr/navigation_features.py',) if method['navigation_only'] or gated else ()
-    return SEMANTIC_SOURCES+preparation_sources+variant_sources+replay_sources+source_balance_sources+demo_floor_sources+(('pnr/regularized_sac.py',) if method['bc_weight']>0 else ())+navigation_sources+encoder_sources
+    freeze_sources=('pnr/frozen_spatial_sac.py',) if method.get('freeze_actor_spatial',False) else ()
+    return SEMANTIC_SOURCES+preparation_sources+variant_sources+replay_sources+source_balance_sources+demo_floor_sources+(('pnr/regularized_sac.py',) if method['bc_weight']>0 else ())+navigation_sources+encoder_sources+freeze_sources
 
 
 def signature(config,source_root):
@@ -157,6 +170,7 @@ def publish_checkpoint(model,run_directory,state,resume_signature,label):
     """Publish latest only after a complete, hashed and flushed bundle exists."""
     root=Path(run_directory)/'checkpoints';root.mkdir(parents=True,exist_ok=True)
     if getattr(model.env,'waiting',False):raise RuntimeError('Checkpoint cannot read pending worker replies')
+    freeze=validate_spatial_freeze_model(model,resume_signature['method'])
     generation=f'step_{model.num_timesteps:09d}_{time.time_ns()}'
     temporary=root/('.'+generation+'.pending');target=root/generation
     temporary.mkdir()
@@ -167,6 +181,7 @@ def publish_checkpoint(model,run_directory,state,resume_signature,label):
                      online_decisions=int(model.num_timesteps),online_gradient_updates=int(model._n_updates),
                      replay_position=int(model.replay_buffer.pos),replay_workers=int(model.replay_buffer.n_envs),
                      resume_note='Restore learner/RNG/costs; truncate replay tails and restart physical episodes.')
+        if freeze is not None:payload['actor_spatial_freeze']=freeze
         atomic_json(temporary/'state.json',payload)
         files=('model.zip','replay.pkl','rng.pt','state.json')
         for name in files:_sync(temporary/name)
@@ -275,6 +290,9 @@ def validate_loaded_model(model,checkpoint,workers):
         raise ValueError('Resume model counters differ from checkpoint state')
     if not getattr(replay,'copy_info_dict',False):raise ValueError('HER physical reward information missing')
     method=_normalized_method(state['resume_signature']['method'])
+    freeze=validate_spatial_freeze_model(model,method)
+    if freeze!=state.get('actor_spatial_freeze'):
+        raise ValueError('Saved actor spatial freeze differs from checkpoint state')
     if 'encoder' in method:
         validate_encoder_model(model,method['encoder'],method['navigation_only'])
     from pnr.object_balanced_her import ObjectBalancedHerReplayBuffer
@@ -346,3 +364,16 @@ def validate_loaded_model(model,checkpoint,workers):
                 state.setdefault('legacy_missing',[]).append('one executed vector transition absent from legacy replay')
                 state['legacy_omitted_online_decisions']=workers
 
+
+
+def validate_spatial_freeze_model(model,method):
+    """Opt-in runtime check; inactive legacy paths acquire no new source dependency."""
+    declared=method.get('freeze_actor_spatial',False)
+    actual=getattr(model,'actor_spatial_freeze',None)
+    if not declared:
+        if actual is not None:raise ValueError('Undeclared actor spatial freeze in model')
+        return None
+    from pnr.frozen_spatial_sac import FrozenSpatialRegularizedSAC, FREEZE_PROTOCOL
+    if method.get('spatial_freeze_protocol')!=FREEZE_PROTOCOL or not isinstance(model,FrozenSpatialRegularizedSAC):
+        raise ValueError('Declared actor spatial freeze requires its resume-safe learner')
+    return model.assert_actor_spatial_frozen()
