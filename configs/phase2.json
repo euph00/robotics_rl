@@ -36,7 +36,7 @@
     "milestone_test": "freeze candidate before one final test bank evaluation; if subsequently used for debugging, disclose and retire bank as development",
     "final_study": "separate reserve bank and independent training seeds"
   },
-  "status": "confirmation_preflight",
+  "status": "grasp_retention_refinement_after_confirmation",
   "frozen_baseline": "configs/milestone1_candidate.json",
   "object_indices": [
     14,
@@ -55,5 +55,15 @@
     "timed_action_only": 67,
     "milestone_met": false,
     "future_role": "historical test; retired from further held-out promotion; never imported into training"
+  },
+  "confirmation_result": {
+    "run": "phase2_system_confirmation_test01",
+    "candidate": "configs/phase2_candidate02.json",
+    "complete": 69,
+    "cases": 100,
+    "timed_including_settling": 53,
+    "timed_action_only": 53,
+    "milestone_met": false,
+    "future_role": "historical confirmation; retired after informing refinement; no trajectories imported into training"
   }
 }

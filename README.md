@@ -6,23 +6,23 @@ The foundation is [NUS-LinS-Lab/Pick-Nav-Reach-Default-Project](https://github.c
 
 ## Current milestone
 
-The first unseen-maze test completed **78/100 tasks**, with **63/100 within
-15,000 physics ticks including settling and final hold**. The 80/100 target was
-missed; refinement continues. The test covers five supplied objects and 20
-unseen layouts, with every failure retained and no rerolls.
+The revised policy completed **69/100 tasks** on a fresh confirmation bank,
+with **53/100 within 15,000 physics ticks including settling and final hold**.
+The 80/100 target remains unmet. The earlier policy scored 78/100 on different
+unseen maps; both results are preserved. Current work targets grasp retention.
 
-[Dashboard](http://127.0.0.1:8766) · [Test report](docs/phase2_test01.md) ·
-[Current state](docs/project_state.md) · [Frozen candidate](configs/phase2_candidate.json).
+[Dashboard](http://127.0.0.1:8766) · [Confirmation report](docs/phase2_confirmation_test01.md) ·
+[First test](docs/phase2_test01.md) · [Current state](docs/project_state.md) ·
+[Frozen revised candidate](configs/phase2_candidate02.json).
 
 This is a three-skill hybrid: BC-initialized SAC+HER grasp/carry with continuing
 demonstration regularization, ordinary SAC+HER reach, and declared planned
 approach/carry-posture assistance. Learned navigation has no route oracle.
 The original gripper and upstream physics remain unchanged.
 
-The first test is preserved as a historical result and retired from future
-held-out claims after further development. Its trajectories are not added to
-training; a fresh confirmation bank was fixed before revision, while the
-final-study reserve remains sealed. The earlier single-maze
+Both tests are preserved as historical results and retired from future
+held-out claims after informing further development. Their trajectories are
+not added to training; the final-study reserve remains sealed. The earlier single-maze
 [development baseline](docs/milestone1.md) remains frozen.
 
 ## Environment

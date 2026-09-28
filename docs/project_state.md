@@ -1,12 +1,14 @@
 # Project state
 
-The original Fetch system completed **78/100 tasks on 20 unseen maze layouts**,
-with 63/100 completed within 15,000 physics ticks including settling and final
-hold. The 80/100 milestone is **not met**; refinement continues within the agreed
-investigation window ending 2026-09-29 05:53:20 UTC.
+The revised original Fetch system completed **69/100 tasks on 20 fresh maze
+layouts**, with 53/100 within 15,000 physics ticks including settling and final
+hold. The 80/100 milestone is **not met**. The earlier candidate scored 78/100
+on a different test bank. Refinement now targets grasp retention within the
+agreed window ending 2026-09-29 05:53:20 UTC.
 
+[Confirmation result](phase2_confirmation_test01.md) ·
 [First unseen-maze result](phase2_test01.md) ·
-[Selected revised candidate](../configs/phase2_candidate02.json) ·
+[Frozen revised candidate](../configs/phase2_candidate02.json) ·
 [Dashboard](http://127.0.0.1:8766).
 
 ## Current system
@@ -56,9 +58,13 @@ without online training. The [actor map-core freeze](phase2_actor_spatial_freeze
 scored **52/60 complete and 38/60 within the deadline**. It was selected under
 the predeclared completion-first rule, despite being slower than the previous
 candidate. The learned map core remains fixed; other actor weights, critics and
-temperature learned for 40k online decisions. Its complete 100-case fresh
-confirmation plan is frozen and undergoing independent preflight; no result is
-yet available. The eventual SAC/TD3 × original/modified gripper × three-seed study
+temperature learned for 40k online decisions. Its fresh 100-case confirmation
+completed 69 tasks, with 24 of 31 failures caused by carry grasp loss. The
+independent audit passed; the milestone did not. This confirmation is now
+retired after informing refinement, with no test trajectories used in training.
+A new TRAIN-only grasp-qualification protocol is being prepared; the earlier
+conditional plan remains skipped. Small gains on the reused 60-case validation
+bank are insufficient evidence of better generalization. The eventual SAC/TD3 × original/modified gripper × three-seed study
 still requires independent replications and matched assistance/data protocols.
 Current development runs are not those replications.
 
