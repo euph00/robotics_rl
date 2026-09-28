@@ -148,3 +148,43 @@ def test_calibration_rejects_invalid_std_without_mutation(model,invalid):
     with pytest.raises(ValueError,match='log_std'):
         calibrate_actor_std(model,invalid)
     states_equal(actor,model.actor.state_dict())
+
+
+def test_warmup_tau_override_changes_only_initialization_target_update(model):
+    actor=copy.deepcopy(model.actor.state_dict())
+    alpha=model.log_ent_coef.detach().clone()
+    target_before={name:value.detach().clone() for name,value in model.critic_target.named_parameters()}
+    online_tau=model.tau
+    records=[]
+    report=critic_only_warmup(model,1,warmup_tau=.8,on_log=records.append)
+    assert model.tau==online_tau==.2
+    assert report['warmup_tau']==.8 and report['online_tau']==.2
+    assert records[0]['warmup_tau']==.8 and records[0]['online_tau']==.2
+    for (name,target),(critic_name,critic) in zip(model.critic_target.named_parameters(),model.critic.named_parameters()):
+        assert name==critic_name
+        torch.testing.assert_close(target,.2*target_before[name]+.8*critic,rtol=1e-6,atol=1e-7)
+    states_equal(actor,model.actor.state_dict())
+    torch.testing.assert_close(alpha,model.log_ent_coef,rtol=0,atol=0)
+    assert not model.ent_coef_optimizer.state
+
+
+def test_warmup_tau_override_leaves_online_tau_and_actor_unchanged_on_failure(model):
+    actor=copy.deepcopy(model.actor.state_dict());alpha=model.log_ent_coef.detach().clone()
+    online_tau=model.tau;rate=model.critic.optimizer.param_groups[0]['lr']
+    def interrupted(record):raise RuntimeError('bounded override interruption')
+    with pytest.raises(RuntimeError,match='bounded override interruption'):
+        critic_only_warmup(model,5,learning_rate=1e-2,warmup_tau=.8,on_log=interrupted)
+    assert model.tau==online_tau==.2
+    assert model.critic.optimizer.param_groups[0]['lr']==rate
+    states_equal(actor,model.actor.state_dict())
+    torch.testing.assert_close(alpha,model.log_ent_coef,rtol=0,atol=0)
+    assert not model.ent_coef_optimizer.state
+
+
+@pytest.mark.parametrize('invalid',[0.,-.1,1.01,float('nan'),float('inf'),True])
+def test_warmup_rejects_invalid_target_rate_before_any_update(model,invalid):
+    critic=copy.deepcopy(model.critic.state_dict());online_tau=model.tau
+    with pytest.raises(ValueError,match='warmup_tau'):
+        critic_only_warmup(model,5,warmup_tau=invalid)
+    states_equal(critic,model.critic.state_dict())
+    assert model.tau==online_tau and not hasattr(model,'_pnr_critic_warmup_updates')

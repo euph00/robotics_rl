@@ -59,3 +59,11 @@ Additional read-only checks passed: the stationary shaped-goal tail reproduces i
 
 ![Offline critic comparison](../runs/phase2_critic_warmup_probe02/artifacts/critic_comparison.png)
 
+
+## Matched physical continuation
+
+`phase2_carry_geometric10_fastwarm01` starts from the exact `phase2_carry_geometric100/checkpoints/bc_initialized.zip` actor and the same geometric demonstration dataset as `phase2_carry_geometric10`. It retains beta 10, seed 7401, 64 training layouts, eight workers, 2,000 fresh-critic initialization updates, 12,000 online decisions, and the same 4,000-decision evaluation/checkpoint cadence. The only training hyperparameter changed is initialization tau 0.01 → 0.1. The actor receives no additional BC updates. The frozen 64-layout bank remains unchanged; the separate new 192-layout bank is not used here.
+
+`critic_only_warmup(..., warmup_tau=...)` uses a local target-update rate and never mutates `model.tau`. The carry CLI exposes `--critic-warmup-tau` (default 0.01), records it in config/logs/initialization metadata, and retains online tau 0.01. Resume inherits and checks this historical initialization setting rather than silently changing its recorded provenance. All 17 initialization tests pass, including exact actor/temperature preservation, the actual target update fraction, unchanged online tau on normal completion and interruption, and invalid-rate rejection before any update.
+
+The run's `artifacts/controlled_comparison.json` records matching zero-online actor, fresh critic, demonstration, and scene-bank hashes. Compare exact saved callback checkpoints and `_n_updates` at 4k: a final callback and a post-training checkpoint at the same decision count may differ by one actor/critic update.

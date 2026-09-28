@@ -50,12 +50,15 @@ def calibrate_actor_std(model, log_std: float = -3.0) -> dict:
 
 def critic_only_warmup(model, gradient_steps: int, batch_size: int | None = None,
                        learning_rate: float | None = None, log_every: int = 100,
-                       on_log: Callable[[dict], None] | None = None) -> dict:
+                       on_log: Callable[[dict], None] | None = None,
+                       warmup_tau: float | None = None) -> dict:
     """Fit critics with ordinary SAC soft Bellman targets and a frozen actor.
 
     Uses the model's existing replay (including HER), current alpha and gamma,
     truncation-aware replay dones, n-step discounts when provided, target update
-    interval/tau, and critic batch-norm statistics transfer. The actor runs in
+    interval and critic batch-norm statistics transfer. An optional warmup_tau
+    overrides only these initialization target updates; model.tau (the online
+    setting) is never modified. The actor runs in
     evaluation mode to freeze feature-extractor buffers as well as parameters.
     Actor/critic shared tensors are rejected rather than silently updating the
     actor. No actor or temperature optimizer step occurs.
@@ -75,6 +78,9 @@ def critic_only_warmup(model, gradient_steps: int, batch_size: int | None = None
     if isinstance(log_every, bool) or int(log_every) != log_every or log_every < 1:
         raise ValueError('log_every must be a positive integer')
     log_every = int(log_every)
+    target_tau = float(model.tau) if warmup_tau is None else float(warmup_tau)
+    if isinstance(warmup_tau, bool) or not math.isfinite(target_tau) or not 0 < target_tau <= 1:
+        raise ValueError('warmup_tau must be finite and within (0, 1]')
     replay = model.replay_buffer
     if replay is None:
         raise ValueError('Critic warmup requires populated replay')
@@ -132,7 +138,7 @@ def critic_only_warmup(model, gradient_steps: int, batch_size: int | None = None
                 raise FloatingPointError('Nonfinite SAC critic warmup gradient')
             optimizer.step()
             if index % model.target_update_interval == 0:
-                polyak_update(critic.parameters(), target.parameters(), model.tau)
+                polyak_update(critic.parameters(), target.parameters(), target_tau)
                 polyak_update(model.batch_norm_stats, model.batch_norm_stats_target, 1.)
                 target_updates += 1
             losses.append(float(loss.detach()))
@@ -143,6 +149,7 @@ def critic_only_warmup(model, gradient_steps: int, batch_size: int | None = None
                 record = {'critic_updates': completed, 'critic_loss': float(np.mean(window)),
                           'target_q_mean': float(target_q.mean()), 'q_mean': float(torch.cat(values, dim=1).detach().mean()),
                           'alpha': float(alpha), 'critic_learning_rate': rate,
+                          'warmup_tau': target_tau, 'online_tau': float(model.tau),
                           'actor_updates': 0, 'temperature_updates': 0, 'physical_interactions': 0}
                 records.append(record)
                 if on_log is not None:
@@ -160,6 +167,7 @@ def critic_only_warmup(model, gradient_steps: int, batch_size: int | None = None
             'actor_updates': 0, 'temperature_updates': 0, 'target_updates': target_updates,
             'batch_size': size, 'examples_sampled': completed * size,
             'physical_interactions': 0, 'alpha': float(alpha), 'gamma': float(model.gamma),
-            'critic_learning_rate': rate, 'loss_mean': float(np.mean(losses)),
+            'critic_learning_rate': rate, 'warmup_tau': target_tau, 'online_tau': float(model.tau),
+            'loss_mean': float(np.mean(losses)),
             'loss_first': losses[0], 'loss_last': losses[-1], 'records': records,
             'wall_seconds': time.monotonic() - started}

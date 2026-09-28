@@ -222,6 +222,7 @@ def main():
     p.add_argument('--bank',default='configs/phase2_scene_bank.json');p.add_argument('--layouts',type=int,default=16)
     p.add_argument('--workers',type=int,default=8);p.add_argument('--seed',type=int,default=7401)
     p.add_argument('--initial-checkpoint');p.add_argument('--bc-updates',type=int,default=12000);p.add_argument('--warmup-updates',type=int,default=2000)
+    p.add_argument('--critic-warmup-tau',type=float,default=.01,help='Initialization target-update rate only; online SAC tau remains .01')
     p.add_argument('--steps',type=int,default=40000);p.add_argument('--batch-size',type=int,default=256)
     p.add_argument('--learning-rate',type=float,default=3e-5);p.add_argument('--delta-scale',type=float,default=.075)
     p.add_argument('--horizon',type=int,default=900);p.add_argument('--eval-every',type=int,default=10000)
@@ -232,14 +233,17 @@ def main():
     p.add_argument('--bc-weight',type=float,default=0.);p.add_argument('--demo-batch-size',type=int,default=256)
     args=p.parse_args()
     if not np.isfinite(args.bc_weight) or args.bc_weight<0 or args.demo_batch_size<1:p.error('Invalid demonstration regularization settings')
+    if not np.isfinite(args.critic_warmup_tau) or not 0<args.critic_warmup_tau<=1:p.error('Critic warmup tau must be within (0,1]')
     if args.resume_run and args.initial_checkpoint:p.error('--resume-run and --initial-checkpoint are exclusive')
     if min(args.steps,args.workers,args.horizon,args.eval_every,args.checkpoint_every)<1:p.error('Positive steps/workers/horizon/intervals required')
     if args.resume_run:
         if Path(args.resume_run).name!=args.resume_run:p.error('Use a run ID for --resume-run')
         parent_config=json.loads((ROOT/'runs'/args.resume_run/'config.json').read_text())
         explicit={token.split('=')[0] for token in sys.argv[1:] if token.startswith('--')}
-        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts','navigation_only','buffer_size'):
+        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts','navigation_only','buffer_size','critic_warmup_tau'):
             if '--'+key.replace('_','-') not in explicit:setattr(args,key,parent_config.get(key,getattr(args,key)))
+        if args.critic_warmup_tau!=parent_config.get('critic_warmup_tau',.01):
+            p.error('Cannot change completed critic-warmup provenance on resume')
     if not args.demonstrations:p.error('--demonstrations required for a fresh run')
     if args.buffer_size<1:p.error('--buffer-size must be positive')
     if args.workers>args.layouts:p.error('Each worker needs at least one selected layout')
@@ -247,7 +251,7 @@ def main():
     bank=load_scene_bank(args.bank);layouts=scene_records(bank,'train')[:args.layouts]
     validation=scene_records(bank,'validation')[:args.validation_layouts]
     if not 1<=args.validation_layouts<=len(scene_records(bank,'validation')):p.error('Invalid validation layout count')
-    config=dict(vars(args),gamma=.995,shaping_weight=2.,alpha_initial=.005,target_entropy=-4.,
+    config=dict(vars(args),gamma=.995,shaping_weight=2.,alpha_initial=.005,target_entropy=-4.,online_tau=.01,
         n_sampled_goal=1,demonstrations_sha256=hashlib.sha256(Path(args.demonstrations).read_bytes()).hexdigest(),
         scene_bank_sha256=bank['manifest_sha256'],supervised_loss_during_online_training=args.bc_weight>0,
         independent_final_study_seed=False,scene_cache_policy='prime all assigned physical scenes once before learning',critic_initialization='fresh with fixed-actor Bellman warmup',
@@ -352,7 +356,8 @@ def main():
                 logger.update(summary='Seeding real HER replay and fitting fresh critics with actor fixed.')
                 callback.initialization['demonstrations']=seed_replay(model,args.demonstrations)
                 callback.initialization['critic']=critic_only_warmup(model,args.warmup_updates,args.batch_size,
-                    learning_rate=3e-4,log_every=200,on_log=lambda row:logger.metric(0,scope='actor_initialization',metric_source='critic_initialization',**row))
+                    learning_rate=3e-4,warmup_tau=args.critic_warmup_tau,log_every=200,
+                    on_log=lambda row:logger.metric(0,scope='actor_initialization',metric_source='critic_initialization',**row))
                 callback.checkpoint('initialized')
                 if stop.requested:return
             parent_pid=os.getpid()
