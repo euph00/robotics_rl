@@ -53,6 +53,16 @@ def _normalized_method(method):
     result['balance_replay_sources']=bool(result.get('balance_replay_sources',False))
     if result['balance_replay_sources'] and not result['balance_replay_objects']:
         raise ValueError('Preparation source balancing requires object-balanced replay')
+    fraction=result.get('min_demo_fraction')
+    if fraction is None:
+        if result.get('demo_floor_protocol') is not None:raise ValueError('Demonstration-floor protocol requires an explicit fraction')
+        result.pop('min_demo_fraction',None);result.pop('demo_floor_protocol',None)
+    else:
+        from pnr.demonstration_floor_her import SAMPLING_PROTOCOL as DEMO_FLOOR_PROTOCOL, validate_fraction
+        result['min_demo_fraction']=validate_fraction(fraction)
+        if result.get('demo_floor_protocol')!=DEMO_FLOOR_PROTOCOL:raise ValueError('Unknown demonstration-floor replay protocol')
+        if not result['balance_replay_objects'] or result['balance_replay_sources']:
+            raise ValueError('Demonstration-floor sampling requires object balance without preparation source balancing')
     mode=result.get('preparation_mode','reference')
     if mode not in ('reference','learned-grasp','learned-grasp-variants'):raise ValueError('Unknown carry preparation mode')
     result['preparation_mode']=mode
@@ -76,6 +86,8 @@ def _method(config):
     result={key:config[key] for key in BASE_METHOD_FIELDS}
     result.update({key:config[key] for key in ('bc_weight','demo_batch_size','navigation_only','buffer_size','balance_objects','balance_replay_objects','balance_replay_sources')+PREPARATION_FIELDS if key in config})
     if 'encoder' in config:result['encoder']=config['encoder']
+    for key in ('min_demo_fraction','demo_floor_protocol'):
+        if key in config:result[key]=config[key]
     return _normalized_method(result)
 
 
@@ -85,10 +97,11 @@ def _semantic_sources(method):
     variant_sources=('pnr/diverse_learned_carry.py','pnr/grasp_sampling.py') if method['preparation_mode']=='learned-grasp-variants' else ()
     replay_sources=('pnr/object_balanced_her.py',) if method['balance_replay_objects'] else ()
     source_balance_sources=('pnr/preparation_balanced_her.py','pnr/preparation_metadata.py') if method['balance_replay_sources'] else ()
+    demo_floor_sources=('pnr/demonstration_floor_her.py',) if method.get('min_demo_fraction') is not None else ()
     gated=method.get('encoder','cnn32')=='gated48-k20-f5'
     encoder_sources=('pnr/gated_spatial_features.py',) if gated else ()
     navigation_sources=('pnr/navigation_features.py',) if method['navigation_only'] or gated else ()
-    return SEMANTIC_SOURCES+preparation_sources+variant_sources+replay_sources+source_balance_sources+(('pnr/regularized_sac.py',) if method['bc_weight']>0 else ())+navigation_sources+encoder_sources
+    return SEMANTIC_SOURCES+preparation_sources+variant_sources+replay_sources+source_balance_sources+demo_floor_sources+(('pnr/regularized_sac.py',) if method['bc_weight']>0 else ())+navigation_sources+encoder_sources
 
 
 def signature(config,source_root):
@@ -279,6 +292,16 @@ def validate_loaded_model(model,checkpoint,workers):
         expected={int(k):tuple(v) for k,v in PREPARATION_SOURCES_BY_OBJECT.items()}
         actual={int(k):tuple(v) for k,v in replay.preparation_sources_by_object.items()}
         if actual!=expected:raise ValueError('Saved replay preparation families differ from declared method')
+    demo_floor=method.get('min_demo_fraction') is not None
+    if demo_floor!=(getattr(replay,'demo_floor_protocol',None) is not None):
+        raise ValueError('Saved replay class differs from declared demonstration-floor sampling')
+    if demo_floor:
+        from pnr.demonstration_floor_her import DemonstrationFloorHerReplayBuffer, SAMPLING_PROTOCOL as DEMO_FLOOR_PROTOCOL
+        if not isinstance(replay,DemonstrationFloorHerReplayBuffer):
+            raise ValueError('Saved replay class differs from declared demonstration-floor sampling')
+        if (replay.min_demo_fraction!=method['min_demo_fraction']
+                or replay.demo_floor_protocol!=DEMO_FLOOR_PROTOCOL):
+            raise ValueError('Saved demonstration-floor replay fraction/protocol differs from declared method')
     if model.buffer_size!=method['buffer_size'] or replay.buffer_size!=max(method['buffer_size']//workers,1):
         raise ValueError('Saved SAC replay capacity differs from declared method')
     if method['navigation_only']:

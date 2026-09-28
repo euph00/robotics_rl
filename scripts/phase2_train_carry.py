@@ -7,6 +7,7 @@ bank is inaccessible here. Physical and supervised costs are logged separately.
 from __future__ import annotations
 import argparse
 from collections import deque
+from contextlib import nullcontext
 import hashlib
 import json
 import os
@@ -204,6 +205,8 @@ class Progress(BaseCallback):
             'callback_state':{'episodes':self.episodes,'recent':list(self.recent),
                 'best':self.best if np.isfinite(self.best[1]) else None,'best_checkpoint':self.best_checkpoint,
                 'last_eval':self.last_eval,'last_log':self.last_log,'last_save':self.num_timesteps}})
+        if getattr(self.args,'min_demo_fraction',None) is not None:
+            state['replay_sampling']=self.model.replay_buffer.sampling_report()
         return publish_checkpoint(self.model,self.run_logger.directory,state,self.resume_signature,label)
     def _on_step(self):
         self._pending_replay_position=self.model.replay_buffer.pos
@@ -252,6 +255,8 @@ def main():
     p.add_argument('--balance-objects',action='store_true',help='Uniform TRAIN-object BC sampling before per-object direction strata')
     p.add_argument('--balance-replay-objects',action='store_true',help='Uniform original-object sampling before standard HER relabeling')
     p.add_argument('--balance-replay-sources',action='store_true',help='Uniform fixed preparation families within each replay object')
+    p.add_argument('--min-demo-fraction',type=float,choices=(.5,),default=None,
+                   help='Opt-in per-object minimum demonstration replay share; preserves larger natural demo fractions')
     p.add_argument('--preparation-grasp',help='Opt-in frozen learned grasp for conditional five-object carry training')
     p.add_argument('--preparation-variants',type=int,choices=(1,3),default=1,help='Three uses independent deterministic and two native-SAC sampled grasps per TRAIN case')
     p.add_argument('--preparation-seed',type=int,default=9401)
@@ -269,7 +274,7 @@ def main():
         if Path(args.resume_run).name!=args.resume_run:p.error('Use a run ID for --resume-run')
         parent_config=json.loads((ROOT/'runs'/args.resume_run/'config.json').read_text())
         explicit={token.split('=')[0] for token in sys.argv[1:] if token.startswith('--')}
-        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts','encoder','navigation_only','buffer_size','critic_warmup_tau','balance_objects','preparation_grasp','training_layouts','training_objects','balance_replay_objects','balance_replay_sources','preparation_variants','preparation_seed','gamma','relabel_demo_rewards'):
+        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts','encoder','navigation_only','buffer_size','critic_warmup_tau','balance_objects','preparation_grasp','training_layouts','training_objects','balance_replay_objects','balance_replay_sources','preparation_variants','preparation_seed','gamma','relabel_demo_rewards','min_demo_fraction'):
             if '--'+key.replace('_','-') not in explicit:setattr(args,key,parent_config.get(key,getattr(args,key)))
         if '--preparation-grasp' not in explicit and parent_config.get('frozen_preparation_grasp'):
             args.preparation_grasp=parent_config['frozen_preparation_grasp']
@@ -279,6 +284,11 @@ def main():
     if not args.demonstrations:p.error('--demonstrations required for a fresh run')
     if args.buffer_size<1:p.error('--buffer-size must be positive')
     if args.balance_replay_sources and not args.balance_replay_objects:p.error('Source balancing requires explicit object-balanced replay')
+    if args.min_demo_fraction is not None:
+        if not args.balance_replay_objects:p.error('--min-demo-fraction requires object-balanced replay')
+        if args.balance_replay_sources:p.error('Demonstration-floor and preparation-family samplers are separate ablations')
+        if args.resume_run and parent_config.get('min_demo_fraction') is None:
+            p.error('Demonstration-floor replay requires a fresh branch; old replay origins cannot be migrated')
     if args.preparation_variants!=1 and not args.preparation_grasp:p.error('Preparation variants require a frozen learned grasp')
     if args.balance_replay_objects and not args.preparation_grasp:p.error('Object-balanced replay requires declared learned five-object handover training')
     if args.workers>args.layouts:p.error('Each worker needs at least one selected layout')
@@ -320,6 +330,11 @@ def main():
     # Legacy resumes retain their original signature vocabulary. New runs record the encoder.
     if args.resume_run and 'encoder' not in parent_config and '--encoder' not in explicit:
         config.pop('encoder')
+    if args.min_demo_fraction is None:
+        config.pop('min_demo_fraction',None)  # Preserve existing default signature vocabulary.
+    else:
+        from pnr.demonstration_floor_her import SAMPLING_PROTOCOL as DEMO_FLOOR_PROTOCOL
+        config['demo_floor_protocol']=DEMO_FLOOR_PROTOCOL
     preparation_source_mapping=None
     if args.balance_replay_sources:
         from pnr.preparation_metadata import PREPARATION_SOURCES_BY_MODE, PREPARATION_SOURCES_BY_OBJECT
@@ -368,6 +383,10 @@ def main():
         from pnr.preparation_balanced_her import PreparationBalancedHerReplayBuffer
         replay_class=PreparationBalancedHerReplayBuffer
         replay_kwargs['preparation_sources_by_object']=PREPARATION_SOURCES_BY_OBJECT
+    if args.min_demo_fraction is not None:
+        from pnr.demonstration_floor_her import DemonstrationFloorHerReplayBuffer
+        replay_class=DemonstrationFloorHerReplayBuffer
+        replay_kwargs['min_demo_fraction']=args.min_demo_fraction
     if resumed is not None:
         model=learner.load(resumed['model'],env=schema,device=args.device)
         model.load_replay_buffer(resumed['replay'],truncate_last_traj=True)
@@ -443,9 +462,12 @@ def main():
                 logger.update(summary='Measuring initialized actor on training and separate validation layouts.')
                 callback.evaluate('bc_zero_online')
                 logger.update(summary='Seeding real HER replay and fitting fresh critics with actor fixed.')
-                callback.initialization['demonstrations']=seed_replay(model,args.demonstrations,object_labels=args.balance_replay_objects,
-                    preparation_sources_by_mode=preparation_source_mapping,
-                    reward_relabel_gamma=args.gamma if args.relabel_demo_rewards else None)
+                import_context=(model.replay_buffer.demonstration_import()
+                    if args.min_demo_fraction is not None else nullcontext())
+                with import_context:
+                    callback.initialization['demonstrations']=seed_replay(model,args.demonstrations,object_labels=args.balance_replay_objects,
+                        preparation_sources_by_mode=preparation_source_mapping,
+                        reward_relabel_gamma=args.gamma if args.relabel_demo_rewards else None)
                 if args.balance_replay_objects:
                     callback.initialization['replay_sampling_before_warmup']=model.replay_buffer.sampling_report()
                 callback.initialization['critic']=critic_only_warmup(model,args.warmup_updates,args.batch_size,
