@@ -13,7 +13,11 @@ from .planning import JointPlanner, antipodal_grasps, maze_astar
 
 
 class ReferenceController:
-    def __init__(self, env, on_step=None, seed=0, speed_scale=1.):
+    def __init__(self, env, on_step=None, seed=0, speed_scale=1., grasp_proposal_mode='legacy'):
+        if grasp_proposal_mode not in ('legacy', 'clearance-v2'):
+            raise ValueError('Unknown grasp proposal mode')
+        self.grasp_proposal_mode = grasp_proposal_mode
+        self._clearance_carry_target = None
         self.env = env
         self.planner = JointPlanner(env,seed)
         self.on_step = on_step
@@ -85,14 +89,27 @@ class ReferenceController:
             target[self.finger_slots] = 0.
         return self.move_joint(target,stage=stage,step_size=step_size,check=check)
 
+    def pregrasp_position(self, distance, grasp=None):
+        grasp = self.grasp if grasp is None else grasp
+        if grasp is None:
+            raise ValueError('Select a grasp before computing its approach position')
+        if self.grasp_proposal_mode == 'legacy':
+            return grasp.position + [0,0,float(distance)]
+        from .clearance_grasps import approach_position
+        return approach_position(grasp, distance)
+
     def prepare_grasp(self):
         """Original start -> folded arm -> table approach -> selected pregrasp."""
+        self._clearance_carry_target = None
         topdown = Rotation.from_matrix(np.array([[0,0,1],[0,1,0],[-1,0,0]])).as_quat()
         base = self.base_position()
         self.move_ee([base[0]+.35,base[1],1.1],topdown,'fold',closed=False)
         self.move_base([-.78,0.],stage='approach')
         obs = self.env.observe()
         candidates = antipodal_grasps(obs['object_pc'],obs['object_normals'],table_height=self.env.table_height)
+        if self.grasp_proposal_mode == 'clearance-v2':
+            from .clearance_grasps import prepare_clearance_grasp
+            return prepare_clearance_grasp(self, candidates)
         errors=[]
         for grasp in candidates:
             try:
@@ -155,7 +172,12 @@ class ReferenceController:
         self.move_base([-1.25,0],stage='retreat',step_size=.006)
         ee,orn = self.planner.ee_pose()
         base = self.base_position()
-        self.move_ee([base[0]+.24,base[1],1.05],orn,'carry_posture',closed=True,step_size=.012)
+        if self.grasp_proposal_mode == 'clearance-v2' and self._clearance_carry_target is not None:
+            target = self._clearance_carry_target.copy()
+            target[self.finger_slots] = 0.
+            self.move_joint(target, 'carry_posture', step_size=.012)
+        else:
+            self.move_ee([base[0]+.24,base[1],1.05],orn,'carry_posture',closed=True,step_size=.012)
         self.hold(50,'hold')
         self.planner.set_payload()
         self.stage_results['carry_posture'] = {'base_position':self.base_position().tolist(),

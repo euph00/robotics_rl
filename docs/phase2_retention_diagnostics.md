@@ -39,3 +39,21 @@ Costs: initial12 attempts plus two geometric preparations used4,200 native actio
 [Initial matrix and collision diagnosis](../runs/phase2_side_grasp01/artifacts/summary.json), [successful side probes](../runs/phase2_side_grasp02/artifacts/summary.json).
 
 The shared proposal mode remains a separate opt-in integration requiring TRAIN validation across the selected objects and a new declared demonstration dataset. Existing runs keep their original proposal mode.
+
+## Opt-in shared geometry rule
+
+`ReferenceController(grasp_proposal_mode="clearance-v2")` uses measured geometry and collision queries; the default remains `legacy`.
+
+The rule considers alternate approaches only when the robust point-cloud height divided by its largest horizontal extent is at least 1.15. Other shapes take the exact legacy selection path. For eligible shapes, it keeps the existing antipodal pair ranking, checks the original approach and then the declared 60° tilt with 24 mm setback. Tilted pairs must lie in the central 40% of measured body height. Both the open endpoint and sampled Cartesian approach must be clear of the object, table and maze.
+
+A selected alternate approach must also admit a lifted and folded carry pose. Collision AABBs must remain inside ±0.36 m along both horizontal base axes; the measured payload receives an additional 20 mm displacement allowance. This is a posture guard, not a proof of collision-free navigation. The controller retains and executes the checked carry joint target through the existing collision-checked joint planner. Native control gains, forces and step counts remain unchanged. If no alternate candidate meets the checks, original topdown selection remains available and physical failures are counted normally.
+
+The explicit `controller.pregrasp_position(distance)` interface gives curriculum offsets along the selected approach axis. It preserves the exact vertical offsets in legacy mode. Any new demonstration dataset must record the proposal mode and approach offsets; current datasets and running models keep their original mode.
+
+The first ungated audit passed only 5/10 matched TRAIN transports versus legacy 6/10. Its extra failure was an elbow extending 0.53 m sideways and colliding with a wall. The geometry/pose refinement restored the same 6/10 TRAIN outcomes, reproduced all eight non-can outcome/tick pairs exactly, and additionally passed legacy42 can transport. Existing banana, foam, mug and apple failures remain visible rather than being excluded. The final three-case audit executes the exact validated carry target: all three can cases pass with zero wall contacts and original zero finger targets. Action ticks are 14,170 for TRAIN000, 12,745 for TRAIN001 and 13,915 for legacy42; add 480 initialization ticks. Final reach remains excluded.
+
+Artifacts: [initial audit](../runs/phase2_clearance_grasp_train01/artifacts/summary.json), [matched legacy control](../runs/phase2_clearance_grasp_train_legacy01/artifacts/summary.json), [elbow collision diagnosis](../runs/phase2_clearance_envelope01/artifacts/summary.json), [refined audit](../runs/phase2_clearance_grasp_train02/artifacts/summary.json).
+
+Integration audit accounting: 53 physical preparations, 91,631 native actions, 458,155 action physics ticks plus 25,440 initialization ticks. This includes every failed proposal/setup investigation and all matched controls. [Exact audit and cost ledger](../runs/phase2_clearance_grasp_bound03/artifacts/integration_audit.json).
+
+Validation: nine targeted geometry, planning and original-gripper regression tests passed, including the physical banana lift/hold regression.

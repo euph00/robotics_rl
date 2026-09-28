@@ -40,6 +40,7 @@ def worker(task):
     out = Path(out)
     name = f'{case.get("diagnostic_id", case["layout_id"])}_object_{case["object_idx"]:02d}_{grasp_source}_{mode}_margin{int(round(closure_margin_mm*1000)):04d}um_gate{int(round(close_distance_mm*1000)):05d}um'
     env = None
+    controller = None
     rows = []
     subtick_rows = []
     carry_start = None
@@ -118,11 +119,15 @@ def worker(task):
                     'finger_normal_forces': forces, 'total_object_normal_force': info['normal_force'],
                     'drop_events': info['drop_events'], 'object_height': info['object_height'],
                     'wall_contact': any(c[9] > 0 for c in walls),
+                    'wall_contact_details': [{'body': 'robot' if c[1] == env.robot_id else 'object',
+                        'link': int(c[3]), 'force': float(c[9]), 'body_point': list(c[5]),
+                        'wall_point': list(c[6])} for c in walls if c[9] > 0],
                     'robot_table_contact': any(c[9] > 0 for c in table)})
                 return obs, info
             env.step = observed
             grasp = controller.prepare_grasp()
             result['selected_grasp'] = grasp.as_dict()
+            result['grasp_generation'] = controller.stage_results.get('grasp_generation', {})
             if grasp_source == 'reference':
                 if not controller.execute_grasp(grasp):
                     raise RuntimeError('Reference grasp/lift failed')
@@ -165,6 +170,19 @@ def worker(task):
                 raise RuntimeError('Carry posture lost contact')
             result['carry_start'] = {'source_action_calls': env.step_count, 'metrics': env.evaluate(),
                                       'trace': rows[-1]}
+            footprint=[]
+            base_xy=controller.base_position()
+            for body,label in [(env.robot_id,'robot'),(env.object_id,'object')]:
+                for link in range(-1,env.p.getNumJoints(body)):
+                    if not env.p.getCollisionShapeData(body,link):
+                        continue
+                    lower,upper=env.p.getAABB(body,link)
+                    footprint.append({'body':label,'link':link,
+                        'link_name':env.p.getJointInfo(body,link)[12].decode() if link>=0 else label,
+                        'lower_world':list(lower),'upper_world':list(upper),
+                        'lower_base_xy':(np.asarray(lower[:2])-base_xy).tolist(),
+                        'upper_base_xy':(np.asarray(upper[:2])-base_xy).tolist()})
+            result['carry_start']['collision_envelope']=footprint
             carry_start = env.step_count
             payload_anchor = np.asarray(rows[-1]['object_in_hand_xyz'])
             if mode == 'slip_reactive075':
@@ -270,6 +288,8 @@ def worker(task):
         except Exception as exc:
             result['error'] = f'{type(exc).__name__}: {exc}'
         finally:
+            if controller is not None:
+                result['grasp_generation'] = controller.stage_results.get('grasp_generation', {})
             if env is not None:
                 result.update(scene=env.scene_manifest(), final_metrics=env.evaluate(),
                               source_action_calls=env.step_count, physics_ticks=env.physics_steps,
