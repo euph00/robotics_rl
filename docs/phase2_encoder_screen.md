@@ -1,5 +1,34 @@
 # Matched carry encoder screen
 
+Longer gated SAC training did **not** improve the matched BC initializer: final 120k completed **44/60 full tasks and 35/60 within 15,000 physics ticks including settling and final hold**, versus BC **50/60 and 43/60**. The gated 40k policy remains this branch's best full-completion result at 51/60, with 39/60 inclusive-timed. The historical candidate remains nominally best at 51/60 and 47/60; its differing grasp prefixes prevent an isolated carry-only comparison with these newer runs.
+
+## BC and unchanged-method SAC continuation
+
+| Gated carry checkpoint | Full completion | Timed, including settling | Timed, action only | Carry drops / timeouts | Other failures | Evaluation ticks, including settling |
+|---|---:|---:|---:|---:|---|---:|
+| BC, zero online SAC | 50/60 | 43/60 | 44/60 | 7 / 1 | 1 reach drop, 1 final hold | 830,565 |
+| Final 40k, 5,000 SAC updates | 51/60 | 39/60 | 42/60 | 8 / 1 | 0 | 825,580 |
+| Interim 80k, 9,999 SAC updates | 39/60 | 29/60 | 29/60 | 11 / 9 | 1 final hold | 1,017,650 |
+| Final 120k, 15,000 SAC updates | 44/60 | 35/60 | 37/60 | 12 / 4 | 0 | 915,010 |
+
+Only carry differs: all systems retain the same frozen clearance SAC grasp, SAC reach, original-start 60 cases, native gripper/physics, .24m lift, .08m reach handover and mandatory final hold. “BC” denotes the carry actor only. Online training is **SAC+HER with continuing beta 100 demonstration regularization**, not ordinary SAC and not one end-to-end policy. The inherited actor had 16k BC updates; continuation repeated neither BC nor critic warmup. The predeclared final 120k model is `e9da3d2c…`; 80k uses its exact pre-final-update generation, not a later policy with the same timestep counter.
+
+| Object, 12 cases each | BC full / inclusive timed | 40k | 80k | 120k |
+|---|---:|---:|---:|---:|
+| Foam, ID14 | 12 / 10 | 10 / 7 | 9 / 5 | 6 / 5 |
+| Banana, ID5 | 12 / 10 | 11 / 9 | 10 / 7 | 12 / 9 |
+| Can, ID2 | 10 / 9 | 11 / 8 | 6 / 5 | 9 / 5 |
+| Apple, ID7 | 7 / 7 | 7 / 6 | 7 / 7 | 7 / 7 |
+| Mug, ID10 | 9 / 7 | 12 / 9 | 7 / 5 | 10 / 9 |
+
+At 120k, foam failures are five carry drops and one timeout; apple has five drops; can has two drops and one timeout; mug has two timeouts. The 80k regression included both lost grasps and navigation timeouts, not just a deadline change. All unique case records, frozen checkpoint/source hashes, native success/hold flags and complete cost ledgers passed audit; no failures were rerun or discarded.
+
+Every pair among BC/40k/80k/120k has 60/60 exactly matching saved pre-carry traces and stage fields. This supports the within-branch carry comparison, while saved traces still omit complete simulator state and requested actions. Compared with BC, 40k gains four cases and loses three; 120k gains two and loses eight. On the 42 cases both BC and 120k complete, 120k averages 985 more total ticks and 39.5 more carry decisions; medians are 37.5 ticks and one decision, indicating a few large delays rather than uniform slowing.
+
+The four validations cost 3,588,805 total ticks; 2,763,225 are new BC/80k/120k evaluation costs. The 80k-decision continuation separately added 2,192,130 TRAIN ticks including fresh setup/settling and 1,576,565 internal-evaluation ticks. Inherited costs remain separate in the cumulative ledger. Evidence is in `runs/phase2_encoder_gated192_long_plan01/artifacts/four_policy_comparison.json`, with frozen plan `3dd643bd…`, immutable watcher generations and per-case failure/timing details. No held-out, confirmation or reserve evaluation occurred.
+
+## Matched fresh 192-map 40k encoder comparison
+
 The completed matched 192-map SAC comparison gives **51/60 full tasks and 39/60 within 15,000 physics ticks including settling and final hold** for gated, versus **42/60 and 34/60** for CNN. Gated succeeds in all 42 CNN successes plus nine more. The historical candidate remains nominally best at 51/60 full and 47/60 inclusive-timed; its grasp prefixes differ from this matched pair, so that historical comparison is not an isolated carry-policy contrast.
 
 | Final 40k carry policy | Full completion | Timed, including settling | Timed, action only | Carry drops | Carry timeouts |
@@ -21,11 +50,13 @@ Every final bundle, source/model hash, case record, native success/final-hold fl
 
 On the 42 common successes, gated takes a mean 1.29 more carry decisions; inclusive-timed counts are 33 versus CNN's 34. Its overall timed gain comes from extra completions, not clear route acceleration. Remaining gated failures are eight drops (five apple, two foam, one can) and one banana timeout.
 
-## Interpretation and next bounded checks
+## Interpretation and bounded coverage pivot
 
-Training did not show sustained numerical collapse: gated critic losses were finite with recoverable spikes, alpha stayed near .005, and actor demonstration MSE stayed near .0005. However, isolated reference-prepared validation was already 12/12 at the BC initializer and remains 12/12 at final. Recent TRAIN success fluctuated around .8 rather than clearly improving; all 40 declared preparation cases were valid and visited. These logs support a bounded continuation as an experiment, not an expectation that more steps will help.
+Finite training losses did not prevent rollout regression. Reference-prepared isolated validation was already 12/12 at the BC initializer and remained near its ceiling while actual learned-grasp TRAIN performance deteriorated. The replay audit found no overwritten demonstrations at 80k, but non-foam demonstration shares fell from roughly 35–42% at 40k to 21–26% at 80k as online episodes accumulated. This is evidence of changing critic training support, not proof of a single cause.
 
-The next predeclared work is unchanged-method gated 40k→120k, with full 60-case checks at total 80k and final 120k, plus one full60 BC-only diagnostic of the exact 192-map `bc_initialized.zip`. The BC diagnostic supplies the proper before-SAC reference; the earlier 160-map/seed19041 BC run cannot isolate SAC's contribution. The BC diagnostic is not a milestone candidate. No held-out, confirmation or reserve evaluation is authorized by this screen.
+An authorized fresh coverage branch, `phase2_carry_encoder_gated_diverse01`, is now running from the exact zero-online 16k-BC actor, with **zero extra BC**, fresh 2k critic updates at tau .1 and 40k SAC decisions. It uses the existing 576,522-row dataset and 16 TRAIN layouts × five objects × three native-grasp variants, with 800k replay capacity; gamma .995, beta 100, object balancing, seed 7401 and physical controls remain unchanged. It tests the combined dataset/preparation change, not an isolated single effect. All 26 transferred actor tensors were verified exact after standard-deviation calibration. All 240 declared slots are retained in metadata; 229 prepared successfully (foam 48, banana 48, can 39, apple 48, mug 46), and the 11 failures/costs remain recorded. One final full-system 60-case validation is predeclared; no new dataset or held-out evaluation is authorized. Plan: `runs/phase2_encoder_gated_diverse_plan01/artifacts/experiment_plan.json` (`fcaaa774…`).
+
+Stronger fixed regularization remains an unlaunched alternative. At beta 100, weighted BC/RL gradient-ratio medians were already about 1.15 in the initial 40k and 2.69 in continuation, with small demonstration MSE despite poor rollouts. Beta 1000 would multiply that restraint tenfold on the same batch; it could limit drift but could also largely recover BC behavior without fixing states outside the demonstrations. Finish the declared coverage experiment before considering another weight; no sweep is justified by these results.
 
 Completed evidence: `runs/phase2_encoder_matched_192_plan01/artifacts/` contains the frozen paired plan (`7f50b249…`), watcher records, independent final-bundle recheck, full-case comparison and common-success timing. Full-system run IDs are `phase2_system_encoder_cnn192_040k01` and `phase2_system_encoder_gated192_040k01`.
 
