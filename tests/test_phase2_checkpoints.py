@@ -192,7 +192,7 @@ def test_resume_cli_skips_initialization_and_treats_steps_as_additional(bundle,t
     monkeypatch.setattr(runner,'ROOT',source)
     monkeypatch.setattr(runner,'RunLogger',lambda run_id,**kwargs:RunLogger(run_id,root=source/'runs',**kwargs))
     monkeypatch.setattr(runner,'load_scene_bank',lambda path:{'manifest_sha256':'b'*64})
-    monkeypatch.setattr(runner,'scene_records',lambda bank,partition:layouts if partition=='train' else [])
+    monkeypatch.setattr(runner,'scene_records',lambda bank,partition:layouts if partition=='train' else [dict(layouts[0],layout_id=f'validation_{i:03d}') for i in range(4)])
     monkeypatch.setattr(runner,'CarrySchema',SyntheticCarry)
     monkeypatch.setattr(runner,'MultiSceneCarry',Physical)
     monkeypatch.setattr(runner,'SubprocVecEnv',lambda factories,**kwargs:DummyVecEnv(factories))

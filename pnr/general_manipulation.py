@@ -82,6 +82,14 @@ class GeneralGraspEnv(ManipulationSkillEnv):
             'achieved_goal': spaces.Box(-np.inf, np.inf, shape=(3,), dtype=np.float32),
             'desired_goal': spaces.Box(-np.inf, np.inf, shape=(3,), dtype=np.float32)})
 
+    @classmethod
+    def bind(cls, native, controller, skill='grasp', horizon=200, *, goal_lift_m=.20,
+             bounded_ik_fallback=True):
+        """Read-only binding of an existing physical pregrasp; no setup or reset."""
+        return cls(skill=skill, horizon=horizon, evaluation=True, native=native,
+                   controller=controller, build_starts=False, goal_lift_m=goal_lift_m,
+                   bounded_ik_fallback=bounded_ik_fallback)
+
     def measured_grasp_target(self):
         measured = self.native.observe()
         return measured['object_pos'] + Rotation.from_quat(measured['object_xyzw']).apply(
@@ -174,7 +182,8 @@ class GraspSchema(gym.Env):
         raise RuntimeError('Schema-only environment cannot generate experience')
 
 
-def make_grasp_case(object_idx, scene_seed, seed=0, horizon=100, evaluation=False):
+def make_grasp_case(object_idx, scene_seed, seed=0, horizon=100, evaluation=False, *,
+                    goal_lift_m=.20, bounded_ik_fallback=True):
     """Construct a physical case, preserving costs even on setup exceptions."""
     from .env import PickNavReachEnv
     from .reference import ReferenceController
@@ -182,7 +191,8 @@ def make_grasp_case(object_idx, scene_seed, seed=0, horizon=100, evaluation=Fals
     try:
         controller = ReferenceController(native, seed=seed)
         env = GeneralGraspEnv(native=native, controller=controller, seed=seed,
-                              horizon=horizon, evaluation=evaluation)
+                              horizon=horizon, evaluation=evaluation, goal_lift_m=goal_lift_m,
+                              bounded_ik_fallback=bounded_ik_fallback)
         env._owns_native = True
         return env
     except BaseException as error:
@@ -195,12 +205,16 @@ def make_grasp_case(object_idx, scene_seed, seed=0, horizon=100, evaluation=Fals
 
 class MultiObjectGrasp(GraspSchema):
     """Cached physically prepared object/point-sampling cases; no hidden mazes."""
-    def __init__(self, cases, seed=0, horizon=100, cache_size=4, episodes_per_case=4):
+    def __init__(self, cases, seed=0, horizon=100, cache_size=4, episodes_per_case=4,
+                 lift_range=(.20, .20)):
         super().__init__()
         from collections import OrderedDict
         if not cases:
             raise ValueError('At least one training case is required')
         self.cases = list(cases)
+        self.lift_range = tuple(float(value) for value in lift_range)
+        if len(self.lift_range) != 2 or not .15 <= self.lift_range[0] <= self.lift_range[1] <= .30:
+            raise ValueError('Grasp lift range must be ordered and within15–30cm')
         self.rng = np.random.default_rng(seed)
         self.seed, self.horizon = int(seed), int(horizon)
         self.cache, self.active = OrderedDict(), None
@@ -234,10 +248,14 @@ class MultiObjectGrasp(GraspSchema):
             self.cache[key] = env
         self.active = self.cache[key]
         self.cache.move_to_end(key)
-        # BC already covers the full20cm goal and all four pregrasp heights.
+        # BC covers the declared lift range and all four physical pregrasp heights.
         self.active.curriculum_level = 6
         self.reset_count += 1
-        return self.active.reset(seed=int(self.rng.integers(0, 2**31)), options=options)
+        observation, info = self.active.reset(seed=int(self.rng.integers(0, 2**31)), options=options)
+        lift = float(self.rng.uniform(*self.lift_range))
+        self.active.goal[2] += lift-self.active.goal_lift_m
+        info['goal_lift_m'] = lift
+        return self.active._observation(), info
 
     def step(self, action):
         if self.active is None:
@@ -246,12 +264,14 @@ class MultiObjectGrasp(GraspSchema):
 
     def get_training_state(self):
         return {'protocol': 'multi-object-grasp-v1', 'reset_count': self.reset_count,
-                'rng_state': self.rng.bit_generator.state,
+                'rng_state': self.rng.bit_generator.state, 'lift_range': self.lift_range,
                 'failed_setup_attempts': self.failed_setup_attempts}
 
     def set_training_state(self, state):
         if state['protocol'] != 'multi-object-grasp-v1':
             raise ValueError('Wrong manipulation training protocol')
+        if tuple(state.get('lift_range', (.20, .20))) != self.lift_range:
+            raise ValueError('Cannot silently change resumed grasp goal distribution')
         self.reset_count = int(state['reset_count'])
         self.rng.bit_generator.state = state['rng_state']
         self.failed_setup_attempts = list(state['failed_setup_attempts'])

@@ -32,7 +32,7 @@ def frozen_plan(bank, tmp_path, partition='milestone_test'):
             'checkpoints': records, 'original_start': True, 'inter_skill_resets': False,
             'teacher_at_inference': False, 'original_gripper': True, 'retain_all_failures': True,
             'execution': {'delta_scale': .075, 'planned_speed_scale': 1., 'deadline_physics_ticks': 15000,
-                          'grasp_horizon': 600, 'carry_horizon': 1200, 'reach_horizon': 150}}
+                          'grasp_horizon': 600, 'carry_horizon': 1200, 'reach_horizon': 150, 'grasp_lift_m': .24}}
     plan['plan_sha256'] = plan_digest(plan)
     return plan
 
@@ -146,3 +146,14 @@ def test_system_optional_factory_binds_live_state_without_reset(monkeypatch):
     assert system.controller.speed_scale == 1.2
     assert system.stage_results['grasp']['source_action_calls'] == 3
     assert system.stage_results['grasp']['success']
+
+
+def test_lift_subgoal_is_frozen_with_execution_settings(bank, tmp_path):
+    plan = frozen_plan(bank, tmp_path)
+    plan["execution"]["grasp_lift_m"] = .26
+    with pytest.raises(ValueError, match="digest"):
+        verify_frozen_plan(plan, bank, allow_heldout=True)
+    plan["execution"]["grasp_lift_m"] = 2.4
+    plan["plan_sha256"] = plan_digest(plan)
+    with pytest.raises(ValueError, match="Grasp lift subgoal"):
+        verify_frozen_plan(plan, bank, allow_heldout=True)

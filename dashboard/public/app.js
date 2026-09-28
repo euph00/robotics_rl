@@ -21,6 +21,7 @@ function renderProject(project) {
   }));
 }
 
+const displayName = run => number(run.metrics?.regularization?.bc_weight) ? `${run.skill || 'Policy'} · regularized SAC (weight ${run.metrics.regularization.bc_weight})` : (run.name || run.id);
 const supervisedUpdates = row => row?.bc_updates ?? row?.updates;
 const runAccounting = run => run?.metrics?.accounting || run?.accounting;
 
@@ -152,7 +153,7 @@ function renderRuns(runs) {
   $('active-runs').textContent=active ? `${active} running` : 'None running';
   if (!runs.length) { const row=el('tr'),cell=el('td','No experiments registered.','empty');cell.colSpan=5;row.append(cell);$('run-table').replaceChildren(row);return; }
   $('run-table').replaceChildren(...visibleRuns(runs).map(run=>{
-    const row=el('tr'),name=el('td'),button=el('button',run.name||run.id,'run-name');button.addEventListener('click',()=>{selectedId=run.id;renderSelected();});name.append(button);
+    const row=el('tr'),name=el('td'),button=el('button',displayName(run),'run-name');button.addEventListener('click',()=>{selectedId=run.id;renderSelected();});name.append(button);
     const status=el('td'),badge=el('span',run.status||'pending','status'); if (/^[a-z]+$/.test(run.status||'')) badge.classList.add(run.status);status.append(badge);
     const progress=progressValue(run);
     const value=number(progress.value)?`${count(progress.value)}${number(progress.budget)?' / '+compact(progress.budget):''}${run.kind==='initialization'?' BC updates':progress.unit==='data collection decisions'?' collection decisions':''}`:'—';
@@ -163,7 +164,7 @@ function renderRuns(runs) {
 function renderSelected() {
   const runs=state?.runs||[];
   if (!runs.some(run=>run.id===selectedId)) selectedId=runs.find(run=>run.kind==='train' && run.status==='running')?.id || runs[0]?.id || null;
-  $('run-select').replaceChildren(...(runs.length ? runs.map(run=>{const option=el('option',run.name||run.id);option.value=run.id;return option;}) : [el('option','No experiments yet')]));
+  $('run-select').replaceChildren(...(runs.length ? runs.map(run=>{const option=el('option',displayName(run));option.value=run.id;return option;}) : [el('option','No experiments yet')]));
   $('run-select').value=selectedId||'';
   if (selectedId && new URLSearchParams(location.search).get('run') !== selectedId) {
     const url=new URL(location.href);url.searchParams.set('run',selectedId);history.replaceState(null,'',url);

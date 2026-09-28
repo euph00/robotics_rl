@@ -33,9 +33,10 @@ def test_bound_general_grasp_reads_only_and_exposes_measured_target():
         before = native.observe()
         target_before = native.last_target.copy()
         counters = (native.step_count, native.physics_steps)
-        wrapper = GeneralGraspEnv.bind(native, controller, horizon=100)
+        wrapper = GeneralGraspEnv.bind(native, controller, horizon=100, goal_lift_m=.24)
         observed = wrapper._observation()
         assert wrapper.observation_space.contains(observed)
+        assert np.isclose(observed['desired_goal'][2]-observed['achieved_goal'][2], .24)
         np.testing.assert_allclose(observed['observation'][50:53],
                                    controller.grasp.position-controller.planner.ee_pose()[0], atol=1e-7)
         assert np.isclose(observed['observation'][53], controller.grasp.width)
@@ -45,3 +46,53 @@ def test_bound_general_grasp_reads_only_and_exposes_measured_target():
             np.testing.assert_array_equal(value, native.observe()[key])
         wrapper.close()
         assert native.p.isConnected()
+
+
+def test_bounded_fallback_preserves_physics_and_rejects_branch_jump(monkeypatch):
+    from pnr.general_manipulation import BoundedGraspIK
+    from pnr.local_control import LocalCartesianIK
+    with PickNavReachEnv(seed=42, object_idx=14) as native:
+        controller = ReferenceController(native, seed=42)
+        controller.prepare_grasp()
+        solver = BoundedGraspIK(native, controller.planner)
+        before, motors = native.observe(), native.last_target.copy()
+        counters = (native.step_count, native.physics_steps)
+        contacts = native.contacts()
+        position, orientation = controller.planner.ee_pose()
+        initial = native.agent_qpos.copy()
+        def local_rejection(*args, **kwargs):
+            raise ValueError('forced local diagnostic rejection')
+        monkeypatch.setattr(LocalCartesianIK, 'ik', local_rejection)
+        target = solver.ik(position, orientation, seed=initial)
+        np.testing.assert_allclose(target, initial, atol=1e-5)
+        assert solver.fallback_successes == 1
+        assert counters == (native.step_count, native.physics_steps)
+        np.testing.assert_array_equal(motors, native.last_target)
+        assert native.contacts() == contacts
+        for key, value in before.items():
+            np.testing.assert_array_equal(value, native.observe()[key])
+        def distant_answer(*args, **kwargs):
+            result = initial.copy(); result[solver.active[1]] += .36
+            return result
+        monkeypatch.setattr(controller.planner, 'ik', distant_answer)
+        with pytest.raises(ValueError, match='forced local'):
+            solver.ik(position, orientation, seed=initial)
+        assert solver.fallback_attempts == 2 and solver.fallback_successes == 1
+
+
+def test_multiobject_goal_sampling_changes_recorded_goal_and_checks_resume_contract():
+    from pnr.general_manipulation import MultiObjectGrasp
+    wrapper = MultiObjectGrasp([{'object_idx':14, 'scene_seed':42}], seed=821,
+                               lift_range=(.24,.24), horizon=3)
+    try:
+        observation, info = wrapper.reset(seed=123)
+        assert info['goal_lift_m'] == .24
+        assert np.isclose(observation['desired_goal'][2]-wrapper.active.base_goal[2], .04)
+        np.testing.assert_array_equal(observation['desired_goal'], wrapper.active.goal.astype(np.float32))
+        state = wrapper.get_training_state()
+        wrapper.set_training_state(state)
+        changed = dict(state, lift_range=(.20,.26))
+        with pytest.raises(ValueError, match='goal distribution'):
+            wrapper.set_training_state(changed)
+    finally:
+        wrapper.close()

@@ -19,7 +19,7 @@ def probe(config):
     from pnr.general_manipulation import make_grasp_case
     from pnr.telemetry import atomic_json
     torch.set_num_threads(1)
-    env=make_grasp_case(5, config['scene_seed'], seed=71000, horizon=120, evaluation=True)
+    env=make_grasp_case(5, config['scene_seed'], seed=71000, horizon=120, evaluation=True, bounded_ik_fallback=False)
     model=SAC.load(config['checkpoint'], env=env, device='cpu')
     if config.get('fallback'):
         from pnr.local_control import LocalCartesianIK

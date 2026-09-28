@@ -225,6 +225,7 @@ def main():
     p.add_argument('--learning-rate',type=float,default=3e-5);p.add_argument('--delta-scale',type=float,default=.075)
     p.add_argument('--horizon',type=int,default=900);p.add_argument('--eval-every',type=int,default=10000)
     p.add_argument('--checkpoint-every',type=int,default=10000);p.add_argument('--device',default='cuda')
+    p.add_argument('--validation-layouts',type=int,default=4)
     p.add_argument('--bc-weight',type=float,default=0.);p.add_argument('--demo-batch-size',type=int,default=256)
     args=p.parse_args()
     if not np.isfinite(args.bc_weight) or args.bc_weight<0 or args.demo_batch_size<1:p.error('Invalid demonstration regularization settings')
@@ -234,13 +235,14 @@ def main():
         if Path(args.resume_run).name!=args.resume_run:p.error('Use a run ID for --resume-run')
         parent_config=json.loads((ROOT/'runs'/args.resume_run/'config.json').read_text())
         explicit={token.split('=')[0] for token in sys.argv[1:] if token.startswith('--')}
-        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size'):
+        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts'):
             if '--'+key.replace('_','-') not in explicit:setattr(args,key,parent_config.get(key,getattr(args,key)))
     if not args.demonstrations:p.error('--demonstrations required for a fresh run')
     if args.workers>args.layouts:p.error('Each worker needs at least one selected layout')
     torch.set_num_threads(1);np.random.seed(args.seed);random.seed(args.seed);torch.manual_seed(args.seed)
     bank=load_scene_bank(args.bank);layouts=scene_records(bank,'train')[:args.layouts]
-    validation=scene_records(bank,'validation')[:4]
+    validation=scene_records(bank,'validation')[:args.validation_layouts]
+    if not 1<=args.validation_layouts<=len(scene_records(bank,'validation')):p.error('Invalid validation layout count')
     config=dict(vars(args),gamma=.995,shaping_weight=2.,alpha_initial=.005,target_entropy=-4.,
         n_sampled_goal=1,demonstrations_sha256=hashlib.sha256(Path(args.demonstrations).read_bytes()).hexdigest(),
         scene_bank_sha256=bank['manifest_sha256'],supervised_loss_during_online_training=args.bc_weight>0,
@@ -255,7 +257,7 @@ def main():
     algorithm='SAC+HER+demonstration regularization' if args.bc_weight>0 else 'BC-initialized SAC+HER'
     learner=RegularizedSAC if args.bc_weight>0 else SAC
     logger=RunLogger(args.run_id,kind='train',skill='carry',algorithm=algorithm,budget=inherited+args.steps,
-        transitions=inherited,name='Spatial multi-maze SAC + HER',
+        transitions=inherited,name=f'Carry · regularized SAC (weight {args.bc_weight:g})' if args.bc_weight>0 else 'Spatial multi-maze SAC + HER',
         summary='Resuming ordinary SAC+HER.' if resumed else 'Initializing map-aware actor from diverse physical demonstrations.')
     (logger.directory/'artifacts').mkdir();(logger.directory/'checkpoints').mkdir();archive_sources(logger.directory)
     atomic_json(logger.directory/'config.json',config)
