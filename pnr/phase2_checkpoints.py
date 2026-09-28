@@ -42,6 +42,8 @@ def _resource_fingerprint(path):
 def _normalized_method(method):
     """Absent regularization fields in an old checkpoint mean ordinary SAC."""
     result=dict(method)
+    if 'encoder' in result and result['encoder'] not in ('cnn32','gated48-k20-f5'):
+        raise ValueError('Unknown checkpoint encoder')
     weight=float(result.get('bc_weight',0.))
     if not np.isfinite(weight) or weight<0:raise ValueError('Invalid checkpoint bc_weight')
     result['bc_weight']=weight
@@ -73,6 +75,7 @@ def _normalized_method(method):
 def _method(config):
     result={key:config[key] for key in BASE_METHOD_FIELDS}
     result.update({key:config[key] for key in ('bc_weight','demo_batch_size','navigation_only','buffer_size','balance_objects','balance_replay_objects','balance_replay_sources')+PREPARATION_FIELDS if key in config})
+    if 'encoder' in config:result['encoder']=config['encoder']
     return _normalized_method(result)
 
 
@@ -82,7 +85,10 @@ def _semantic_sources(method):
     variant_sources=('pnr/diverse_learned_carry.py','pnr/grasp_sampling.py') if method['preparation_mode']=='learned-grasp-variants' else ()
     replay_sources=('pnr/object_balanced_her.py',) if method['balance_replay_objects'] else ()
     source_balance_sources=('pnr/preparation_balanced_her.py','pnr/preparation_metadata.py') if method['balance_replay_sources'] else ()
-    return SEMANTIC_SOURCES+preparation_sources+variant_sources+replay_sources+source_balance_sources+(('pnr/regularized_sac.py',) if method['bc_weight']>0 else ())+(('pnr/navigation_features.py',) if method['navigation_only'] else ())
+    gated=method.get('encoder','cnn32')=='gated48-k20-f5'
+    encoder_sources=('pnr/gated_spatial_features.py',) if gated else ()
+    navigation_sources=('pnr/navigation_features.py',) if method['navigation_only'] or gated else ()
+    return SEMANTIC_SOURCES+preparation_sources+variant_sources+replay_sources+source_balance_sources+(('pnr/regularized_sac.py',) if method['bc_weight']>0 else ())+navigation_sources+encoder_sources
 
 
 def signature(config,source_root):
@@ -98,6 +104,9 @@ def check_signature(expected,actual):
     for group in ('method','semantic_sources'):
         before_group=_normalized_method(expected[group]) if group=='method' else expected[group]
         after_group=_normalized_method(actual[group]) if group=='method' else actual[group]
+        if group=='method':
+            # Old production checkpoints predate the optional architecture field.
+            before_group.setdefault('encoder','cnn32');after_group.setdefault('encoder','cnn32')
         if set(before_group)!=set(after_group):raise ValueError('Resume signature fields differ: '+group)
         for key,value in before_group.items():
             if after_group[key]!=value:
@@ -209,6 +218,43 @@ def load_checkpoint(run_directory,current_signature):
                 manifest_sha256=None,legacy_file_hashes={key:digest(path) for key,path in paths.items()},**paths)
 
 
+def validate_encoder_model(model, encoder, navigation_only=False):
+    """Check actual new-run actor/critic architectures and masks, not labels alone."""
+    from pnr.spatial_features import CarrySpatialExtractor
+    from pnr.navigation_features import NavigationSpatialExtractor
+    if encoder == 'cnn32':
+        expected = NavigationSpatialExtractor if navigation_only else CarrySpatialExtractor
+        channels = 32
+    elif encoder == 'gated48-k20-f5':
+        from pnr.gated_spatial_features import GatedCarrySpatialExtractor, GatedMapCore
+        expected = GatedCarrySpatialExtractor
+        channels = 48
+    else:
+        raise ValueError('Unknown checkpoint encoder')
+    if model.policy.net_arch != [128, 128]:
+        raise ValueError('Saved carry encoder actor/critic head differs')
+    for name in ('actor', 'critic', 'critic_target'):
+        feature = getattr(model, name).features_extractor
+        if type(feature) is not expected or feature.channels != channels or feature.features_dim != 128:
+            raise ValueError('Saved ' + name + ' encoder architecture differs')
+        if (feature.goal_scale, feature.goal_sigma, feature.local_spacing) != (20., .65, .5):
+            raise ValueError('Saved ' + name + ' encoder geometry differs')
+        if encoder == 'gated48-k20-f5':
+            core = feature.spatial
+            if (type(core) is not GatedMapCore or core.channels != 48
+                    or core.iterations != 20 or core.kernel_size != 5
+                    or core.message.kernel_size != (5, 5) or core.cell.hidden_size != 48):
+                raise ValueError('Saved ' + name + ' gated encoder propagation differs')
+        expected_raw = 0. if name == 'actor' else 1.
+        if not torch.all(feature.state_mask == expected_raw):
+            raise ValueError('Saved ' + name + ' encoder raw-pose mask differs')
+        if hasattr(feature, 'navigation_grip_mask'):
+            values = [0.,0.,0.,0.,0.,1.,1.,0.,0.] if name == 'actor' and navigation_only else [1.]*9
+            if not torch.equal(feature.navigation_grip_mask,
+                               torch.tensor(values, device=feature.navigation_grip_mask.device)):
+                raise ValueError('Saved ' + name + ' encoder compact-grip mask differs')
+
+
 def validate_loaded_model(model,checkpoint,workers):
     state=checkpoint['state'];replay=model.replay_buffer
     if model.n_envs!=workers or replay.n_envs!=workers:raise ValueError('Resume replay/model worker count differs')
@@ -216,6 +262,8 @@ def validate_loaded_model(model,checkpoint,workers):
         raise ValueError('Resume model counters differ from checkpoint state')
     if not getattr(replay,'copy_info_dict',False):raise ValueError('HER physical reward information missing')
     method=_normalized_method(state['resume_signature']['method'])
+    if 'encoder' in method:
+        validate_encoder_model(model,method['encoder'],method['navigation_only'])
     from pnr.object_balanced_her import ObjectBalancedHerReplayBuffer
     balanced=isinstance(replay,ObjectBalancedHerReplayBuffer)
     if balanced!=method['balance_replay_objects']:

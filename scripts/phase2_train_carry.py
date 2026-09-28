@@ -37,6 +37,21 @@ from pnr.phase2_checkpoints import (signature,load_checkpoint,publish_checkpoint
                                    restore_rng,validate_loaded_model)
 
 
+def encoder_policy_kwargs(encoder='cnn32', navigation_only=False):
+    """Two fixed learned encoders; no input, action, or physical changes."""
+    if encoder == 'cnn32':
+        extractor = NavigationSpatialExtractor if navigation_only else CarrySpatialExtractor
+        settings = {'features_dim': 128, 'channels': 32}
+    elif encoder == 'gated48-k20-f5':
+        from pnr.gated_spatial_features import GatedCarrySpatialExtractor
+        extractor = GatedCarrySpatialExtractor
+        settings = {'features_dim': 128, 'channels': 48, 'iterations': 20, 'kernel_size': 5}
+    else:
+        raise ValueError('Unknown carry encoder: ' + str(encoder))
+    return {'net_arch': [128, 128], 'features_extractor_class': extractor,
+            'features_extractor_kwargs': settings}
+
+
 def plain(x):
     if isinstance(x,np.ndarray):return x.tolist()
     if isinstance(x,np.generic):return x.item()
@@ -231,6 +246,8 @@ def main():
     p.add_argument('--horizon',type=int,default=900);p.add_argument('--eval-every',type=int,default=10000)
     p.add_argument('--checkpoint-every',type=int,default=10000);p.add_argument('--device',default='cuda')
     p.add_argument('--validation-layouts',type=int,default=4)
+    p.add_argument('--encoder',choices=('cnn32','gated48-k20-f5'),default='cnn32',
+                   help='Opt-in fixed GPPN-inspired map core; default CNN architecture is unchanged')
     p.add_argument('--navigation-only',action='store_true')
     p.add_argument('--balance-objects',action='store_true',help='Uniform TRAIN-object BC sampling before per-object direction strata')
     p.add_argument('--balance-replay-objects',action='store_true',help='Uniform original-object sampling before standard HER relabeling')
@@ -252,7 +269,7 @@ def main():
         if Path(args.resume_run).name!=args.resume_run:p.error('Use a run ID for --resume-run')
         parent_config=json.loads((ROOT/'runs'/args.resume_run/'config.json').read_text())
         explicit={token.split('=')[0] for token in sys.argv[1:] if token.startswith('--')}
-        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts','navigation_only','buffer_size','critic_warmup_tau','balance_objects','preparation_grasp','training_layouts','training_objects','balance_replay_objects','balance_replay_sources','preparation_variants','preparation_seed','gamma','relabel_demo_rewards'):
+        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts','encoder','navigation_only','buffer_size','critic_warmup_tau','balance_objects','preparation_grasp','training_layouts','training_objects','balance_replay_objects','balance_replay_sources','preparation_variants','preparation_seed','gamma','relabel_demo_rewards'):
             if '--'+key.replace('_','-') not in explicit:setattr(args,key,parent_config.get(key,getattr(args,key)))
         if '--preparation-grasp' not in explicit and parent_config.get('frozen_preparation_grasp'):
             args.preparation_grasp=parent_config['frozen_preparation_grasp']
@@ -300,6 +317,9 @@ def main():
         independent_final_study_seed=False,scene_cache_policy='prime declared learned handovers once; counted restore hold before each full-goal episode' if preparation_cases else 'prime all assigned physical scenes once before learning',critic_initialization='fresh with fixed-actor Bellman warmup',
         gpu_numerics='cuDNN benchmark enabled; non-bitwise GPU training; float32 matmul high',
         initial_checkpoint_sha256=None if not args.initial_checkpoint else hashlib.sha256(Path(args.initial_checkpoint).read_bytes()).hexdigest())
+    # Legacy resumes retain their original signature vocabulary. New runs record the encoder.
+    if args.resume_run and 'encoder' not in parent_config and '--encoder' not in explicit:
+        config.pop('encoder')
     preparation_source_mapping=None
     if args.balance_replay_sources:
         from pnr.preparation_metadata import PREPARATION_SOURCES_BY_MODE, PREPARATION_SOURCES_BY_OBJECT
@@ -356,8 +376,7 @@ def main():
         model=learner('MultiInputPolicy',schema,learning_rate=args.learning_rate,buffer_size=args.buffer_size,
             learning_starts=0,batch_size=args.batch_size,tau=.01,gamma=args.gamma,train_freq=1,gradient_steps=1,
             ent_coef='auto_0.005',target_entropy=-4.,replay_buffer_class=replay_class,replay_buffer_kwargs=replay_kwargs,
-            policy_kwargs={'net_arch':[128,128],'features_extractor_class':NavigationSpatialExtractor if args.navigation_only else CarrySpatialExtractor,
-                'features_extractor_kwargs':{'features_dim':128,'channels':32}},device=args.device,seed=args.seed)
+            policy_kwargs=encoder_policy_kwargs(args.encoder,args.navigation_only),device=args.device,seed=args.seed)
         if args.initial_checkpoint:
             source=SAC.load(args.initial_checkpoint,env=schema,device=args.device)
             if source.num_timesteps != 0:
@@ -415,7 +434,8 @@ def main():
                 callback.initialization['bc']={'parent_checkpoint':args.initial_checkpoint,
                     'parent_checkpoint_sha256':config['initial_checkpoint_sha256'],'updates':update,'batch_size':args.batch_size,'examples':update*args.batch_size,
                     'wall_seconds':time.monotonic()-bc_started,'supervision':supervision,
-                    'batch_strata_sampler':'multinomial' if args.balance_objects else 'fixed_floor_last_remainder'}
+                    'batch_strata_sampler':'multinomial' if args.balance_objects else 'fixed_floor_last_remainder',
+                    'encoder':args.encoder,'encoder_settings':encoder_policy_kwargs(args.encoder,args.navigation_only)['features_extractor_kwargs']}
                 callback.initialization['std_calibration']=calibrate_actor_std(model,-3.)
                 model.save(logger.directory/'checkpoints/bc_initialized')
                 atomic_json(logger.directory/'artifacts/initialization.json',plain(callback.initialization))
