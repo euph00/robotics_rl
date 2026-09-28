@@ -5,7 +5,7 @@ const number = value => Number.isFinite(Number(value)) && value !== null && valu
 const count = value => number(value) ? Math.round(Number(value)).toLocaleString() : '—';
 const compact = value => number(value) ? Intl.NumberFormat(undefined, {notation:'compact', maximumFractionDigits:1}).format(value) : '—';
 const percent = value => number(value) ? `${Math.round(100 * value)}%` : '—';
-const scopeLabel = scope => ({full_task:'Full task', actor_initialization:'Actor initialization', four_start_grasp_diagnostic:'Grasp · four starts', full_pregrasp_diagnostic:'Grasp · full approach', skill:'Skill only', reference:'Physical reference', reference_carry_handoff:'Reach · reference handover', training_data:'Physical training data', upstream:'Upstream proximity', easy_carry_diagnostic:'Carry · short segment', carry_segment_curriculum:'Carry · curriculum', full_carry:'Carry · full route', easy_manipulation_diagnostic:'Manipulation · local start'}[scope] || (scope ? String(scope).replaceAll('_', ' ') : 'Scope unspecified'));
+const scopeLabel = scope => ({fresh_retention_collection:'TRAIN teacher transport · collection', TRAIN_teacher_transport_diagnostic:'TRAIN teacher transport', full_task:'Full task', actor_initialization:'Actor initialization', four_start_grasp_diagnostic:'Grasp · four starts', full_pregrasp_diagnostic:'Grasp · full approach', skill:'Skill only', reference:'Physical reference', reference_carry_handoff:'Reach · reference handover', training_data:'Physical training data', upstream:'Upstream proximity', easy_carry_diagnostic:'Carry · short segment', carry_segment_curriculum:'Carry · curriculum', full_carry:'Carry · full route', easy_manipulation_diagnostic:'Manipulation · local start'}[scope] || (scope ? String(scope).replaceAll('_', ' ') : 'Scope unspecified'));
 const metricScope = row => row?.scope === 'full_task' ? 'full_task' : (row?.evaluation_scope || row?.scope || null);
 const ago = value => { if (!value) return '—'; const seconds = Math.max(0, (Date.now() - Date.parse(value)) / 1000); return seconds < 60 ? `${Math.round(seconds)}s ago` : seconds < 3600 ? `${Math.floor(seconds/60)}m ago` : `${Math.floor(seconds/3600)}h ago`; };
 let state = null, selectedId = new URLSearchParams(location.search).get('run'), artifactKey = null, showAllRuns = false;
@@ -25,6 +25,15 @@ const displayName = run => state?.project?.run_labels?.[run.id] || (number(run.m
 const supervisedUpdates = row => row?.bc_updates ?? row?.updates;
 const runAccounting = run => run?.metrics?.accounting || run?.accounting;
 const plannedCases = (run, row=run?.metrics) => row?.planned_cases ?? run?.planned_cases;
+function retentionCollection(run) {
+  const metrics=run?.metrics;
+  if (metrics?.scope!=='fresh_retention_collection' || !number(metrics.batch_completed) || !number(metrics.batch_planned) || metrics.batch_planned<=0) return null;
+  const previous=Number(metrics.eval_episodes || 0);
+  const round=run.kind==='train' ? Number(metrics.auxiliary_updates_attempted || 0)+1 : Math.floor(previous/metrics.batch_planned)+1;
+  return {completed:Number(metrics.batch_completed),planned:Number(metrics.batch_planned),round,previous};
+}
+const teacherTransport = run => ['fresh_retention_collection','TRAIN_teacher_transport_diagnostic'].includes(run?.metrics?.scope);
+
 
 function chartData(run) {
   const initialization=run?.kind==='initialization'||run?.metrics?.scope==='actor_initialization';
@@ -60,7 +69,7 @@ function renderChart(run) {
   $('y-caption').textContent=data.ylabel;
   $('axis-caption').textContent=data.xCaption;
   $('chart-scope').textContent=data.scope;
-  if (!points.length) { $('chart').replaceChildren(el('p',run?.kind==='initialization'?'Supervised progress and physical checks will appear when recorded.':'Measured success will appear after the first evaluation.','empty')); return; }
+  if (!points.length) { $('chart').replaceChildren(el('p',run?.kind==='initialization'?'Supervised progress and physical checks will appear when recorded.':teacherTransport(run)?'TRAIN teacher-transport diagnostic · rollout progress below.':'Measured success will appear after the first evaluation.','empty')); return; }
   const ns = 'http://www.w3.org/2000/svg';
   const svgEl = (tag, attributes, text) => { const node = document.createElementNS(ns, tag); for (const [key,value] of Object.entries(attributes)) node.setAttribute(key,value); if (text !== undefined) node.textContent=text; return node; };
   const svg = svgEl('svg',{viewBox:'0 0 620 220',role:'img','aria-label':`${data.ylabel} versus ${data.xCaption}. ${data.scope}.`});
@@ -82,7 +91,7 @@ function renderEvaluation(run) {
   const success = values.full_task_success_rate ?? values.success_rate;
   const scopeName = run?.kind === 'reference' ? 'Physical reference' : scopeLabel(values.full_task_success_rate !== undefined ? 'full_task' : metricScope(values));
   $('eval-scope').textContent = (number(success) || measured) ? scopeName : '';
-  if (!number(success)) { $('evaluation').replaceChildren(el('p','Awaiting evaluated episodes.','empty')); return; }
+  if (!number(success)) { $('eval-scope').textContent=teacherTransport(run)?scopeLabel(run.metrics.scope):'';$('evaluation').replaceChildren(el('p',teacherTransport(run)?'TRAIN teacher-transport diagnostic; full-task success is not measured here.':'Awaiting evaluated episodes.','empty')); return; }
   const episodes = values.eval_episodes ?? values.episodes;
   const planned=plannedCases(run,values),denominator=number(planned)?planned:episodes;
   const resultLabel=number(planned) ? `${scopeName} completion · ${count(success*planned)} / ${count(planned)} planned cases` : `${scopeName} success${number(episodes) ? ` · ${count(episodes)} episodes` : ''}`;
@@ -106,7 +115,8 @@ function renderEvaluation(run) {
 
 function progressValue(run) {
   if (run.kind==='initialization'||run.metrics?.scope==='actor_initialization') return {value:supervisedUpdates(run.metrics),unit:'supervised updates',budget:null};
-  if (run.kind==='evaluation' && number(plannedCases(run))) return {value:run.metrics?.eval_episodes ?? run.metrics?.completed_cases ?? 0,unit:'evaluated cases',budget:plannedCases(run)};
+  const transport=retentionCollection(run);
+  if (run.kind==='evaluation' && number(plannedCases(run))) return {value:transport?transport.previous+transport.completed:run.metrics?.eval_episodes ?? run.metrics?.completed_cases ?? 0,unit:'evaluated cases',budget:plannedCases(run)};
   const collection=run.metrics?.scope==='training_data' || ['demonstration','correction_collection'].includes(run.metrics?.metric_source);
   return {value:run.transitions||0,unit:run.kind==='train'?'online decisions':collection?'data collection decisions':'interactions',budget:run.kind==='train'?run.budget:null};
 }
@@ -118,6 +128,8 @@ function renderRunProgress(run) {
   const progressText=number(progress.value) ? (number(progress.budget) ? `${compact(progress.value)} / ${compact(progress.budget)} ${progress.unit}` : `${count(progress.value)} ${progress.unit}`) : 'Supervised updates pending';
   copy.append(el('span',`${run.algorithm || run.kind || 'Experiment'}${run.skill ? ' · '+run.skill : ''}`),el('span',progressText));node.append(copy);
   if (number(progress.budget) && progress.budget>0) { const track=el('div',undefined,'progress-track'),fill=el('div',undefined,'progress-fill'); fill.style.width=`${Math.min(100,100*progress.value/progress.budget)}%`; track.append(fill); node.append(track); }
+  const transport=retentionCollection(run);
+  if (transport) node.append(el('p',`TRAIN teacher transport · ${run.kind==='train'?'round':'batch'} ${count(transport.round)} · ${count(transport.completed)} / ${count(transport.planned)} rollouts${run.kind==='train'?' · online updates paused':''}`,'run-summary'));
   const accounting=runAccounting(run);
   const counts=initialization ? [
     ['new online SAC decisions',accounting?.new_online_transitions],
@@ -165,7 +177,9 @@ function renderRuns(runs) {
     const status=el('td'),badge=el('span',run.status||'pending','status'); if (/^[a-z]+$/.test(run.status||'')) badge.classList.add(run.status);status.append(badge);
     const progress=progressValue(run);
     const value=number(progress.value)?`${count(progress.value)}${number(progress.budget)?' / '+compact(progress.budget):''}${run.kind==='initialization'?' BC updates':progress.unit==='data collection decisions'?' collection decisions':progress.unit==='evaluated cases'?' cases':''}`:'—';
-    row.append(name,el('td',[run.skill,run.algorithm||(run.kind||'')].filter(Boolean).join(' · ')),status,el('td',value),el('td',ago(run.updated_at)));return row;
+    const cell=el('td',value),transport=retentionCollection(run);
+    if (transport) cell.append(el('p',`${run.kind==='train'?'Round':'Batch'} ${count(transport.round)} · transport ${count(transport.completed)} / ${count(transport.planned)}`,'run-summary'));
+    row.append(name,el('td',[run.skill,run.algorithm||(run.kind||'')].filter(Boolean).join(' · ')),status,cell,el('td',ago(run.updated_at)));return row;
   }));
 }
 

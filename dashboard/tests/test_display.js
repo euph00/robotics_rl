@@ -87,6 +87,23 @@ function runDisplayChecks(appSource) {
   assert(text(nodes['selected-run']).includes('5,614 data collection decisions') && !text(nodes['selected-run']).includes('/ 28'),'Collector progress mixes units');
   assert(text(nodes['run-table']).includes('5,614 collection decisions') && !text(nodes['run-table']).includes('/ 28'),'Collector table mixes units');
   assert(nodes['run-toggle'].hidden,'Unnecessary toggle for short history');
+  const retention={id:'retention',kind:'train',transitions:6000,budget:12000,
+    metrics:{scope:'fresh_retention_collection',batch_completed:8,batch_planned:48,auxiliary_updates_attempted:1},series:[]};
+  api.renderRunProgress(retention);api.renderRuns([retention]);api.renderChart(retention);api.renderEvaluation(retention);
+  progress=text(nodes['selected-run']);
+  assert(progress.includes('6K / 12K online decisions') && progress.includes('round 2 · 8 / 48 rollouts') && progress.includes('online updates paused'),'Transport batches must show round progress without changing native decision counts');
+  assert(text(nodes['run-table']).includes('Round 2 · transport 8 / 48'),'Transport collection table appears stalled');
+  assert(api.chartData(retention).points.length===0 && !text(nodes.evaluation).includes('%'),'Teacher collection must not invent a policy success curve');
+  assert(text(nodes.evaluation).includes('TRAIN teacher-transport diagnostic') && text(nodes['chart']).includes('TRAIN teacher-transport diagnostic'),'Teacher transport scope must remain explicit');
+  api.renderRunProgress({...retention,metrics:{...retention.metrics,scope:'skill'}});
+  assert(!text(nodes['selected-run']).includes('online updates paused') && !text(nodes['selected-run']).includes('8 / 48 rollouts'),'Merged stale batch fields must disappear when native SAC resumes');
+  const comparison={id:'compare',kind:'evaluation',planned_cases:80,transitions:1000,
+    metrics:{scope:'fresh_retention_collection',batch_completed:3,batch_planned:40,eval_episodes:40},series:[]};
+  api.renderRunProgress(comparison);api.renderEvaluation(comparison);
+  assert(text(nodes['selected-run']).includes('43 / 80 evaluated cases') && text(nodes['selected-run']).includes('batch 2 · 3 / 40 rollouts'),'Second comparison batch must include completed first-batch progress');
+  assert(!text(nodes['selected-run']).includes('online updates paused') && !text(nodes.evaluation).includes('%'),'Evaluation collection must not imply SAC updates or unlogged teacher success');
+  api.renderRunProgress({...comparison,metrics:{...comparison.metrics,scope:'TRAIN_teacher_transport_diagnostic',eval_episodes:80}});
+  assert(text(nodes['selected-run']).includes('80 / 80 evaluated cases') && !text(nodes['selected-run']).includes('3 / 40 rollouts'),'Final comparison must clear stale collection counters');
   const mediaRun={id:'reference',status:'complete',artifacts:[
     {path:'artifacts/rollout.webm',kind:'video'},
     {path:'artifacts/rollout.mp4',kind:'video'},
@@ -110,7 +127,7 @@ function runDisplayChecks(appSource) {
   assert(gallery.some(item=>item.tag==='img' && item.src==='/artifacts/selected-test/artifacts/matrix.png'),'Selected test matrix must not disappear behind unrelated videos');
   assert(gallery.some(item=>item.tag==='video' && item.src==='/artifacts/featured/artifacts/featured.webm'),'Featured reproduction video must stay accessible');
   assert(text(nodes.artifacts).includes('Historical recording · featured'),'Featured prior video must be identified as historical');
-  return 'Display, fixed-denominator progress, accounting, history, units, and video-poster checks passed.';
+  return 'Display, retention collection, fixed-denominator progress, accounting, history, units, and video-poster checks passed.';
 }
 if (typeof module!=='undefined' && require.main===module) {
   const fs=require('fs'),path=require('path');
