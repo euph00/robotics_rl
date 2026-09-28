@@ -73,3 +73,20 @@ At the first physical checkpoint, **both branches achieve 9/12 validation succes
 The actual geometric-data initialized critics reproduce the offline scale change: median long-route Q-minus-hard-reference gap +100.56 → +4.16, with actor-over-expert rankings 39.4% → 26.5%. Goal-hold median Q changes −3.55 → −8.82, so the qualification about soft continuation remains relevant. These inference-only measurements are saved in the run's `artifacts/critic_initializer_comparison.json`.
 
 Exact model hashes, counters, case outcomes, and costs are saved in `artifacts/controlled_comparison.json`. The new 4k snapshot is `checkpoints/step_000004000_1790586690376576151/model.zip`; it is the callback snapshot before update500, matching the baseline protocol. The 12k branch continues. Retain the explicit experimental setting and judge its remaining scheduled checkpoints; this result does not justify changing the default or spending more physical runs tuning tau. Expanded training coverage remains a separate intervention.
+
+
+A follow-up on666 evenly spaced current states from the74 real TRAIN learned-
+handover episodes compared initialized,8k and24k object-balanced critics. For
+physically identical raw actor actions outside the unit disk and their normalized
+versions, mean Q differences were−0.00064,−0.00114 and−0.00089. Outside-disk
+states fell from193/666 at initialization to61/666 and55/666. Median absolute
+radial-gradient fractions there were.57,.73,.69, although radial action scaling
+has no physical effect until it enters the unit disk. This confirms an action-
+representation inconsistency, but it affects a minority of current actor states
+and does not establish the cause of the24k retention decline. No critic/action
+representation change is adopted from this probe. All states were TRAIN data;
+there were zero physics ticks or parameter updates. The first exploratory pass
+used the unwarmed BC critic; the corrected retained report uses the actual2k-
+warmed balanced initializer. Reproducible script and corrected report are
+`runs/setup/audit_balanced_action_aliases.py` and
+`runs/setup/balanced_action_alias_audit.json`.
