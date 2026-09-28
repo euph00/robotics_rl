@@ -275,3 +275,14 @@ def test_loaded_regularized_identity_cannot_be_claimed_for_plain_sac(bundle):
     # Even extra ZIP metadata does not turn SAC.load into the modified algorithm.
     model.bc_weight=10.
     with pytest.raises(ValueError,match='RegularizedSAC.load'):validate_loaded_model(model,checkpoint,2)
+
+
+def test_object_sampling_mode_is_resume_checked_and_legacy_defaults_unbalanced(bundle):
+    from pnr.phase2_checkpoints import check_signature
+    _,_,_,source,config,sig=bundle
+    old=copy.deepcopy(sig);old['method'].pop('balance_objects')
+    check_signature(old,signature(dict(config,balance_objects=False),source))
+    balanced=signature(dict(config,balance_objects=True),source)
+    for before,after in [(old,balanced),(balanced,old)]:
+        with pytest.raises(ValueError,match='balance_objects'):
+            check_signature(before,after)

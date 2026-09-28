@@ -229,6 +229,7 @@ def main():
     p.add_argument('--checkpoint-every',type=int,default=10000);p.add_argument('--device',default='cuda')
     p.add_argument('--validation-layouts',type=int,default=4)
     p.add_argument('--navigation-only',action='store_true')
+    p.add_argument('--balance-objects',action='store_true',help='Uniform TRAIN-object BC sampling before per-object direction strata')
     p.add_argument('--buffer-size',type=int,default=100000)
     p.add_argument('--bc-weight',type=float,default=0.);p.add_argument('--demo-batch-size',type=int,default=256)
     args=p.parse_args()
@@ -241,7 +242,7 @@ def main():
         if Path(args.resume_run).name!=args.resume_run:p.error('Use a run ID for --resume-run')
         parent_config=json.loads((ROOT/'runs'/args.resume_run/'config.json').read_text())
         explicit={token.split('=')[0] for token in sys.argv[1:] if token.startswith('--')}
-        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts','navigation_only','buffer_size','critic_warmup_tau'):
+        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts','navigation_only','buffer_size','critic_warmup_tau','balance_objects'):
             if '--'+key.replace('_','-') not in explicit:setattr(args,key,parent_config.get(key,getattr(args,key)))
         if args.critic_warmup_tau!=parent_config.get('critic_warmup_tau',.01):
             p.error('Cannot change completed critic-warmup provenance on resume')
@@ -274,7 +275,7 @@ def main():
     allowed={l['maze_hash'] for l in layouts}
     if any(e['maze_hash'] not in allowed for e in dataset['episodes']):raise ValueError('Demonstration layout outside selected training partition')
     if resumed is None or args.bc_weight>0:
-        rows,groups,probabilities,supervision=carry_supervision(dataset)
+        rows,groups,probabilities,supervision=carry_supervision(dataset,balance_objects=args.balance_objects)
         # Preserve the established sampler group name for old regularized resumes.
         groups={('turn' if name=='turn_or_vertical' else name):indices for name,indices in groups.items()}
         strata=list(groups.values())

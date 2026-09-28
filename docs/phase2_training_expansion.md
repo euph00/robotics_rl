@@ -35,3 +35,29 @@ failed-attempt accounting remain unchanged.
 Validation:16 scene/merge tests passed (six physical-native tests excluded as
 unaffected); tests cover deterministic append, immutable original and held-out
 cases, disjoint map content, changed-lineage rejection, and merge admission.
+
+
+Both collectors completed all128 new maps:512 standard and374 geometric
+recovery episodes, each successful. The verified union contains1,721 episodes,
+478,363 transitions and all six earlier failed replay episodes. Its SHA256 is
+`3c180f1759c8e99ab69e631953913ac281400025694b8d213e4921712c689ed7`.
+Its cumulative source lineage costs19,021,415 physics ticks including setup,
+preparation and settling; the merge itself performs zero physics.
+
+`phase2_carry_expanded_init01` transfers the prior geometric BC actor, refines
+for16,000 batches of256, and calibrates fresh critics for2,000 updates with
+warmup tau0.1. It passes all12 isolated development navigation mazes. The explicit
+`--steps 0` mode saves a resumable checkpoint and performs no online training or
+TRAIN scene priming: all training interaction/setup counters are zero. Its
+physical validation costs remain recorded separately. This is a promising
+initializer, not an online-SAC or whole-task result.
+
+The next union may explicitly include all five declared original objects.
+Default merging still rejects differing object sets; multi-object use requires
+an explicit complete object union, verified source membership and unchanged
+reward/action contracts. Optional `--balance-objects` gives each object equal
+BC sampling mass before applying its existing direction/recovery strata. Object
+identity is sampling metadata only, never added to the policy observation.
+Resume validation checks this sampling mode; old runs default to unbalanced.
+Twenty-four merge/checkpoint tests pass, including unchanged default behavior,
+failed-label exclusion, explicit object admission and sampling-mode mismatch.

@@ -76,7 +76,7 @@ def seed_replay(model, path):
         'teacher_at_evaluation':False,'hindsight_at_evaluation':False,'reward_roundoff_atol':1e-5}
 
 
-def carry_supervision(dataset):
+def _carry_supervision_single(dataset):
     """Return rows, disjoint index groups, probabilities and concise BC statistics.
 
     Failed episodes remain in the dataset/replay but supply no imitation labels.
@@ -126,7 +126,42 @@ def carry_supervision(dataset):
     return rows,groups,probabilities,stats
 
 
-def merge_carry_datasets(paths,destination,*,bank_path=None,parent_bank_paths=()):
+def carry_supervision(dataset, *, balance_objects=False):
+    """Optionally balance objects before the established direction strata.
+
+    Object identity is TRAIN sampling metadata only, never a new policy input.
+    Failed episodes remain replay data and cannot supply imitation labels. A
+    declared object with no successful labels is an explicit error, not silently
+    removed from the sampling distribution.
+    """
+    if not balance_objects:
+        return _carry_supervision_single(dataset)
+    objects=sorted({int(episode['object_idx']) for episode in dataset['episodes']})
+    if not objects:raise ValueError('No object cases for balanced carry supervision')
+    rows=[];groups={};probabilities=[];per_object={}
+    counters=('successful_episodes_for_bc','failed_episodes_excluded_from_bc',
+              'bc_transitions','westward_return_rows','recovery_prefix_rows')
+    stats={key:0 for key in counters}
+    for object_idx in objects:
+        subset={'episodes':[episode for episode in dataset['episodes'] if int(episode['object_idx'])==object_idx]}
+        part_rows,part_groups,part_probabilities,part_stats=_carry_supervision_single(subset)
+        offset=len(rows);rows.extend(part_rows)
+        for name,indices in part_groups.items():
+            groups[f'object_{object_idx:02d}/{name}']=indices+offset
+        probabilities.extend(part_probabilities/len(objects))
+        per_object[str(object_idx)]=part_stats
+        for key in counters:stats[key]+=part_stats[key]
+    probabilities=np.asarray(probabilities,dtype=np.float64)
+    stats.update(object_balance=True,object_indices=objects,
+        object_sampling_probabilities={str(obj):1/len(objects) for obj in objects},
+        per_object=per_object,all_episodes_retained_for_replay=True,
+        object_id_added_to_policy_observation=False,
+        strata_counts={name:len(indices) for name,indices in groups.items()},
+        strata_probabilities=dict(zip(groups,probabilities.tolist())))
+    return rows,groups,probabilities,stats
+
+
+def merge_carry_datasets(paths,destination,*,bank_path=None,parent_bank_paths=(),object_indices=None):
     """Create an immutable counted carry-data union; return a small manifest.
 
     Accepts only matching physical TRAIN data under the active580-state carry
@@ -149,6 +184,11 @@ def merge_carry_datasets(paths,destination,*,bank_path=None,parent_bank_paths=()
         parent=load_scene_bank(parent_path)
         verify_training_extension(parent,bank)
         compatible_banks[parent['manifest_sha256']]=parent
+    declared_objects=None if object_indices is None else sorted(int(i) for i in object_indices)
+    if declared_objects is not None and (not declared_objects or len(set(declared_objects))!=len(declared_objects)
+            or any(not 0<=i<15 for i in declared_objects)):
+        raise ValueError('Declare distinct original object indices for an explicit carry-data union')
+    observed_objects=set()
     schema=CarrySchema();merged=[];lineage=[];seen=set();reference=None
     costs={key:0 for key in ('source_action_calls','physics_ticks','preparation_source_action_calls',
         'preparation_physics_ticks','setup_source_action_calls','setup_physics_ticks','initialization_physics_ticks')}
@@ -163,7 +203,10 @@ def merge_carry_datasets(paths,destination,*,bank_path=None,parent_bank_paths=()
         expected={'gamma':.995,'shaping_weight':2.,'delta_scale':.075,'repeat':5}
         if contract!=expected:raise ValueError('Carry action/gamma/reward contract mismatch')
         objects=sorted({int(episode['object_idx']) for episode in data['episodes']})
-        contract['object_indices']=objects
+        if declared_objects is not None and not set(objects)<=set(declared_objects):
+            raise ValueError('Carry source contains an object outside the declared object union')
+        observed_objects.update(objects)
+        contract['object_indices']=objects if declared_objects is None else declared_objects
         if reference is not None and contract!=reference:raise ValueError('Carry source action/reward/object contracts differ')
         reference=contract
         declared_bank=metadata.get('bank_sha256')
@@ -218,6 +261,8 @@ def merge_carry_datasets(paths,destination,*,bank_path=None,parent_bank_paths=()
             'bank_validation':'declared hash plus all TRAIN maps' if declared_bank else 'reconstructed from all frozen TRAIN layout IDs/maps',
             'metadata':metadata})
         merged.extend(data['episodes'])
+    if declared_objects is not None and sorted(observed_objects)!=declared_objects:
+        raise ValueError('Declared carry object union is missing source data for an object')
     metadata={'protocol':'immutable-carry-dataset-merge-v1','partition':'train','bank_sha256':bank['manifest_sha256'],
         **{key:reference[key] for key in ('gamma','shaping_weight','delta_scale','repeat')},
         'object_indices':reference['object_indices'],'source_runs':list(dict.fromkeys(source_runs)),

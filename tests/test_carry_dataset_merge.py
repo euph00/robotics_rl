@@ -145,3 +145,40 @@ def test_merge_expanded_train_bank_requires_explicit_unchanged_parent(tmp_path):
     new['metadata']['bank_sha256']=parent['manifest_sha256'];right.write_bytes(pickle.dumps(new))
     with pytest.raises(ValueError,match='outside the frozen TRAIN'):
         merge_carry_datasets([left,right],tmp_path/'bad.pkl',bank_path=expanded_path,parent_bank_paths=[parent_path])
+
+
+def test_object_balancing_preserves_labels_and_uniform_object_probability():
+    foam=[episode() for _ in range(4)]
+    can=episode();can['object_idx']=2
+    failed=episode(True,False);failed['object_idx']=2
+    data=dataset(foam+[can,failed])
+    rows,groups,probabilities,stats=carry_supervision(data,balance_objects=True)
+    assert stats['object_indices']==[2,14]
+    assert stats['failed_episodes_excluded_from_bc']==1
+    assert stats['object_id_added_to_policy_observation'] is False
+    for obj in (2,14):
+        assert sum(p for name,p in zip(groups,probabilities) if name.startswith(f'object_{obj:02d}/'))==pytest.approx(.5)
+    assert sorted(np.concatenate(list(groups.values())).tolist())==list(range(len(rows)))
+    assert len(rows)==15
+    failed_only=episode(False,False);failed_only['object_idx']=7
+    with pytest.raises(ValueError,match='No successful'):
+        carry_supervision(dataset(foam+[failed_only]),balance_objects=True)
+
+
+def test_multi_object_merge_requires_explicit_complete_union(tmp_path):
+    left,right=tmp_path/'foam.pkl',tmp_path/'can.pkl'
+    a=dataset([episode()]);b=dataset([episode(True)])
+    b['episodes'][0]['object_idx']=2
+    left.write_bytes(pickle.dumps(a));right.write_bytes(pickle.dumps(b))
+    with pytest.raises(ValueError,match='object contracts'):
+        merge_carry_datasets([left,right],tmp_path/'implicit.pkl')
+    with pytest.raises(ValueError,match='missing source data'):
+        merge_carry_datasets([left,right],tmp_path/'missing.pkl',object_indices=[2,7,14])
+    with pytest.raises(ValueError,match='outside the declared'):
+        merge_carry_datasets([left,right],tmp_path/'undeclared.pkl',object_indices=[14])
+    destination=tmp_path/'merged.pkl'
+    report=merge_carry_datasets([left,right],destination,object_indices=[14,2])
+    assert report['episodes']==2
+    merged=pickle.loads(destination.read_bytes())
+    assert merged['metadata']['object_indices']==[2,14]
+    assert [e['object_idx'] for e in merged['episodes']]==[14,2]
