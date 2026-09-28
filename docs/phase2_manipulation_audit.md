@@ -225,3 +225,20 @@ The archived collection sources and reviewed current sources match exactly:
 | `pnr/system.py` | `a7d631131e55bd2a9f7ca2c89fcaae2a7e2bf8f931c05f6d036583e7b3d4ad35` |
 
 This audit uses existing recorded observations and poses only. Velocity observations retain their original float32 precision; hand-relative speed and acceleration are finite-difference estimates. It performs zero new physics and changes no implementation or dataset labels.
+
+
+## Native SAC sampling produces usable TRAIN handover diversity
+
+`phase2_grasp_sampling_transport01` independently executes the first two frozen TRAIN layouts across all five objects, with one deterministic and two native stochastic clearance01 SAC preparations per case: 30 original starts. Frozen grasp SHA256 is `fa7b8d54cdc916d6e68753721993b66b7e571bf09af84e70cf4e4030618dfbe2`. The stochastic branches call the saved CPU SAC distribution with `deterministic=False`; neither log-standard-deviation parameters nor an additional action-noise rule is introduced. Each variant has a predeclared independent Torch seed. Every prediction uses an isolated persistent CPU Torch state and verifies that the caller's NumPy, Python, and Torch RNG states remain unchanged.
+
+| Preparation | Valid planned handovers | Full teacher transport + final hold |
+| --- | --- | --- |
+| Deterministic | 10/10 | 8/10 |
+| Native stochastic replicate 1 | 9/10 | 9/10 |
+| Native stochastic replicate 2 | 10/10 | 9/10 |
+
+The stochastic failures are one mug pickup and one can carry loss; all attempts remain. Both stochastic draws retain foam000 and apple000, where deterministic carry loses grip. All ten triples have exactly matching measured pregrasp states and proposals. Among valid handovers, each case's maximum pairwise payload-position variation spans 2.5–14.2 mm and orientation variation spans 3.9–46.7 degrees. Successful stochastic preparations add a mean 8.7 physics ticks relative to their matched deterministic preparations (range -100 to +115). This establishes feasibility of physically reached TRAIN start diversity; twenty stochastic draws do not establish superior deployment reliability.
+
+All 1,895 predictions passed RNG-isolation checks, and every actor/log-std parameter digest stayed unchanged. Exact cost is 77,170 native calls / 385,850 physics ticks plus 14,400 initialization ticks, totaling 400,250 ticks. The existing 54-state observation and four-action grasp contract, 24 cm lift, clearance-v2 proposals, planned handover, 0.075 m teacher carry, and final 50-call hold remain unchanged. No snapshots are restored between these branches. No production policy or training dataset changed.
+
+The command is `.venv/bin/python scripts/phase2_grasp_sampling_transport_probe.py --grasp runs/phase2_sac_grasp_clearance01/candidate/grasp.zip --run-id phase2_grasp_sampling_transport01 --workers 4`. Protocol: `train-native-sac-sampling-full-transport-v1`; diagnostic script SHA256: `a03d86b002eca8c5bb8c306e84adaf458863337a5f745cecc1ee83ce03c48a1b`. The frozen plan contains all thirty seeds, checkpoint/source hashes and exact cases. Per-branch JSON/pickle backups, every-native contact traces, and grasp-action records with saved means/log-std are retained alongside `review_metrics.json`. Plan SHA256: `05fd2047895d47fc472b2334f89af6aea95209f0f52d0ee0857f63329f4859de`.
