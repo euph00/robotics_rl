@@ -1,0 +1,243 @@
+{
+  "schema_version": 2,
+  "candidate_id": "phase2_candidate02",
+  "phase": "general_original_fetch_sac_her",
+  "selected_at": "2026-09-28T20:48:47.845523+00:00",
+  "selection_partition": "validation",
+  "selection_rule": "Highest complete-task validation count; inclusive timed count breaks ties. Fresh confirmation outcomes unavailable at selection.",
+  "selected_validation_run": "phase2_system_encoder_gated192_frozen_040k01",
+  "selection_comparisons": [
+    {
+      "run": "phase2_system_encoder_gated192_frozen_040k01",
+      "complete": 52,
+      "cases": 60,
+      "within_deadline_including_settling": 38,
+      "within_deadline_action_only": 41,
+      "summary_sha256": "cf4d6e9cca1ddced91bb558c3ced7aa229f05f39f691abe2072fc73aed81d5ad"
+    },
+    {
+      "run": "phase2_system_learned_balanced_040k01",
+      "complete": 51,
+      "cases": 60,
+      "within_deadline_including_settling": 47,
+      "within_deadline_action_only": 50,
+      "summary_sha256": "bcafb3550bfd8d46f3d6fff77f81c0e5ae60186302bb083aa278494f29cc2a23"
+    },
+    {
+      "run": "phase2_system_encoder_gated192_bc01",
+      "complete": 50,
+      "cases": 60,
+      "within_deadline_including_settling": 43,
+      "within_deadline_action_only": 44,
+      "summary_sha256": "cbb0b6b67beb5c44fef0a9b20ac5c31cb286ffc3264ee556ac5a52ba3d8deaa7"
+    },
+    {
+      "run": "phase2_system_encoder_gated192_040k01",
+      "complete": 51,
+      "cases": 60,
+      "within_deadline_including_settling": 39,
+      "within_deadline_action_only": 42,
+      "summary_sha256": "b49c882e37be409b2266303642c37ca91ff94383fe81827b4e61f6226f89726a"
+    },
+    {
+      "run": "phase2_system_encoder_gated192_080k01",
+      "complete": 39,
+      "cases": 60,
+      "within_deadline_including_settling": 29,
+      "within_deadline_action_only": 29,
+      "summary_sha256": "240c4edb4ec4c380c17bdff6d8df7f214535120d985912c237f9f2130f058ea0"
+    },
+    {
+      "run": "phase2_system_encoder_gated192_120k01",
+      "complete": 44,
+      "cases": 60,
+      "within_deadline_including_settling": 35,
+      "within_deadline_action_only": 37,
+      "summary_sha256": "a6366aa018a4a6b061933b9fa6ea45e396dd5da1a4b1caa0f220c4533dfd3b0f"
+    },
+    {
+      "run": "phase2_system_encoder_cnn192_040k01",
+      "complete": 42,
+      "cases": 60,
+      "within_deadline_including_settling": 34,
+      "within_deadline_action_only": 37,
+      "summary_sha256": "5f4d6c8c81165bc254f5d0c32f7bfed95cf562a8558312baca6b8d4a83f3aca5"
+    },
+    {
+      "run": "phase2_system_encoder_gated_diverse_040k01",
+      "complete": 47,
+      "cases": 60,
+      "within_deadline_including_settling": 40,
+      "within_deadline_action_only": 40,
+      "summary_sha256": "548ce6a43610c6d038f233c871958e6753f02aa6b7b6c42c631038c677a2619b"
+    },
+    {
+      "run": "phase2_system_encoder_gated192_demofloor_040k01",
+      "complete": 47,
+      "cases": 60,
+      "within_deadline_including_settling": 35,
+      "within_deadline_action_only": 39,
+      "summary_sha256": "0bc06665b070110bff25f222bb4e0b55884289aaaf9eb267c53650e765dc86a0"
+    },
+    {
+      "run": "phase2_system_encoder_gated192_demofloor_080k01",
+      "complete": 46,
+      "cases": 60,
+      "within_deadline_including_settling": 38,
+      "within_deadline_action_only": 40,
+      "summary_sha256": "b4ca9182607a07ff1b1834a629aedc391528428bf08202d9f5d80f84a6ea6a19"
+    },
+    {
+      "run": "phase2_system_gated_staged_bc01",
+      "complete": 49,
+      "cases": 60,
+      "within_deadline_including_settling": 44,
+      "within_deadline_action_only": 44,
+      "summary_sha256": "20e7a59641e3fa5799db82ff32d1b576f3d6eda64570620cc4e7e8972b5aeadd"
+    },
+    {
+      "run": "phase2_system_discount999_040k01",
+      "complete": 45,
+      "cases": 60,
+      "within_deadline_including_settling": 37,
+      "within_deadline_action_only": 40,
+      "summary_sha256": "cc680bade95268e54b0e4af14acaa04345c7ae5ba89c77ae53a11fb12f4577e9"
+    },
+    {
+      "run": "phase2_system_discount999_080k01",
+      "complete": 44,
+      "cases": 60,
+      "within_deadline_including_settling": 39,
+      "within_deadline_action_only": 42,
+      "summary_sha256": "1fe1a1df8f19e09f6e6c6918205fa4cc174a4c200e1b1928d135b9a8ec2a6737"
+    }
+  ],
+  "selection_tradeoff": "52/60 complete vs previous selected51/60;38/60 inclusive timed vs47/60. Completion-first rule selects this candidate despite slower completion. Neither a causal one-case improvement nor the80/100 held-out milestone is established by validation.",
+  "validation_prefix_caveat": "All60 saved pre-carry traces/stages match paired fresh gated controls; only11/60 match historical CNN control. Traces omit actions and full solver state; no claim of complete hidden-state equality.",
+  "upstream": {
+    "repository": "https://github.com/NUS-LinS-Lab/Pick-Nav-Reach-Default-Project.git",
+    "commit": "54ab2d1faa54d1aa7e2738f114531a76c6514cd3",
+    "branch_at_inspection": "main",
+    "checkout_path": "upstream/Pick-Nav-Reach-Default-Project",
+    "inspected_on": "2026-09-28",
+    "policy": "Keep this reference checkout unchanged; track integration code and explicit patches in the outer repository."
+  },
+  "algorithm": "Three-skill original-gripper hybrid: BC-initialized SAC+HER grasp and carry with continuing demonstration regularization; carry actor map core frozen; ordinary SAC+HER reach; planned approach and posture; no navigation oracle",
+  "checkpoint_sha256": {
+    "grasp": "fa7b8d54cdc916d6e68753721993b66b7e571bf09af84e70cf4e4030618dfbe2",
+    "carry": "268ff93c6fbb1d8021cb415113eefeb17500e2f31d2e15828c3020457b3bf6bd",
+    "reach": "cd0c3f20ad0f938028533a8635e95f119056e0fd3abff185d7c7679f9629c258"
+  },
+  "checkpoints": {
+    "grasp": {
+      "source": "/mnt/sdb/chieh/RL_robotics/runs/phase2_sac_grasp_clearance01/candidate/grasp.zip",
+      "frozen_path": "/mnt/sdb/chieh/RL_robotics/runs/phase2_confirmation_test_plan01/artifacts/checkpoints/grasp.zip",
+      "sha256": "fa7b8d54cdc916d6e68753721993b66b7e571bf09af84e70cf4e4030618dfbe2"
+    },
+    "carry": {
+      "source": "/mnt/sdb/chieh/RL_robotics/runs/phase2_carry_encoder_gated192_frozen01/checkpoints/step_000040000_1790627544210283409/model.zip",
+      "frozen_path": "/mnt/sdb/chieh/RL_robotics/runs/phase2_confirmation_test_plan01/artifacts/checkpoints/carry.zip",
+      "sha256": "268ff93c6fbb1d8021cb415113eefeb17500e2f31d2e15828c3020457b3bf6bd"
+    },
+    "reach": {
+      "source": "/mnt/sdb/chieh/RL_robotics/runs/milestone1_validation01/artifacts/checkpoints/reach.zip",
+      "frozen_path": "/mnt/sdb/chieh/RL_robotics/runs/phase2_confirmation_test_plan01/artifacts/checkpoints/reach.zip",
+      "sha256": "cd0c3f20ad0f938028533a8635e95f119056e0fd3abff185d7c7679f9629c258"
+    }
+  },
+  "skill_training": {
+    "grasp": {
+      "online_decisions": 12000,
+      "online_gradient_updates": 2000,
+      "continuing_demonstration_weight": 200,
+      "separate_critic_warmup_updates": 2000,
+      "selected_bc_initializer_updates": 6000
+    },
+    "carry": {
+      "online_decisions": 40000,
+      "online_gradient_updates": 5000,
+      "inherited_bc_updates": 16000,
+      "additional_bc_updates": 0,
+      "continuing_demonstration_weight": 100,
+      "separate_critic_warmup_updates": 2000,
+      "critic_warmup_tau": 0.1,
+      "gamma": 0.995,
+      "encoder": "gated48-k20-f5",
+      "actor_spatial_freeze": {
+        "protocol": "actor-gated-spatial-freeze-v1",
+        "module": "actor.features_extractor.spatial",
+        "core_sha256": "ba33b048812a34eed3264c45813ec158c11ecad7a1f64f538d05c179bcecc07b",
+        "frozen_actor_parameters": 54769,
+        "trainable_actor_parameters": 72836,
+        "total_actor_parameters": 127605,
+        "critic_parameters": 160883,
+        "activation_online_decisions": 0,
+        "activation_online_updates": 0
+      },
+      "bc_initializer_sha256": "25876665f15eb83563b68ea8aebf84ebeafd16567224440de8fa5e676d07946a",
+      "demonstrations_sha256": "42eb7f4673ca3bfc86882d25e868222c78b36e0b158d124f340280c14d2654b3",
+      "replay": "ObjectBalancedHerReplayBuffer; native future HER50%; all physical failures retained",
+      "online_preparations": "First8 TRAIN layouts crossed with5 objects,40 declared cases,one preparation each",
+      "checkpoint_generation": "runs/phase2_carry_encoder_gated192_frozen01/checkpoints/step_000040000_1790627544210283409",
+      "checkpoint_manifest_sha256": "81b4d1b41d558638c9cbdf40f8171d4348e00585b3396f20cc057758964da7b6",
+      "training_plan": "runs/phase2_actor_spatial_freeze_plan01/artifacts/experiment_plan.json",
+      "training_plan_sha256": "19c260735c4917da9d3b2c338a8596bc730a2209de286a41b6eed0e973d22427"
+    },
+    "reach": {
+      "online_decisions": 15000,
+      "online_gradient_updates": 13996,
+      "ordinary_sac_her": true,
+      "actor_cloning": false
+    }
+  },
+  "execution": {
+    "grasp_horizon": 600,
+    "carry_horizon": 1200,
+    "reach_horizon": 150,
+    "delta_scale": 0.075,
+    "planned_speed_scale": 1.0,
+    "deadline_physics_ticks": 15000,
+    "grasp_lift_m": 0.24,
+    "reach_tolerance_m": 0.08,
+    "grasp_proposal_mode": "clearance-v2"
+  },
+  "evaluation_plan": "runs/phase2_confirmation_test_plan01/artifacts/evaluation_plan.json",
+  "evaluation_plan_sha256": "71b5c379702629d04c595668b72235b21bba67add5b51671ce613c8ad967a55c",
+  "confirmation_bank": "configs/phase2_confirmation_bank_20260930.json",
+  "confirmation_bank_version": "confirmation-scene-bank-v1",
+  "confirmation_bank_sha256": "be4d117896c5ed641c5619abe86263a30407d6144abd26f04865a211f41e4bc1",
+  "case_manifest_sha256": "283ff33a834209801bd4cc57e25458ec365d0dd278cb6a6e01175ec9800d27e9",
+  "heldout_evaluation": {
+    "partition": "milestone_test",
+    "unique_cases": 100,
+    "unique_layouts": 20,
+    "objects": [
+      14,
+      5,
+      2,
+      7,
+      10
+    ],
+    "minimum_complete_tasks": 80,
+    "deadline_physics_ticks": 15000,
+    "timed_success_reported_separately": true,
+    "include_settling_and_final_hold": true,
+    "status_at_selection": "not_started",
+    "final_reserve": "untouched",
+    "planned_run": "phase2_system_confirmation_test01",
+    "single_full_evaluation": true,
+    "retry_or_subset_selection": false
+  },
+  "first_heldout_result": {
+    "candidate": "configs/phase2_candidate.json",
+    "run": "phase2_system_milestone_test01",
+    "complete": 78,
+    "timed_including_settling": 63,
+    "timed_action_only": 67,
+    "cases": 100,
+    "role": "historical; retired from further held-out promotion; no trajectories imported into training"
+  },
+  "training_and_evaluation_boundaries": "Fresh20 confirmation maps were frozen before revised training and exclude244 parent-bank and100 legacy maps. Final-study reserve unchanged and unused. No confirmation physics or policy inference occurred before this selection.",
+  "method_limits": "Three learned skills with declared planned approach, carry posture and IK. Demonstration initialization and continuing imitation regularization; actor map core held fixed during this SAC phase. No navigation teacher/oracle, no inter-skill resets, no gripper or task physics changes at inference.",
+  "independent_validation_audit": "runs/phase2_system_encoder_gated192_frozen_040k01/artifacts/independent_result_audit.json"
+}

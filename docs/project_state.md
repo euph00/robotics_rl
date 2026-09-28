@@ -6,7 +6,7 @@ hold. The 80/100 milestone is **not met**; refinement continues within the agree
 investigation window ending 2026-09-29 05:53:20 UTC.
 
 [First unseen-maze result](phase2_test01.md) ·
-[Selected candidate](../configs/phase2_candidate.json) ·
+[Selected revised candidate](../configs/phase2_candidate02.json) ·
 [Dashboard](http://127.0.0.1:8766).
 
 ## Current system
@@ -19,7 +19,7 @@ gripper, native physics, goal acceptance and retained hold remain unchanged.
 There is no learned-navigation route oracle, teacher correction, object weld or
 inter-skill reset at evaluation.
 
-The best validation candidate scored 51/60 complete and 47/60 within 15k ticks
+The previous candidate scored 51/60 complete and 47/60 within 15k ticks
 including settling. Extending it to 200k decisions scored 48/60 and 47/60; training
 with 240 varied grasp preparations scored 49/60 and 48/60. All outcomes and costs
 remain recorded. [Training comparisons](phase2_diverse_carry_preparation.md).
@@ -52,9 +52,13 @@ best inherited 60k BC updates, versus 16k for the fresh encoder comparison.
 The staged 52k map-pretraining + 8k object-adaptation experiment scored
 49/60 full and 44/60 timed, with no navigation timeouts but nine carry drops
 and two reach drops. It missed its predeclared 50/60 screen and was stopped
-without online training. A separate [actor map-core freeze](phase2_actor_spatial_freeze.md) tests whether
-retaining learned map features prevents harmful SAC drift. No improved candidate
-has been selected. The eventual SAC/TD3 × original/modified gripper × three-seed study
+without online training. The [actor map-core freeze](phase2_actor_spatial_freeze.md)
+scored **52/60 complete and 38/60 within the deadline**. It was selected under
+the predeclared completion-first rule, despite being slower than the previous
+candidate. The learned map core remains fixed; other actor weights, critics and
+temperature learned for 40k online decisions. Its complete 100-case fresh
+confirmation plan is frozen and undergoing independent preflight; no result is
+yet available. The eventual SAC/TD3 × original/modified gripper × three-seed study
 still requires independent replications and matched assistance/data protocols.
 Current development runs are not those replications.
 

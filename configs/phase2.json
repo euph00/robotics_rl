@@ -28,7 +28,7 @@
     "navigation_waypoint_oracle_at_inference": false,
     "teacher_at_evaluation": false,
     "inter_skill_resets_at_evaluation": false,
-    "active_pivot": "Investigating SAC+HER with continuing actor demonstration regularization after ordinary SAC grasp validation collapsed9/10\u21920/10 at1024 online decisions. Ordinary runs preserved."
+    "active_pivot": "BC-initialized grasp/carry SAC+HER with continuing demonstration regularization; selected carry keeps learned actor map core fixed while fusion/action heads, independent critics and temperature learn."
   },
   "evaluation": {
     "training": "training layouts only",
@@ -36,7 +36,7 @@
     "milestone_test": "freeze candidate before one final test bank evaluation; if subsequently used for debugging, disclose and retire bank as development",
     "final_study": "separate reserve bank and independent training seeds"
   },
-  "status": "refinement_after_first_test",
+  "status": "confirmation_preflight",
   "frozen_baseline": "configs/milestone1_candidate.json",
   "object_indices": [
     14,
@@ -46,7 +46,7 @@
     10
   ],
   "object_selection": "Geometric diversity and reference pickup feasibility before broader learning: foam brick, banana, tomato can, apple, mug. Tomato transport failures retained.",
-  "selected_candidate": "configs/phase2_candidate.json",
+  "selected_candidate": "configs/phase2_candidate02.json",
   "first_heldout_result": {
     "run": "phase2_system_milestone_test01",
     "complete": 78,
