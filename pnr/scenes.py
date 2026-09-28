@@ -8,6 +8,7 @@ route length nor later physical failures may remove a declared evaluation case.
 from __future__ import annotations
 
 from collections import deque
+import copy
 from dataclasses import dataclass
 import hashlib
 import json
@@ -194,6 +195,86 @@ def build_scene_bank(partition_seed=PARTITION_SEED, counts: Mapping[str, int] | 
     bank["manifest_sha256"] = manifest_digest(bank)
     validate_scene_bank(bank)
     return bank
+
+
+def expand_training_bank(parent, total_train_layouts, *, extension_seed=20260929):
+    """Append independent TRAIN maps; preserve every existing case and its RNG.
+
+    Admission is geometry-only and excludes every parent partition and course
+    legacy map. The parent manifest is never changed, nor are held-out policies
+    or physical outcomes consulted.
+    """
+    validate_scene_bank(parent)
+    old_count = len(parent['partitions']['train'])
+    if (isinstance(total_train_layouts, bool) or int(total_train_layouts) != total_train_layouts
+            or total_train_layouts <= old_count):
+        raise ValueError('Expanded TRAIN count must exceed the parent count')
+    total_train_layouts = int(total_train_layouts)
+    bank = copy.deepcopy(parent)
+    seen = set(parent['excluded_course_legacy_hashes'])
+    seen.update(record['maze_hash'] for records in parent['partitions'].values() for record in records)
+    rng = np.random.default_rng(int(extension_seed))
+    records = bank['partitions']['train']
+    rejected = []
+    for _ in range((total_train_layouts - old_count) * 1000):
+        if len(records) == total_train_layouts:
+            break
+        seed = int(rng.integers(0, 2**31))
+        record = generate_layout(seed).as_dict()
+        reason = ('duplicate_or_legacy_map' if record['maze_hash'] in seen else
+                  'disconnected_gate_cells' if not record['geometry_check']['gate_to_gate_connected'] else None)
+        if reason:
+            rejected.append({'maze_seed': seed, 'maze_hash': record['maze_hash'],
+                             'partition': 'train', 'reason': reason})
+            continue
+        seen.add(record['maze_hash'])
+        record['layout_id'] = f'train_{len(records):03d}'
+        records.append(record)
+    if len(records) != total_train_layouts:
+        raise RuntimeError('Bounded TRAIN extension sampling exhausted')
+    bank['partition_counts']['train'] = total_train_layouts
+    bank['geometry_rejections'].extend(rejected)
+    bank.setdefault('training_extensions', []).append({
+        'parent_manifest_sha256': parent['manifest_sha256'],
+        'previous_train_count': old_count, 'total_train_count': total_train_layouts,
+        'extension_seed': int(extension_seed),
+        'candidate_rng': 'numpy.default_rng(extension_seed), integers(0, 2**31)',
+        'physical_evaluations': 0, 'learned_outcome_filter': False,
+    })
+    bank['manifest_sha256'] = manifest_digest(bank)
+    verify_training_extension(parent, bank)
+    return bank
+
+
+def verify_training_extension(parent, expanded):
+    """Verify explicit parent compatibility before combining old and new data."""
+    validate_scene_bank(parent)
+    validate_scene_bank(expanded)
+    variable = {'manifest_sha256', 'partitions', 'partition_counts',
+                'geometry_rejections', 'training_extensions'}
+    if ({k: v for k, v in parent.items() if k not in variable}
+            != {k: v for k, v in expanded.items() if k not in variable}):
+        raise ValueError('TRAIN extension changed the parent distribution or case RNG')
+    n = len(parent['partitions']['train'])
+    if expanded['partitions']['train'][:n] != parent['partitions']['train']:
+        raise ValueError('TRAIN extension changed existing TRAIN records')
+    if len(expanded['partitions']['train']) <= n:
+        raise ValueError('TRAIN extension must append new layouts')
+    for partition in DEFAULT_COUNTS:
+        if partition != 'train' and expanded['partitions'][partition] != parent['partitions'][partition]:
+            raise ValueError('TRAIN extension changed a validation or held-out partition')
+    previous = parent.get('training_extensions', [])
+    extensions = expanded.get('training_extensions', [])
+    if (len(extensions) != len(previous) + 1 or extensions[:-1] != previous
+            or extensions[-1].get('parent_manifest_sha256') != parent['manifest_sha256']
+            or extensions[-1].get('previous_train_count') != n
+            or extensions[-1].get('total_train_count') != len(expanded['partitions']['train'])):
+        raise ValueError('TRAIN extension parent lineage mismatch')
+    old_rejections = parent['geometry_rejections']
+    if (expanded['geometry_rejections'][:len(old_rejections)] != old_rejections
+            or any(r.get('partition') != 'train' for r in expanded['geometry_rejections'][len(old_rejections):])):
+        raise ValueError('TRAIN extension changed prior geometry accounting')
+    return expanded
 
 
 def validate_scene_bank(bank):

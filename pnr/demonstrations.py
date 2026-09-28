@@ -126,23 +126,29 @@ def carry_supervision(dataset):
     return rows,groups,probabilities,stats
 
 
-def merge_carry_datasets(paths,destination):
+def merge_carry_datasets(paths,destination,*,bank_path=None,parent_bank_paths=()):
     """Create an immutable counted carry-data union; return a small manifest.
 
     Accepts only matching physical TRAIN data under the active580-state carry
     reward/action contract. Sources are kept byte-for-byte, including failed
     episodes and nested failed-attempt metadata. Reusing the same source file
     under another name is rejected by its content hash. No simulator is opened.
+    A larger TRAIN bank requires explicit parent manifests whose unchanged
+    records, case RNG and validation/test partitions are verified in full.
     """
     import os
     import tempfile
     from .multi_carry import CarrySchema
-    from .scenes import load_scene_bank,scene_records
+    from .scenes import load_scene_bank,scene_records,verify_training_extension
     paths=[Path(path).resolve() for path in paths];destination=Path(destination).resolve()
     if len(paths)<2 or len(set(paths))!=len(paths):raise ValueError('Need at least two distinct carry source datasets')
     if destination in paths or destination.exists():raise FileExistsError('Merge destination must be new and separate from inputs')
-    bank=load_scene_bank(Path(__file__).resolve().parents[1]/'configs/phase2_scene_bank.json')
-    train={layout['layout_id']:layout for layout in scene_records(bank,'train')}
+    bank=load_scene_bank(bank_path or Path(__file__).resolve().parents[1]/'configs/phase2_scene_bank.json')
+    compatible_banks={bank['manifest_sha256']:bank}
+    for parent_path in parent_bank_paths:
+        parent=load_scene_bank(parent_path)
+        verify_training_extension(parent,bank)
+        compatible_banks[parent['manifest_sha256']]=parent
     schema=CarrySchema();merged=[];lineage=[];seen=set();reference=None
     costs={key:0 for key in ('source_action_calls','physics_ticks','preparation_source_action_calls',
         'preparation_physics_ticks','setup_source_action_calls','setup_physics_ticks','initialization_physics_ticks')}
@@ -161,8 +167,10 @@ def merge_carry_datasets(paths,destination):
         if reference is not None and contract!=reference:raise ValueError('Carry source action/reward/object contracts differ')
         reference=contract
         declared_bank=metadata.get('bank_sha256')
-        if declared_bank is not None and declared_bank!=bank['manifest_sha256']:
-            raise ValueError('Carry source uses a different frozen scene bank')
+        if declared_bank is not None and declared_bank not in compatible_banks:
+            raise ValueError('Carry source uses a different frozen scene bank; supply a verified parent bank explicitly')
+        source_bank=compatible_banks.get(declared_bank,bank)
+        train={layout['layout_id']:layout for layout in scene_records(source_bank,'train')}
         transitions=rollout_calls=rollout_ticks=0
         for episode in data['episodes']:
             layout=train.get(episode.get('layout_id'))
@@ -205,13 +213,16 @@ def merge_carry_datasets(paths,destination):
             costs[key]+=int(value)
         source_runs.extend(metadata.get('source_runs',[path.parent.parent.name]))
         lineage.append({'path':str(path),'sha256':sha,'episodes':len(data['episodes']),'transitions':transitions,
+            'source_bank_sha256':source_bank['manifest_sha256'],
+            'verified_parent_extension':source_bank['manifest_sha256']!=bank['manifest_sha256'],
             'bank_validation':'declared hash plus all TRAIN maps' if declared_bank else 'reconstructed from all frozen TRAIN layout IDs/maps',
             'metadata':metadata})
         merged.extend(data['episodes'])
     metadata={'protocol':'immutable-carry-dataset-merge-v1','partition':'train','bank_sha256':bank['manifest_sha256'],
         **{key:reference[key] for key in ('gamma','shaping_weight','delta_scale','repeat')},
         'object_indices':reference['object_indices'],'source_runs':list(dict.fromkeys(source_runs)),
-        'source_datasets':lineage,'new_physical_interactions':0,'episodes':len(merged),
+        'source_datasets':lineage,'verified_parent_bank_sha256s':[sha for sha in compatible_banks if sha!=bank['manifest_sha256']],
+        'new_physical_interactions':0,'episodes':len(merged),
         'transitions':sum(len(episode['transitions']) for episode in merged),**costs,
         'all_failed_attempt_metadata_retained':True,'teacher_at_evaluation':False,
         'actual_actions_preserved':True,'teacher_labels_for_BC_only':True}

@@ -113,3 +113,35 @@ def test_westward_return_group_is_disjoint_and_preserves_existing_mixture_ratios
     assert float(row['observation']['achieved_goal'][0])*20>3.5 and row['teacher_action'][0]<-.5
     assert len(groups['recovery_prefix'])==4
     assert sorted(np.concatenate(list(groups.values())).tolist())==list(range(len(rows)))
+
+
+def test_merge_expanded_train_bank_requires_explicit_unchanged_parent(tmp_path):
+    import json
+    from pnr.scenes import expand_training_bank
+    parent_path=ROOT/'configs/phase2_scene_bank.json'
+    parent=load_scene_bank(parent_path)
+    expanded=expand_training_bank(parent,65)
+    expanded_path=tmp_path/'expanded.json';expanded_path.write_text(json.dumps(expanded))
+    old=dataset([episode()]);old['metadata']['bank_sha256']=parent['manifest_sha256']
+    new=dataset([episode(True)]);new['metadata']['bank_sha256']=expanded['manifest_sha256']
+    layout=expanded['partitions']['train'][-1]
+    new['episodes'][0].update(layout_id=layout['layout_id'],maze_hash=layout['maze_hash'])
+    for row in new['episodes'][0]['transitions']:
+        for key in ('observation','next_observation'):
+            row[key]['observation'][:264]=np.asarray(layout['maze_map'],np.float32).ravel()
+    left,right=tmp_path/'old.pkl',tmp_path/'new.pkl'
+    left.write_bytes(pickle.dumps(old));right.write_bytes(pickle.dumps(new))
+    destination=tmp_path/'merged.pkl'
+    with pytest.raises(ValueError,match='verified parent'):
+        merge_carry_datasets([left,right],destination,bank_path=expanded_path)
+    assert not destination.exists()
+    report=merge_carry_datasets([left,right],destination,bank_path=expanded_path,parent_bank_paths=[parent_path])
+    assert report['episodes']==2
+    metadata=pickle.loads(destination.read_bytes())['metadata']
+    assert metadata['bank_sha256']==expanded['manifest_sha256']
+    assert metadata['verified_parent_bank_sha256s']==[parent['manifest_sha256']]
+    assert metadata['source_datasets'][0]['verified_parent_extension'] is True
+    # A source declaring the old bank cannot claim newly added TRAIN records.
+    new['metadata']['bank_sha256']=parent['manifest_sha256'];right.write_bytes(pickle.dumps(new))
+    with pytest.raises(ValueError,match='outside the frozen TRAIN'):
+        merge_carry_datasets([left,right],tmp_path/'bad.pkl',bank_path=expanded_path,parent_bank_paths=[parent_path])

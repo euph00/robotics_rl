@@ -129,3 +129,38 @@ def test_native_independent_layout_decouples_points_objects_and_maze():
 def test_native_invalid_seed_modes_fail_before_client_creation(kwargs):
     with pytest.raises(ValueError):
         PickNavReachEnv(**kwargs)
+
+
+def test_training_extension_preserves_all_frozen_cases_and_parent(small_bank):
+    from pnr.scenes import expand_training_bank, verify_training_extension
+    original = copy.deepcopy(small_bank)
+    expanded = expand_training_bank(small_bank, 7, extension_seed=992)
+    assert small_bank == original
+    assert expanded == expand_training_bank(small_bank, 7, extension_seed=992)
+    assert verify_training_extension(small_bank, expanded) is expanded
+    assert expanded['partitions']['train'][:3] == small_bank['partitions']['train']
+    assert [r['layout_id'] for r in expanded['partitions']['train']] == [f'train_{i:03d}' for i in range(7)]
+    for partition in ('validation', 'milestone_test', 'final_reserve'):
+        assert case_specs(small_bank, partition, object_indices=[14, 5, 2, 7, 10], allow_heldout=True) == case_specs(
+            expanded, partition, object_indices=[14, 5, 2, 7, 10], allow_heldout=True)
+    hashes = [r['maze_hash'] for records in expanded['partitions'].values() for r in records]
+    assert len(hashes) == len(set(hashes)) == 13
+    assert not set(hashes) & set(expanded['excluded_course_legacy_hashes'])
+
+
+def test_training_extension_rejects_changed_cases_and_lineage(small_bank):
+    from pnr.scenes import expand_training_bank, verify_training_extension
+    expanded = expand_training_bank(small_bank, 5)
+    for mutation, match in [('seed', 'RNG'), ('validation', 'held-out'), ('lineage', 'lineage')]:
+        changed = copy.deepcopy(expanded)
+        if mutation == 'seed':
+            changed['partition_seed'] += 1
+        elif mutation == 'validation':
+            changed['partitions']['validation'].reverse()
+        else:
+            changed['training_extensions'][-1]['parent_manifest_sha256'] = 'wrong'
+        changed['manifest_sha256'] = manifest_digest(changed)
+        with pytest.raises(ValueError, match=match):
+            verify_training_extension(small_bank, changed)
+    with pytest.raises(ValueError, match='exceed'):
+        expand_training_bank(small_bank, 3)
