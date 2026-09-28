@@ -10,7 +10,8 @@ from gymnasium import spaces
 from pnr.scenes import build_scene_bank
 from pnr.system import LearnedSystem
 from scripts.phase2_evaluate_system import (
-    DEFAULT_OBJECTS, PLAN_VERSION, deadline_metrics, failure_result, plan_digest,
+    DEFAULT_OBJECTS, PLAN_VERSION, PREVIOUS_PLAN_VERSION, LEGACY_PLAN_VERSION,
+    deadline_metrics, execution_settings, failure_result, plan_digest,
     select_cases, sha256_file, summarize_results, validate_policy_interfaces, verify_frozen_plan,
 )
 
@@ -32,7 +33,7 @@ def frozen_plan(bank, tmp_path, partition='milestone_test'):
             'checkpoints': records, 'original_start': True, 'inter_skill_resets': False,
             'teacher_at_inference': False, 'original_gripper': True, 'retain_all_failures': True,
             'execution': {'delta_scale': .075, 'planned_speed_scale': 1., 'deadline_physics_ticks': 15000,
-                          'grasp_horizon': 600, 'carry_horizon': 1200, 'reach_horizon': 150, 'grasp_lift_m': .24}}
+                          'grasp_horizon': 600, 'carry_horizon': 1200, 'reach_horizon': 150, 'grasp_lift_m': .24, 'reach_tolerance_m': .10}}
     plan['plan_sha256'] = plan_digest(plan)
     return plan
 
@@ -157,3 +158,39 @@ def test_lift_subgoal_is_frozen_with_execution_settings(bank, tmp_path):
     plan["plan_sha256"] = plan_digest(plan)
     with pytest.raises(ValueError, match="Grasp lift subgoal"):
         verify_frozen_plan(plan, bank, allow_heldout=True)
+
+
+@pytest.mark.parametrize('version,lift', [(PREVIOUS_PLAN_VERSION, .24), (LEGACY_PLAN_VERSION, .20)])
+def test_legacy_frozen_plans_preserve_4cm_reach_and_lift(bank, tmp_path, version, lift):
+    plan = frozen_plan(bank, tmp_path)
+    plan['version'] = version
+    del plan['execution']['reach_tolerance_m']
+    if version == LEGACY_PLAN_VERSION:
+        del plan['execution']['grasp_lift_m']
+    plan['plan_sha256'] = plan_digest(plan)
+    verify_frozen_plan(plan, bank, allow_heldout=True)
+    old = deepcopy(plan)
+    expanded = execution_settings(plan)
+    assert expanded['reach_tolerance_m'] == .04 and expanded['grasp_lift_m'] == lift
+    assert plan == old  # Historical records/digests are never silently rewritten.
+    migrated = deepcopy(plan)
+    migrated.update(version=PLAN_VERSION, execution=expanded)
+    migrated['plan_sha256'] = plan_digest(migrated)
+    verify_frozen_plan(migrated, bank, allow_heldout=True)
+
+
+def test_reach_tolerance_is_mandatory_frozen_and_bounded(bank, tmp_path):
+    plan = frozen_plan(bank, tmp_path)
+    assert execution_settings(plan)['reach_tolerance_m'] == .10
+    changed = deepcopy(plan)
+    changed['execution']['reach_tolerance_m'] = .04
+    with pytest.raises(ValueError, match='digest'):
+        verify_frozen_plan(changed, bank, allow_heldout=True)
+    changed['execution']['reach_tolerance_m'] = .11
+    changed['plan_sha256'] = plan_digest(changed)
+    with pytest.raises(ValueError, match='Reach tolerance'):
+        verify_frozen_plan(changed, bank, allow_heldout=True)
+    del changed['execution']['reach_tolerance_m']
+    changed['plan_sha256'] = plan_digest(changed)
+    with pytest.raises(ValueError, match='execution settings'):
+        verify_frozen_plan(changed, bank, allow_heldout=True)

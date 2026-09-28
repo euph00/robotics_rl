@@ -32,7 +32,8 @@ class LearnedSystem:
     """
     def __init__(self, native, policies: Mapping, *, grasp_horizon=600,
                  carry_horizon=1500, reach_horizon=150, on_step: Callable | None=None,
-                 skill_factories: Mapping | None=None, controller_speed_scale=1.):
+                 skill_factories: Mapping | None=None, controller_speed_scale=1.,
+                 reach_tolerance_m=.10):
         if set(policies) != {'grasp','carry','reach'}:
             raise ValueError('Exactly grasp, carry, and reach policies are required')
         if any(not hasattr(policy,'predict') for policy in policies.values()):
@@ -44,6 +45,9 @@ class LearnedSystem:
             raise ValueError('Skill factories must be callable entries for grasp, carry, or reach')
         if not np.isfinite(controller_speed_scale) or controller_speed_scale <= 0:
             raise ValueError('Planned controller speed scale must be positive and finite')
+        if reach_tolerance_m not in (.04, .10):
+            raise ValueError('Reach tolerance must be native 0.10 m or legacy 0.04 m')
+        self.reach_tolerance_m = float(reach_tolerance_m)
         self.controller = ReferenceController(native,seed=native.seed,speed_scale=controller_speed_scale)
         self.horizons = {'grasp':int(grasp_horizon),'carry':int(carry_horizon),'reach':int(reach_horizon)}
         if any(value < 1 for value in self.horizons.values()):
@@ -144,7 +148,14 @@ class LearnedSystem:
             self.policy_decisions[name]+=1
             rejected+=int(last_info.get('action_rejected',False))
             # A historical episode_success is insufficient for a stage handover.
-            reached=bool(last_info.get('is_success',False) and last_info.get('bilateral_contact',False)
+            goal_reached=last_info.get('is_success',False)
+            if name=='reach' and self.reach_tolerance_m==.10:
+                # Training still uses its 4 cm goal. Full-task handover follows
+                # the native 10 cm contract, including pickup/retention history.
+                # The mandatory final hold and native recheck happen in run().
+                goal_reached=bool(last_info.get('complete_task_success',False)
+                                  and last_info.get('dist_to_goal',np.inf)<self.reach_tolerance_m)
+            reached=bool(goal_reached and last_info.get('bilateral_contact',False)
                          and not terminated and self.native.drop_events==0)
             if reached:
                 reason='current_goal_and_retention'
@@ -162,7 +173,11 @@ class LearnedSystem:
                      initial_achieved_goal=initial_achieved.tolist(),desired_goal=initial_goal.tolist(),
                      final_achieved_goal=observation['achieved_goal'].tolist(),
                      goal_distance=last_info.get('goal_distance'),
-                     bilateral_contact=last_info.get('bilateral_contact',False))
+                     bilateral_contact=last_info.get('bilateral_contact',False),
+                     **({'reach_tolerance_m':self.reach_tolerance_m,
+                         'reach_acceptance':('native_complete_task_success' if self.reach_tolerance_m==.10
+                                             else 'legacy_skill_is_success'),
+                         'native_goal_distance':last_info.get('dist_to_goal')} if name=='reach' else {}))
         if not reached:
             raise StageFailure(f'{name}: {reason}')
 
@@ -201,6 +216,7 @@ class LearnedSystem:
         result={'kind':'learned_system','scope':'full_task','success':False,'status':'running',
                 'scene_seed':self.native.seed,'object_idx':self.native.object_idx,
                 'object_name':self.native.object_name,'scene_manifest':self.native.scene_manifest(),
+                'reach_tolerance_m':self.reach_tolerance_m,'final_hold_source_calls':60,
                 'assistance':{'planned_pregrasp':True,'planned_carry_posture':True,
                               'carry_waypoints_during_policy':False,'inter_skill_resets':False,
                               'object_attachment':False}}
