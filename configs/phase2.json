@@ -36,7 +36,7 @@
     "milestone_test": "freeze candidate before one final test bank evaluation; if subsequently used for debugging, disclose and retire bank as development",
     "final_study": "separate reserve bank and independent training seeds"
   },
-  "status": "training",
+  "status": "refinement_after_first_test",
   "frozen_baseline": "configs/milestone1_candidate.json",
   "object_indices": [
     14,
@@ -45,5 +45,15 @@
     7,
     10
   ],
-  "object_selection": "Geometric diversity and reference pickup feasibility before broader learning: foam brick, banana, tomato can, apple, mug. Tomato transport failures retained."
+  "object_selection": "Geometric diversity and reference pickup feasibility before broader learning: foam brick, banana, tomato can, apple, mug. Tomato transport failures retained.",
+  "selected_candidate": "configs/phase2_candidate.json",
+  "first_heldout_result": {
+    "run": "phase2_system_milestone_test01",
+    "complete": 78,
+    "cases": 100,
+    "timed_including_settling": 63,
+    "timed_action_only": 67,
+    "milestone_met": false,
+    "future_role": "historical test; retired from further held-out promotion; never imported into training"
+  }
 }

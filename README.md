@@ -6,13 +6,24 @@ The foundation is [NUS-LinS-Lab/Pick-Nav-Reach-Default-Project](https://github.c
 
 ## Current milestone
 
-**The first development baseline is ready.** The original Fetch completed three fresh original-start repetitions on supplied foam brick 14 / scene 42, plus a recorded rollout, with no drops or collisions. Final goal errors were 3.94 cm in the repetitions and 3.08 cm in the video.
+The first unseen-maze test completed **78/100 tasks**, with **63/100 within
+15,000 physics ticks including settling and final hold**. The 80/100 target was
+missed; refinement continues. The test covers five supplied objects and 20
+unseen layouts, with every failure retained and no rerolls.
 
-[Dashboard and learned video](http://127.0.0.1:8766/?run=learned_system_demo_bc01) · [MP4 download](runs/learned_system_demo_bc01/artifacts/episode_000.mp4) · [Milestone report](docs/milestone1.md) · [Frozen models and protocol](configs/milestone1_candidate.json).
+[Dashboard](http://127.0.0.1:8766) · [Test report](docs/phase2_test01.md) ·
+[Current state](docs/project_state.md) · [Frozen candidate](configs/phase2_candidate.json).
 
-This is a **demonstration-assisted SAC + HER pilot**. Carry was refined with supervised demonstrations after its SAC checkpoint; later ordinary SAC updates did not retain the route. Stabilizing that continuation and the held-out algorithm/gripper comparison remain next-stage work. Planned pregrasp and carry-posture assistance are declared; learned navigation receives no route waypoints or teacher corrections.
+This is a three-skill hybrid: BC-initialized SAC+HER grasp/carry with continuing
+demonstration regularization, ordinary SAC+HER reach, and declared planned
+approach/carry-posture assistance. Learned navigation has no route oracle.
+The original gripper and upstream physics remain unchanged.
 
-Current development uses `scripts/phase2_*` for diverse-maze and multi-object training. Superseded one-off trainers and diagnostics were removed after Git snapshot `7650b3e`; recover them from that revision when reproducing historical runs. Small feature modules needed to load frozen milestone-1 policies remain.
+The first test is preserved as a historical result and retired from future
+held-out claims after further development. Its trajectories are not added to
+training; a fresh confirmation bank was fixed before revision, while the
+final-study reserve remains sealed. The earlier single-maze
+[development baseline](docs/milestone1.md) remains frozen.
 
 ## Environment
 

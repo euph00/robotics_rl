@@ -1,56 +1,68 @@
 # Project state
 
-First development milestone complete: a demonstrated original-Fetch pickup–carry–reach system, with the pinned course environment, physical reference, frozen learned policies and local dashboard.
+The original Fetch system completed **78/100 tasks on 20 unseen maze layouts**,
+with 63/100 completed within 15,000 physics ticks including settling and final
+hold. The 80/100 milestone is **not met**; refinement continues within the agreed
+investigation window ending 2026-09-29 05:53:20 UTC.
 
-## Active phase: broader original-gripper SAC+HER
+[First unseen-maze result](phase2_test01.md) ·
+[Selected candidate](../configs/phase2_candidate.json) ·
+[Dashboard](http://127.0.0.1:8766).
 
-Started 2026-09-28 05:53:20 UTC; reassess by 2026-09-29 05:53:20 UTC. Target: at least80% original-start physical task success on five supplied objects crossed with20 distinct held-out mazes; separately report15,000-physics-tick success. Objects are foambrick14, banana5, tomato can2, apple7, mug10, selected for geometry diversity and reference pickup feasibility before policy generalization tests. Tomato-can transport failures remain part of the task.
+## Current system
 
-The original64/12/20/20 scene bank remains frozen. A verified extension appends128 TRAIN layouts only; all existing records, case point-cloud seeds, validation and held-out cases are unchanged. No held-out policy or physical evaluation has occurred. See [training expansion](phase2_training_expansion.md).
+Three policies perform grasp, carry and reach. Grasp and carry use
+BC-initialized SAC+HER with continuing demonstration regularization; reach uses
+ordinary SAC+HER. Selected online decisions are 12k/40k/15k respectively.
+Planned approach, carry posture and IK are explicit assistance. The original
+gripper, native physics, goal acceptance and retained hold remain unchanged.
+There is no learned-navigation route oracle, teacher correction, object weld or
+inter-skill reset at evaluation.
 
-The best uninterrupted development system now completes **51/60 tasks**, with **47/60 within 15,000 physics ticks including settling** (50/60 excluding settling). Its final carry checkpoint has 40,000 online decisions and 5,000 SAC updates, using object-balanced HER replay and continuing demonstration-action regularization at β=100. This is explicitly a modified SAC+HER method, paired with the frozen clearance-aware regularized SAC grasp and milestone SAC reach. The nine failures are seven carry grasp losses, one grasp horizon and one reach drop; all remain in the denominator. The final checkpoint improves complete success over 8k's 50/60, but ties its 47/60 deadline result including settling. Intermediate 24k scores 46/60 complete, 45/60 action-only timely and 42/60 including settling. Substituting the compact regularized-SAC grasp with 8k carry scores 46/60, 44/60 and 41/60 respectively. Full-task acceptance remains native 10 cm plus a mandatory 60-call retained hold, with an internal 8 cm reach handover. Held-out testing remains untouched, so the held-out target is unverified. See [expanded system results](phase2_expanded_system_results.md).
+The best validation candidate scored 51/60 complete and 47/60 within 15k ticks
+including settling. Extending it to 200k decisions scored 48/60 and 47/60; training
+with 240 varied grasp preparations scored 49/60 and 48/60. All outcomes and costs
+remain recorded. [Training comparisons](phase2_diverse_carry_preparation.md).
 
-The new192-map carry initializer passes12/12 isolated navigation validation mazes, compared with10/12 before expansion. Its dataset contains1,721 episodes/478,363 real transitions; six failed episodes remain in replay. It received16,000 additional BC updates and2,000 fixed-actor critic updates, with zero online SAC decisions. Complete-task checks reached44/60 with the original grasp and46/60 with the tilted-grasp candidate. Isolated navigation is not full-task evidence.
+## Evidence and remaining work
 
-An 8,000-update, object-balanced BC refinement of spatial carry on five-object learned handovers also reaches46/60 complete tasks with the same clearance grasp and SAC reach, but only41/60 meet15,000 ticks including settling. Its12 carry grasp losses, one grasp horizon and one reach horizon remain in the denominator. This BC control has zero online updates and did not improve the earlier45/60 timely completions. See [expanded system results](phase2_expanded_system_results.md).
+The first 100-case test used five supplied objects crossed with 20 distinct mazes.
+Its 22 failures were 14 carry grasp losses, six navigation horizons, one posture
+loss and one reach drop. An independent audit reconciled all 100 outcomes and
+1,504,190 physics ticks. Full success and deadline success are separate metrics.
 
-A controlled critic audit found badly optimistic initial long-route values. Warmup tau0.1 substantially improves calibration compared with0.01, retaining online tau0.01. However the matched64-map physical branch still finishes9/12 navigation validation; calibration alone did not solve generalization. See [critic audit](phase2_critic_value_audit.md).
+The first test is now a historical result and will not be reused for held-out
+promotion after further development. Its trajectories are not training data.
+Training and validation records remain frozen; a new confirmation bank was
+fixed before revision, while the separate final-study reserve remains untouched.
 
-The original carry training had a handover mismatch: reference-prepared foam grasps did not cover most learned five-object handovers. Full-route TRAIN collection added 74 real episodes/25,538 transitions, including 12 physical grasp-loss episodes; six zero-transition restore failures remain recorded separately. The balanced branch combines these with 192-map data (503,901 collected transitions; 502,432 imported into replay) and physically prepares the fixed first 8 TRAIN layouts × 5 objects. All 40 declared preparations were valid. Online carry rotates those measured handovers with counted five-call restoration holds; no inference-time route teacher or object attachment is introduced. Its same-case learned-handover BC control scored 46/60 complete, 45/60 action-only timely and 41/60 including settling. Exact physical prefix equivalence has not been audited, and improvement is not attributed to replay balancing alone. See [distribution audit](phase2_carry_distribution_audit.md).
+Next is a controlled carry-discount ablation motivated by the
+[TRAIN reward audit](phase2_carry_return_audit.md). No claimed success improvement
+exists yet. The eventual SAC/TD3 × original/modified gripper × three-seed study
+still requires independent replications and matched assistance/data protocols.
+Current development runs are not those replications.
 
-The clearance-aware tilted grasp candidate remains9/10 on its small manipulation validation bank through12,000 regularized SAC decisions. Adding18 TRAIN can seeds supplies144 successful physical demonstrations but leaves the same rare-yaw miss after8,000 BC updates; that branch was stopped before online training. A compact BC grasp with zero online updates passes15/15 isolated pickup checks, but its full system completes43/60 cases,41/60 within 15,000 ticks including settling, versus the earlier clearance candidate's46/60 and45/60. Its failures are13 carry grasp losses, one planned-posture loss, two navigation horizons and one reach drop. Pickup success alone is insufficient for full-task selection; the cause of the difference has not been established by a paired trace audit. See [expanded system results](phase2_expanded_system_results.md). Teacher settling probes support the physical value of a pause, but simple velocity gates chatter and have not been adopted. Gripper hardware, forces, gains and physics remain unchanged.
+## Operation and recordings
 
-Git snapshot `7650b3e` preserves the pre-cleanup development tree. Commit `9f2a827` removes obsolete pilot trainers/diagnostics; active source and useful tests remain in the working tree. Logs, datasets and checkpoints remain under ignored `runs/` with lineage and costs.
+Dashboard: **http://127.0.0.1:8766**. From another machine, forward that port to
+this host with SSH; see [instructions](../dashboard/README.md). Server PID/logs
+are in `dashboard/.runtime/`.
 
-## Frozen first milestone result
+The featured 40k-policy recording is one of three predeclared successful diagnostic
+repeats. An earlier first-case recording dropped during reach and is preserved;
+its discrepancy remains unresolved. The three later repeats had identical logged
+actions and physical states across rendered/non-rendered execution. They are
+reproduction diagnostics, not extra held-out cases.
 
-Three fresh original-start repetitions on foam brick 14 / scene 42 passed every stage, with no drops or wall/table contacts. Each ended 3.94 cm from the goal. A separate recorded rollout passed at 3.08 cm.
+Models, replay, data, videos and immutable source snapshots live under ignored
+`runs/`; preserve those directories when transferring experiments. Source and
+small manifests are versioned in Git. The upstream checkout stays pinned at
+`54ab2d1`; the local Python 3.10/CUDA environment uses the available A100 80 GB,
+48 logical CPUs and 251 GiB RAM.
 
-[Milestone report](milestone1.md) · [Frozen checkpoints and protocol](../configs/milestone1_candidate.json) · [Validation details](../runs/milestone1_validation01/artifacts/milestone_validation.json) · [Dashboard video](http://127.0.0.1:8766/?run=learned_system_demo_bc01).
+## Historical first development milestone
 
-This is a **demonstration-assisted development baseline**. Grasp uses SAC + HER, physical replay demonstrations, actor refinement and subsequent SAC. Carry uses a 90k-decision SAC + HER checkpoint followed by 14k supervised actor updates. Reach uses SAC + HER without actor cloning. These are not independent final-study replications.
-
-The shared controller supplies planned antipodal pregrasp and carry-posture preparation. Saved policies control grasp, maze transport and held-object reach. No inter-skill reset, navigation waypoint oracle, teacher correction, object weld or release is used. Actor pose masking makes navigation less sensitive to pickup differences while preserving physical collision/retention checks.
-
-## Evidence and limits
-
-- The physical reference passes on the same development case; [recorded reference](../runs/reference_demo_visible_seed42/artifacts/rollout.webm).
-- The final production test suite passed 64 tests. Focused geometry, HER, accounting and checkpoint checks accompany individual experiments.
-- Both learned video formats decode successfully: 640×360, 12 fps, 1,017 frames. Dashboard browser checks cover desktop/mobile layout, experiment history, direct run links, playback and seeking.
-- The three repetitions share one object and one maze hash. They do not establish held-out generalization or statistical reliability.
-- Source-call deadline flags pass. The separately reported 15,000-physics-tick reach flag does not; upstream “simulation steps” wording remains ambiguous.
-- Further ordinary SAC updates at 1e-5 and 1e-6 lost the refined carry route. These failed continuations are preserved and are not the selected baseline. An unused lateral-coverage prototype is archived outside production; no selected model used synthetic state augmentation.
-
-## Operation
-
-The featured video is a separate first-case reproduction using the exact final 40k carry, clearance grasp and SAC reach checkpoints. It completes pickup and carry but drops the object during reach, and is labeled as a failed reproduction. This outcome is retained without a reroll; the original 51/60 full validation result remains unchanged. [Watch the recorded case](http://127.0.0.1:8766/?run=phase2_system_learned_balanced_040k_video01).
-
-Dashboard: **http://127.0.0.1:8766**. The detached server's PID and log are in `dashboard/.runtime/`. From a remote workstation, forward port 8766 to this host's loopback address; see [dashboard instructions](../dashboard/README.md).
-
-No training job is required to view or run the frozen baseline. Reproduction commands are in the milestone report. Logs, videos, models, replay and source snapshots live under `runs/` and are ignored by Git; preserve those directories when transferring experiments.
-
-The project Python 3.10 environment and CUDA are configured on the workspace volume. Available hardware includes an A100 80 GB, 48 logical CPUs and approximately 251 GiB RAM. The upstream checkout remains pinned at `54ab2d1`; workspace setup still requires escalated shell execution because of the host sandbox launch issue.
-
-## Next milestone
-
-Stabilize continuing RL and broaden training coverage before freezing the independent SAC/TD3 × original/modified gripper × three-seed study. Use a matched demonstration/assistance protocol and a separate held-out object/maze bank. Existing development branches and repeated cases must not be counted as independent research replications.
+The earlier single-maze demonstration remains frozen and recoverable:
+[report](milestone1.md) · [candidate](../configs/milestone1_candidate.json).
+It passed three repetitions on foam brick 14/scene42 but did not establish
+cross-maze generalization. It must not be confused with the first 100-case result.
