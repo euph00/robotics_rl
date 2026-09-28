@@ -10,19 +10,21 @@ physics ticks including settling. No held-out evaluation has occurred.
 | Previous recovery BC carry, original grasp |42/60|41/60|38/60|
 | Expanded BC carry, original grasp |44/60|43/60|42/60|
 | Expanded BC carry, clearance grasp |46/60|45/60|45/60|
+| Expanded BC carry, compact BC grasp |43/60|42/60|41/60|
 
-The carry actor in both new runs has zero online SAC updates after its expanded
-BC initialization. The grasp is SAC+HER with continuing demonstration-action
-regularization, and reach is the frozen milestone SAC policy. This is not a
+The expanded carry actor has zero online SAC updates after its BC initialization.
+The original and clearance grasp candidates use SAC+HER with continuing
+demonstration-action regularization; compact grasp uses BC with zero online
+updates. Reach is the frozen milestone SAC policy. This is not a
 claim that all three new skills have successfully improved through online SAC.
 
-| Object | Original grasp | Clearance grasp |
-|---|---:|---:|
-| Foam14 |11/12|9/12|
-| Banana5 |11/12|11/12|
-| Tomato can2 |6/12|8/12|
-| Apple7 |7/12|7/12|
-| Mug10 |9/12|11/12|
+| Object | Original grasp | Clearance grasp | Compact BC grasp |
+|---|---:|---:|---:|
+| Foam14 |11/12|9/12|7/12|
+| Banana5 |11/12|11/12|10/12|
+| Tomato can2 |6/12|8/12|8/12|
+| Apple7 |7/12|7/12|8/12|
+| Mug10 |9/12|11/12|10/12|
 
 The clearance run's14 failures are10 carry grasp losses, three navigation
 horizons and one grasp horizon. All completed carries pass reach and the final
@@ -41,6 +43,16 @@ The two new60-case runs cost773,900 and841,640 physics ticks including settling.
 Their frozen plans, checkpoints, all per-case trajectories/failures and matrices
 are in `runs/phase2_system_expanded_legacy01` and
 `runs/phase2_system_expanded_clearance01`.
+
+The compact BC grasp passes 15/15 isolated pickup checks, but completes only
+43/60 full tasks with the same frozen carry and reach checkpoints: 42/60 within
+the action deadline and 41/60 including settling. Its 17 failures comprise
+13 carry grasp losses, one planned-posture grasp loss, two navigation horizons
+and one reach drop. All 60 attempts and 806,055 total physics ticks including
+settling are retained in `runs/phase2_system_expanded_compact01`. Isolated pickup
+success is therefore insufficient for full-task candidate selection. These
+aggregate results do not establish why the compact candidate differs from the
+46/60 clearance candidate; no paired trajectory/contact audit has been done.
 
 The first declared clearance case, foam14/validation000, was recorded rather
 than selected after observing success. It completes at7.86cm final goal error,
