@@ -31,3 +31,17 @@ The paired comparison uses 20 TRAIN008–011 cases, frozen clearance01 versus th
 At most **one** subsequent full60 development evaluation is permitted after passing that comparison. Promotion requires **at least 57/60 full completions and 38/60 inclusive timed completions**, against frozen 52/38, with every paired win, loss and cost reported. A missed gate closes this refinement hypothesis without checkpoint retuning or retries. BC and evaluation still require separate decisions after collection auditing.
 
 The implementation reuses the existing collector, physical preparation and teacher helpers. `freeze-successor-plan` creates metadata and checkpoint copies without physics. `collect --plan PLAN --review-record REVIEW --authorization-record AUTHORIZATION` requires both records to name the exact plan hash and collection-only scope. Root authorization also identifies `/root` and the declared development phase. The old `freeze-plan` and legacy gate remain unchanged. All 27 no-physics tests pass, covering historical immutability, exact TRAIN schedules, exclusion of test-case data, authorization mismatch, actual boundary recording, reward preservation and complete accounting.
+
+Plan03 collection completed once and passed the independent data audit. All 120 attempts and 6,425 actual grasp tuples remain in `phase2_grasp_qualified_demos03`; 116 reached the planned carry handover and 88 qualified after full teacher transport and hold. The 32 unsuccessful attempts comprise 28 transport losses, two planned-posture failures and two grasp horizons. There were no schema or accounting errors. Total cost was **1,502,725 physics ticks**, including 57,600 initialization ticks; this is data collection, not full-task evaluation.
+
+| Object | Qualified / attempts | Eligible grasp tuples |
+|---|---:|---:|
+| Foam brick | 16 / 24 | 704 |
+| Banana | 22 / 24 | 932 |
+| Tomato can | 15 / 24 | 717 |
+| Apple | 15 / 24 | 653 |
+| Mug | 20 / 24 | 875 |
+
+The immutable dataset SHA256 is `998437ab00a43c6d6835d2c32bc2a971f4ca924eefaff5bac8171c7bab9181d1`. The audit verifies all 45 collection sources, raw-prefix hashes, unchanged rewards and native flags, all failures, isolated sampling and complete costs. Its record is `runs/phase2_grasp_qualified_demos03/artifacts/independent_data_audit_scene_bank.json`. All five objects have eligible prefixes.
+
+The separate lean runner `scripts/phase2_refine_qualified_grasp.py` implements `inspect`, `fit` and `compare` as explicit stages. It reuses the existing old-data groups and unchanged physical collector, checks the audited dataset and raw-prefix identity, and never edits native tuples or seeds replay. Fitting uses a separate BC optimizer, verifies unchanged critics, target critics, log-standard-deviation head parameters, temperature and inherited SAC counters, then saves only the fixed endpoint and checks its reload. Shared actor layers can change the conditional standard deviation even though the standard-deviation head is not updated or recalibrated. Deterministic inference remains the comparison contract. The 20-case comparison freezes both checkpoints and settings before its 40 fresh starts, retains all outcomes, and implements the declared net-win and preparation guards without launching a full60 evaluation. At this implementation-review stage, no BC fit or paired comparison has run.
