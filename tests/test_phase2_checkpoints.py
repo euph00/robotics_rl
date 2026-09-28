@@ -24,7 +24,7 @@ class SyntheticCarry(gym.Env):
         'achieved_goal':spaces.Box(-10,10,(2,),np.float32),'desired_goal':spaces.Box(-10,10,(2,),np.float32)})
     action_space=spaces.Box(-1,1,(2,),np.float32)
     setup_action_calls=2;setup_physics_ticks=10;initialization_physics_ticks=3
-    def __init__(self):self.steps=0;self.reset_count=0
+    def __init__(self,gamma=.995):self.steps=0;self.reset_count=0;self.gamma=gamma
     def reset(self,*,seed=None,options=None):
         self.steps=0;self.reset_count+=1
         return self.observation(),{}

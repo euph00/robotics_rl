@@ -111,7 +111,8 @@ class Progress(BaseCallback):
             if key not in self.evaluation:
                 try:
                     env=GeneralCarryEnv(maze_seed=layout['maze_seed'],scene_seed=42,object_idx=14,
-                        evaluation=True,build_bank=False,horizon=self.args.horizon,delta_scale=self.args.delta_scale)
+                        evaluation=True,build_bank=False,horizon=self.args.horizon,delta_scale=self.args.delta_scale,
+                        gamma=getattr(self.args,'gamma',.995))
                 except Exception as exc:
                     if not hasattr(exc,'setup_accounting'):raise
                     costs=exc.setup_accounting
@@ -224,6 +225,8 @@ def main():
     p.add_argument('--initial-checkpoint');p.add_argument('--bc-updates',type=int,default=12000);p.add_argument('--warmup-updates',type=int,default=2000)
     p.add_argument('--critic-warmup-tau',type=float,default=.01,help='Initialization target-update rate only; online SAC tau remains .01')
     p.add_argument('--steps',type=int,default=40000,help='Additional online decisions; zero runs fresh initialization and validation only');p.add_argument('--batch-size',type=int,default=256)
+    p.add_argument('--gamma',type=float,choices=(.995,.999),default=.995,help='Controlled carry discount ablation; failure cost remains 1/(1-gamma)')
+    p.add_argument('--relabel-demo-rewards',action='store_true',help='Verify stored source rewards and relabel replay under the target discount')
     p.add_argument('--learning-rate',type=float,default=3e-5);p.add_argument('--delta-scale',type=float,default=.075)
     p.add_argument('--horizon',type=int,default=900);p.add_argument('--eval-every',type=int,default=10000)
     p.add_argument('--checkpoint-every',type=int,default=10000);p.add_argument('--device',default='cuda')
@@ -249,12 +252,13 @@ def main():
         if Path(args.resume_run).name!=args.resume_run:p.error('Use a run ID for --resume-run')
         parent_config=json.loads((ROOT/'runs'/args.resume_run/'config.json').read_text())
         explicit={token.split('=')[0] for token in sys.argv[1:] if token.startswith('--')}
-        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts','navigation_only','buffer_size','critic_warmup_tau','balance_objects','preparation_grasp','training_layouts','training_objects','balance_replay_objects','balance_replay_sources','preparation_variants','preparation_seed'):
+        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts','navigation_only','buffer_size','critic_warmup_tau','balance_objects','preparation_grasp','training_layouts','training_objects','balance_replay_objects','balance_replay_sources','preparation_variants','preparation_seed','gamma','relabel_demo_rewards'):
             if '--'+key.replace('_','-') not in explicit:setattr(args,key,parent_config.get(key,getattr(args,key)))
         if '--preparation-grasp' not in explicit and parent_config.get('frozen_preparation_grasp'):
             args.preparation_grasp=parent_config['frozen_preparation_grasp']
         if args.critic_warmup_tau!=parent_config.get('critic_warmup_tau',.01):
             p.error('Cannot change completed critic-warmup provenance on resume')
+    if (args.gamma!=.995)!=bool(args.relabel_demo_rewards):p.error('The gamma .999 ablation requires explicit --relabel-demo-rewards; default gamma does not relabel')
     if not args.demonstrations:p.error('--demonstrations required for a fresh run')
     if args.buffer_size<1:p.error('--buffer-size must be positive')
     if args.balance_replay_sources and not args.balance_replay_objects:p.error('Source balancing requires explicit object-balanced replay')
@@ -290,7 +294,7 @@ def main():
     config=dict(vars(args),preparation_mode=('learned-grasp-variants' if args.preparation_variants==3 else 'learned-grasp') if preparation_cases else 'reference',
         preparation_grasp_sha256=preparation_sha,preparation_settings=preparation_settings,training_cases_sha256=cases_sha,
         carry_training_scope='conditional on physically prepared learned grasp; failures and costs retained' if preparation_cases else 'reference-prepared foam',
-        gamma=.995,shaping_weight=2.,alpha_initial=.005,target_entropy=-4.,online_tau=.01,
+        gamma=args.gamma,shaping_weight=2.,reward_relabel_gamma=args.gamma if args.relabel_demo_rewards else None,alpha_initial=.005,target_entropy=-4.,online_tau=.01,
         n_sampled_goal=1,demonstrations_sha256=hashlib.sha256(Path(args.demonstrations).read_bytes()).hexdigest(),
         scene_bank_sha256=bank['manifest_sha256'],supervised_loss_during_online_training=args.bc_weight>0,
         independent_final_study_seed=False,scene_cache_policy='prime declared learned handovers once; counted restore hold before each full-goal episode' if preparation_cases else 'prime all assigned physical scenes once before learning',critic_initialization='fresh with fixed-actor Bellman warmup',
@@ -333,7 +337,7 @@ def main():
     if resumed is None:
         obs={key:torch.as_tensor(np.stack([r['observation'][key] for r in rows]),device=args.device) for key in CarrySchema().observation_space.spaces}
         targets=torch.as_tensor(np.stack([r['teacher_action'] for r in rows]),device=args.device)
-    schema=DummyVecEnv([lambda:CarrySchema() for _ in range(args.workers)])
+    schema=DummyVecEnv([lambda:CarrySchema(gamma=args.gamma) for _ in range(args.workers)])
     replay_class=HerReplayBuffer
     replay_kwargs={'n_sampled_goal':1,'goal_selection_strategy':'future','copy_info_dict':True}
     if args.balance_replay_objects:
@@ -350,7 +354,7 @@ def main():
         validate_loaded_model(model,resumed,args.workers)
     else:
         model=learner('MultiInputPolicy',schema,learning_rate=args.learning_rate,buffer_size=args.buffer_size,
-            learning_starts=0,batch_size=args.batch_size,tau=.01,gamma=.995,train_freq=1,gradient_steps=1,
+            learning_starts=0,batch_size=args.batch_size,tau=.01,gamma=args.gamma,train_freq=1,gradient_steps=1,
             ent_coef='auto_0.005',target_entropy=-4.,replay_buffer_class=replay_class,replay_buffer_kwargs=replay_kwargs,
             policy_kwargs={'net_arch':[128,128],'features_extractor_class':NavigationSpatialExtractor if args.navigation_only else CarrySpatialExtractor,
                 'features_extractor_kwargs':{'features_dim':128,'channels':32}},device=args.device,seed=args.seed)
@@ -420,7 +424,8 @@ def main():
                 callback.evaluate('bc_zero_online')
                 logger.update(summary='Seeding real HER replay and fitting fresh critics with actor fixed.')
                 callback.initialization['demonstrations']=seed_replay(model,args.demonstrations,object_labels=args.balance_replay_objects,
-                    preparation_sources_by_mode=preparation_source_mapping)
+                    preparation_sources_by_mode=preparation_source_mapping,
+                    reward_relabel_gamma=args.gamma if args.relabel_demo_rewards else None)
                 if args.balance_replay_objects:
                     callback.initialization['replay_sampling_before_warmup']=model.replay_buffer.sampling_report()
                 callback.initialization['critic']=critic_only_warmup(model,args.warmup_updates,args.batch_size,
@@ -451,13 +456,13 @@ def main():
                         preparation_class=DiverseLearnedMultiCaseCarry
                     env=preparation_class(preparation_cases[index::args.workers],grasp_checkpoint=str(frozen_grasp.resolve()),
                         grasp_sha256=preparation_sha,seed=args.seed+index,episodes_per_case=1,
-                        horizon=args.horizon,delta_scale=args.delta_scale)
+                        horizon=args.horizon,delta_scale=args.delta_scale,gamma=args.gamma)
                     if args.balance_replay_sources:
                         from pnr.preparation_metadata import LearnedPreparationMetadata
                         env=LearnedPreparationMetadata(env)
                     return env
                 return MultiSceneCarry(layouts[index::args.workers],seed=args.seed+index,cache_size=4,
-                    episodes_per_scene=4,horizon=args.horizon,delta_scale=args.delta_scale)
+                    episodes_per_scene=4,horizon=args.horizon,delta_scale=args.delta_scale,gamma=args.gamma)
             physical=SubprocVecEnv([lambda i=i:make(i) for i in range(args.workers)],start_method='spawn')
             model.set_env(physical)
             # The reward implementation/spaces are identical; replace the initialization schema.
