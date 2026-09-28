@@ -34,6 +34,11 @@ the original 18 losses plus 11 online losses and two online collisions. Another
 872 online transitions are in unfinished episodes and are excluded. No buffer
 wrap has occurred, so the original seeded population is intact.
 
+**Implementation follow-up:** the controlled branch uses fixed required source
+families and a newly seeded replay. Missing required strata are errors; old replay
+is not migrated. This supersedes the tentative dynamic-family/migration option
+below. See [fixed preparation-source replay](phase2_preparation_balanced_replay.md).
+
 ## Source labels and compatibility
 
 Exact canonical preparation labels are **not currently stored in replay info**.
