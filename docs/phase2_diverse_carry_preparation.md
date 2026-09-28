@@ -87,3 +87,38 @@ milestone exactly matched40k in saved pre-carry states and stage counts. These
 traces sample every five native calls and omit actions, velocities and solver
 state, so they do not establish complete hidden-state equality. No held-out
 case was evaluated. The three added full validations consumed2,321,875 ticks.
+
+The diverse-data branch is also complete. Its three predeclared full-system
+validations used the same 60 cases, frozen grasp/reach checkpoints, 24cm lift,
+8cm internal reach margin and clearance-v2 proposals as the selected control:
+
+| Diverse online decisions | Full completion | Within15k action ticks | Within15k including settling |
+|---|---:|---:|---:|
+| 40k |49/60|47/60|45/60|
+| 120k |47/60|47/60|47/60|
+| Final 200k |49/60|49/60|48/60|
+
+Final200k completed 25,000 online SAC updates, following the separately counted
+2,000 critic warmup updates. Its exact carry checkpoint SHA256 is
+`668017d1c072827469b42f3d7302d0b77482254e36201fd4431f6a1206a50aba`.
+Per-object completions were foam10/12, banana12/12, can8/12, apple7/12 and
+mug12/12. The eleven failures were ten carry grip losses and one grasp decision
+horizon. Artifacts are `phase2_system_diverse_040k01`,
+`phase2_system_diverse_120k01` and `phase2_system_diverse_200k01`.
+
+The original object-balanced40k checkpoint remains selected because full-task
+completion is the primary criterion:51/60 versus the diverse branch's best49/60.
+The final diverse checkpoint achieved one more completion within15k ticks
+including settling (48 versus47), but fewer full and action-deadline completions
+(49 versus51 and49 versus50). Both outcomes remain recorded; this comparison
+does not establish a causal effect of preparation diversity or a statistically
+reliable difference. No exact physical-prefix comparison was performed for
+these diverse runs.
+
+Independent metadata auditing verified the immutable model/state hashes and
+update counters, all60 case records per milestone, and complete native-cost
+ledgers. These three validations consumed448,372 native calls,2,241,860 action
+ticks and86,400 initialization ticks: **2,328,260 physics ticks total**. They
+remain separate from training and collection costs. All outcomes are retained;
+this audit ran no new physics. At candidate selection, no held-out case had
+been evaluated; these are development-validation results.
