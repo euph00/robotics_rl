@@ -63,6 +63,8 @@ Accounting uses the latest `metrics.accounting`, falling back to top-level `acco
 
 Success charts only join points with the latest evaluation's scope. JSONL is preferred; `metrics.csv` with the same column names is accepted when JSONL is absent. Rows are bounded to a 2 MiB tail and the chart is downsampled to at most 240 measurements.
 
-`GET /api/state` returns project state, runs, event tail, and cached host resources. Only the three bundled public files and registered run artifact directories are exposed; directory listings, arbitrary repo files, traversal, escaped symlinks, and write methods are unavailable. Media types are restricted, and video byte ranges support seeking. Resource measurements include all host jobs; they are not exclusive allocations.
+`GET /api/state` returns project state, runs, event tail, and cached host resources. The three bundled public files, registered run artifact directories, and a fixed allowlist of published project reports under `/reports/` are exposed; directory listings, arbitrary repo files, traversal, escaped symlinks, and write methods are unavailable. Media types are restricted, and video byte ranges support seeking. Resource measurements include all host jobs; they are not exclusive allocations.
 
 `featured_run` places that run’s video after any explicitly selected run’s video. Run labels also appear in media captions, so a failed reproduction can be labeled clearly. The selected experiment and active-training defaults are unchanged.
+
+The overview links to `/reports/phase2_test01.md`, rendered as escaped HTML with working report/artifact links and the outcome matrix. Only the first-test report, its two supporting reports, and `phase2_candidate.json` are allowlisted; other repository paths remain inaccessible. The evaluation card distinguishes full-task success from deadline counts including settling and action-only counts when those measurements exist.

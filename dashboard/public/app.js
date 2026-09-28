@@ -85,11 +85,14 @@ function renderEvaluation(run) {
   const hero = el('div'); hero.append(el('div',percent(success),'hero-metric'),el('p', `${scopeName} success${number(episodes) ? ` · ${count(episodes)} episodes` : ''}`,'hero-label'));
   if (measured && run?.kind==='train' && number(measured.transitions)) hero.append(el('p',`Evaluated at ${count(measured.transitions)} online decisions · ${ago(measured.timestamp)}`,'run-summary'));
   const metrics = el('dl',undefined,'metric-grid');
+  const deadlineCount=value=>number(episodes)?`${count(value*episodes)} / ${count(episodes)}`:percent(value);
   const candidates = [
+    ['Within 15k · incl. settling',values.success_rate_within_deadline_including_initialization,deadlineCount],
+    ['Within 15k · action only',values.success_rate_within_deadline,deadlineCount],
     ['Goal error',values.object_goal_distance ?? values.goal_error_m ?? values.mean_goal_distance ?? values.goal_distance,v=>`${(v*100).toFixed(1)} cm`],
     ['Upstream proximity',values.upstream_success_rate,percent],
     ['Drops',values.drops ?? values.drop_events,count],
-    ['Physics ticks',values.physics_ticks,compact],
+    [number(values.total_physics_ticks_including_initialization)?'Physics ticks · incl. settling':'Physics ticks',values.total_physics_ticks_including_initialization ?? values.physics_ticks,compact],
     ['Evaluation episodes',episodes,count],
     ['Elapsed',values.wall_time_seconds ?? values.wall_seconds,v=>`${Math.round(v/60)} min`],
   ];
@@ -191,7 +194,7 @@ function renderArtifacts(runs) {
     mp4:/\.webm$/i.test(item.path) ? (run.artifacts||[]).find(candidate=>candidate.path===item.path.replace(/\.webm$/i,'.mp4'))?.path : null,
   })));
   const priority=item=>item.run_id===selectedId?0:item.run_id===featured?1:2;
-  const rank=item=>isVideoArtifact(item)?priority(item):item.kind==='image'?3+priority(item):6;
+  const rank=item=>isVideoArtifact(item)?priority(item):item.kind==='image'?(item.run_id===selectedId?0:3+priority(item)):6;
   const items=all.sort((a,b)=>rank(a)-rank(b)).slice(0,6);
   const key=JSON.stringify(items);if(key===artifactKey)return;artifactKey=key;
   if(!items.length){$('artifacts').replaceChildren(el('p','Reference and learned-policy recordings will appear here.','empty'));return;}

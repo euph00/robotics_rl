@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import gzip
+import html
 import io
 import json
 import math
@@ -19,11 +20,18 @@ import time
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
 REPO = Path(__file__).resolve().parents[1]
 PUBLIC = Path(__file__).resolve().parent / "public"
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,100}$")
+REPORTS = {
+    "phase2_test01.md": REPO / "docs/phase2_test01.md",
+    "phase2_diverse_carry_preparation.md": REPO / "docs/phase2_diverse_carry_preparation.md",
+    "phase2_carry_return_audit.md": REPO / "docs/phase2_carry_return_audit.md",
+    "phase2_candidate.json": REPO / "configs/phase2_candidate.json",
+}
+
 MEDIA_EXTENSIONS = {".mp4", ".webm", ".png", ".jpg", ".jpeg", ".gif", ".csv", ".json", ".txt", ".pdf"}
 STATE_KEYS = {"schema_version", "id", "name", "kind", "algorithm", "skill", "seed", "status", "started_at",
               "updated_at", "finished_at", "transitions", "budget", "summary", "metrics", "artifacts", "accounting", "inherited_transitions"}
@@ -130,6 +138,92 @@ def safe_artifact(runs_root, run_id, relative):
         return target if target.is_file() else None
     except (OSError, ValueError):
         return None
+
+
+
+def safe_report(name):
+    """Only explicitly published project reports; no arbitrary repository files."""
+    target = REPORTS.get(name)
+    try:
+        if (target is None or target.resolve() != target.absolute() or not target.is_file()
+                or target.stat().st_size > 1024 * 1024):
+            return None
+        return target
+    except OSError:
+        return None
+
+
+def report_link(target, runs_root):
+    if target in REPORTS and safe_report(target):
+        return "/reports/" + quote(target)
+    if target == "../configs/phase2_candidate.json" and safe_report("phase2_candidate.json"):
+        return "/reports/phase2_candidate.json"
+    if target.startswith("../runs/"):
+        parts = target.split("/", 3)
+        if len(parts) == 4 and safe_artifact(runs_root, parts[2], parts[3]):
+            return "/artifacts/" + quote(parts[2]) + "/" + quote(parts[3], safe="/")
+    if urlsplit(target).scheme in ("https", "http"):
+        return target
+    return None
+
+
+def render_report(target, runs_root):
+    """Render the small Markdown subset used by published reports, escaping HTML."""
+    def inline(text):
+        output = []
+        for token in re.split(r"(\[[^\]]+\]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*)", text):
+            link = re.fullmatch(r"\[([^\]]+)\]\(([^)]+)\)", token)
+            if link:
+                label, destination = link.groups()
+                url = report_link(destination, runs_root)
+                output.append('<a href="' + html.escape(url, quote=True) + '" rel="noopener">'
+                              + html.escape(label) + '</a>' if url else html.escape(label))
+            elif token.startswith('`') and token.endswith('`'):
+                output.append('<code>' + html.escape(token[1:-1]) + '</code>')
+            elif token.startswith('**') and token.endswith('**'):
+                output.append('<strong>' + html.escape(token[2:-2]) + '</strong>')
+            else:
+                output.append(html.escape(token))
+        return ''.join(output)
+
+    lines = target.read_text(encoding="utf-8").splitlines()
+    blocks, paragraph = [], []
+    def flush():
+        if paragraph:
+            blocks.append('<p>' + inline(' '.join(paragraph)) + '</p>')
+            paragraph.clear()
+    index = 0
+    while index < len(lines):
+        line = lines[index].strip()
+        if not line:
+            flush()
+        elif line.startswith('```'):
+            flush(); code = []; index += 1
+            while index < len(lines) and not lines[index].strip().startswith('```'):
+                code.append(lines[index]); index += 1
+            blocks.append('<pre><code>' + html.escape('\n'.join(code)) + '</code></pre>')
+        elif re.match(r'^#{1,3} ', line):
+            flush(); heading, title = line.split(' ', 1)
+            blocks.append(f'<h{len(heading)}>' + inline(title) + f'</h{len(heading)}>')
+        elif line.startswith('|') and index + 1 < len(lines) and re.fullmatch(r'[| :\-]+', lines[index + 1].strip()):
+            flush()
+            headers = line.strip('|').split('|')
+            rows = ['<thead><tr>' + ''.join('<th>' + inline(cell.strip()) + '</th>' for cell in headers) + '</tr></thead><tbody>']
+            index += 2
+            while index < len(lines) and lines[index].strip().startswith('|'):
+                rows.append('<tr>' + ''.join('<td>' + inline(cell.strip()) + '</td>' for cell in lines[index].strip().strip('|').split('|')) + '</tr>')
+                index += 1
+            blocks.append('<div class="table-scroll"><table>' + ''.join(rows) + '</tbody></table></div>')
+            continue
+        else:
+            paragraph.append(line)
+        index += 1
+    flush()
+    return ('<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            '<title>Project report · Pick Nav Reach</title><link rel="stylesheet" href="/style.css">'
+            '</head><body><main class="report"><p><a href="/">← Dashboard</a></p><article>'
+            + ''.join(blocks) + '</article></main></body></html>').encode()
 
 
 def get_runs(runs_root):
@@ -259,6 +353,14 @@ class Handler(BaseHTTPRequestHandler):
         elif path.startswith("/artifacts/"):
             parts = path.split("/", 3)
             target = safe_artifact(self.server.runs_root, parts[2], parts[3]) if len(parts) == 4 else None
+        elif path.startswith("/reports/"):
+            target = safe_report(path[len("/reports/"):])
+            if target is not None and target.suffix == ".md":
+                payload = render_report(target, self.server.runs_root)
+                self._headers(200, "text/html; charset=utf-8", len(payload))
+                if not head:
+                    self.wfile.write(payload)
+                return
         else:
             target = None
         if target is None or not target.is_file():

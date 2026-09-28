@@ -5,10 +5,11 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from dashboard.server import DashboardServer, get_runs, read_metrics, read_records, safe_artifact
+from dashboard.server import DashboardServer, get_runs, read_metrics, read_records, safe_artifact, safe_report, render_report
 from pnr.telemetry import RunLogger, update_project
 
 
@@ -70,6 +71,29 @@ class DashboardTests(unittest.TestCase):
         (run.directory / "artifacts").symlink_to(run.directory, target_is_directory=True)
         self.assertIsNone(safe_artifact(self.root, "pilot", "artifacts/status.json"))
 
+    def test_published_report_escapes_content_and_links_only_allowed_files(self):
+        artifacts = self.root / "pilot" / "artifacts"
+        artifacts.mkdir(parents=True)
+        (artifacts / "matrix.png").write_bytes(b"image fixture")
+        report = self.root / "qa.md"
+        report.write_text("# Test report\n\n**78/100** complete.\n\n"
+                          "| Metric | Count |\n|---|---:|\n| Inclusive |63/100|\n\n"
+                          "[Matrix](../runs/pilot/artifacts/matrix.png)\n\n"
+                          "[Unsafe](javascript:alert(1)) <script>alert(1)</script>\n")
+        with patch.dict("dashboard.server.REPORTS", {"qa.md": report}):
+            self.assertEqual(safe_report("qa.md"), report)
+            self.assertIsNone(safe_report("../qa.md"))
+            rendered = render_report(report, self.root).decode()
+            self.assertIn("<strong>78/100</strong>", rendered)
+            self.assertIn("<td>63/100</td>", rendered)
+            self.assertIn('href="/artifacts/pilot/artifacts/matrix.png"', rendered)
+            self.assertNotIn("<script>", rendered)
+            self.assertNotIn('href="javascript:', rendered)
+            alias = self.root / "alias.md"
+            alias.symlink_to(report)
+            with patch.dict("dashboard.server.REPORTS", {"alias.md": alias}):
+                self.assertIsNone(safe_report("alias.md"))
+
     def test_server_api_static_media_ranges_and_traversal(self):
         run = RunLogger("pilot", root=self.root, kind="reference")
         artifacts = run.directory / "artifacts"
@@ -102,6 +126,16 @@ class DashboardTests(unittest.TestCase):
                 self.assertEqual(decoded["runs"], body["runs"])
             with urlopen(base + "/") as response:
                 self.assertIn(b"Evaluation progress", response.read())
+            report = self.root / "report.md"
+            report.write_text("# Test result\n\nTarget not met.\n")
+            with patch.dict("dashboard.server.REPORTS", {"fixture.md": report}):
+                with urlopen(base + "/reports/fixture.md") as response:
+                    self.assertEqual(response.headers.get_content_type(), "text/html")
+                    self.assertIn(b"<h1>Test result</h1>", response.read())
+                for blocked in ("/reports/../fixture.md", "/reports/private.json"):
+                    with self.assertRaises(HTTPError) as error:
+                        urlopen(base + blocked)
+                    self.assertEqual(error.exception.code, 404)
             request = Request(base + "/artifacts/pilot/artifacts/rollout.mp4", headers={"Range": "bytes=2-5"})
             with urlopen(request) as response:
                 self.assertEqual(response.status, 206)

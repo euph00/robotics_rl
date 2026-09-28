@@ -7,7 +7,7 @@ function runDisplayChecks(appSource) {
   const document={getElementById:id=>nodes[id]||(nodes[id]=node('div')),createElement:node,
     createElementNS:(ns,tag)=>node(tag),createTextNode:text=>Object.assign(node('text'),{textContent:text})};
   const source=appSource.replace(/\npoll\(\);\s*$/,'\n');
-  const api=new Function('document','location','history',source+'\nreturn {chartData,renderChart,renderEvaluation,renderRunProgress,renderRuns,visibleRuns,progressValue,posterPath,renderArtifacts};')(document,{search:'',href:'http://localhost/'},{replaceState(){}});
+  const api=new Function('document','location','history',source+'\nreturn {chartData,renderChart,renderEvaluation,renderRunProgress,renderRuns,visibleRuns,progressValue,posterPath,renderArtifacts,setView:(value,selected)=>{state=value;selectedId=selected;}};')(document,{search:'',href:'http://localhost/'},{replaceState(){}});
   const text=item=>item.textContent+' '+item.children.map(text).join(' ');
   const assert=(condition,message)=>{if(!condition)throw new Error(message);};
   const accounting={new_online_transitions:0,new_evaluation_source_action_calls:1025,new_evaluation_physics_ticks:5125,
@@ -33,6 +33,12 @@ function runDisplayChecks(appSource) {
   chart=api.chartData({...init,series:[{updates:1000,bc_training_scope:'full_route_only',bc_full_route_training_loss:.02,bc_validation_loss:.8}]});
   assert(chart.points[0].y===.02 && chart.ylabel==='Full-route training action loss','Focused BC must plot actual full-route training fit, not out-of-distribution segment loss');
   assert(chart.scope==='Training fit · same fixed goal' && chart.xCaption==='Supervised updates','Full-goal training fit must remain clearly in-sample');
+  api.renderEvaluation({kind:'evaluation',series:[{scope:'full_task',success_rate:.78,
+    success_rate_within_deadline:.67,success_rate_within_deadline_including_initialization:.63,
+    eval_episodes:100,physics_ticks:1456190,total_physics_ticks_including_initialization:1504190}]});
+  const fullTask=text(nodes.evaluation);
+  assert(fullTask.includes('78%') && fullTask.includes('63 / 100') && fullTask.includes('67 / 100'),'Full, inclusive and action-only deadline results must remain distinct');
+  assert(fullTask.includes('incl. settling') && fullTask.includes('action only'),'Deadline scope labels missing');
   const fine={kind:'train',transitions:42000,inherited_transitions:40000,budget:42000,
     accounting:{total_source_action_calls_known:138959},metrics:{accounting:{total_source_action_calls_known:145853,
       total_physics_ticks_known:735025,bc_initialization:{total_bc_updates:500,included_in_cumulative_evaluation_totals:true,
@@ -74,6 +80,14 @@ function runDisplayChecks(appSource) {
   assert(media.length===1 && media[0].poster==='/artifacts/reference/artifacts/learned_reach_frame.png','Video poster URL or explicit MP4 download behavior wrong');
   const captionLinks=nodes.artifacts.children.flatMap(item=>item.children).filter(item=>item.tag==='figcaption').flatMap(item=>item.children).filter(item=>item.tag==='a');
   assert(captionLinks.some(link=>link.textContent==='MP4 download' && link.download==='rollout.mp4'),'WebM caption must retain MP4 download despite capped gallery');
+  api.setView({project:{featured_run:'featured'}},'selected-test');
+  api.renderArtifacts([
+    {id:'selected-test',status:'complete',artifacts:[{path:'artifacts/matrix.png',kind:'image'}]},
+    {id:'featured',status:'complete',artifacts:[{path:'artifacts/featured.webm',kind:'video'}]},
+    ...Array.from({length:10},(_,i)=>({id:'prior'+i,status:'complete',artifacts:[{path:'artifacts/prior.webm',kind:'video'}]}))]);
+  const gallery=nodes.artifacts.children.flatMap(item=>item.children);
+  assert(gallery.some(item=>item.tag==='img' && item.src==='/artifacts/selected-test/artifacts/matrix.png'),'Selected test matrix must not disappear behind unrelated videos');
+  assert(gallery.some(item=>item.tag==='video' && item.src==='/artifacts/featured/artifacts/featured.webm'),'Featured reproduction video must stay accessible');
   return 'Display, accounting, history, units, and video-poster checks passed.';
 }
 if (typeof module!=='undefined' && require.main===module) {
