@@ -1,9 +1,44 @@
 # Preparation-source replay audit
 
-If the current continuation plateaus, balancing preparation source within each
-object is a justified, bounded ablation. It addresses a measured replay imbalance;
-it is not evidence that the change will improve physical success. No sampler,
-training run, physics or validation data was changed or used for these statistics.
+**Completed comparison: preparation-source balancing is not adopted.** It scored
+lower than object-only replay at both declared checkpoints. Each row below is one
+complete 60-case validation run; held-out partitions remain untouched.
+
+| Replay sampling | Decisions / online updates | Within 15k ticks, including settling | Full success | Within 15k, action-only |
+|---|---:|---:|---:|---:|
+| Object only | 8,000 / 999 | **47/60** | 50/60 | 48/60 |
+| Object + preparation source | 8,000 / 999 | 42/60 | 46/60 | 43/60 |
+| Object only | 40,000 / 5,000 | **47/60** | 51/60 | 50/60 |
+| Object + preparation source | 40,000 / 5,000 | 43/60 | 46/60 | 45/60 |
+
+Both branches use SAC+HER with continuing demonstration regularization, the same
+zero-online actor, dataset, physical setup, and hyperparameters. The treatment
+adds fixed preparation-family balancing inside each uniformly selected object,
+including critic warmup. Full-system checks use identical 60 validation cases,
+frozen clearance grasp and SAC reach bytes, 24cm lift, 8cm reach acceptance,
+and mandatory final hold. The 40k rows use completed final bundles after the last
+gradient update; the 8k rows use immutable callback bundles before that step's
+update. Manifest/model hashes and exact counters are verified in each run's
+`artifacts/checkpoint_comparison_audit.json`.
+
+The source-balanced final run has 11 carry grasp losses, two carry timeouts and
+one grasp timeout. Its full/timed-including-settling successes by object are
+foam 9/9, banana 12/11, can 7/5, apple 7/7 and mug 11/11 (12 cases each).
+Its separate evaluation cost is 836,660 physics ticks including settling;
+object-only final evaluation cost is 787,405. All failures remain recorded.
+This single-seed development comparison supports retaining object-only replay;
+it does not establish a general causal result or a held-out success rate.
+
+Artifacts are `phase2_system_{learned,preparation}_balanced_{008k,040k}01`.
+The stronger object-only 40k model also failed its separately recorded first-case
+video reproduction; that failure is retained in `phase2_system_learned_balanced_040k_video01`
+and does not replace its one full validation run.
+
+## Original pre-experiment audit
+
+The following statistics motivated the bounded source-balancing experiment.
+No sampler, training run, physics or validation data was changed or used to
+calculate these initial replay statistics.
 
 The exact eight-worker seed contains 502,432 eligible real transitions. Sampling
 an object uniformly, then an available preparation family uniformly, gives:
