@@ -1,0 +1,367 @@
+#!/usr/bin/env python3
+"""Spatial BC initialization, calibrated exploration, then ordinary SAC+HER.
+
+Development runs use only declared train/validation layouts. The milestone test
+bank is inaccessible here. Physical and supervised costs are logged separately.
+"""
+from __future__ import annotations
+import argparse
+from collections import deque
+import hashlib
+import json
+import os
+from pathlib import Path
+import pickle
+import random
+import shutil
+import sys
+import time
+ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
+import numpy as np
+import torch
+from stable_baselines3 import SAC, HerReplayBuffer
+from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.logger import configure
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+from pnr.general_carry import GeneralCarryEnv
+from pnr.multi_carry import CarrySchema, MultiSceneCarry
+from pnr.scenes import load_scene_bank, scene_records
+from pnr.spatial_features import CarrySpatialExtractor
+from pnr.sac_initialization import calibrate_actor_std,critic_only_warmup
+from pnr.demonstrations import seed_replay
+from pnr.telemetry import RunLogger,atomic_json
+from pnr.train import GracefulStop,ignore_worker_stop_signals
+from pnr.phase2_checkpoints import (signature,load_checkpoint,publish_checkpoint,
+                                   restore_rng,validate_loaded_model)
+
+
+def plain(x):
+    if isinstance(x,np.ndarray):return x.tolist()
+    if isinstance(x,np.generic):return x.item()
+    if isinstance(x,dict):return {k:plain(v) for k,v in x.items()}
+    if isinstance(x,(list,tuple)):return [plain(v) for v in x]
+    return x
+
+
+def archive_sources(directory):
+    out=directory/'sources';out.mkdir();manifest={}
+    for path in list((ROOT/'pnr').glob('*.py'))+[Path(__file__).resolve()]:
+        relative=path.relative_to(ROOT);target=out/relative;target.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(path,target);manifest[str(relative)]=hashlib.sha256(target.read_bytes()).hexdigest()
+    atomic_json(directory/'source_manifest.json',manifest)
+
+
+class Progress(BaseCallback):
+    def __init__(self,logger,layouts,args,stop):
+        super().__init__();self.run_logger=logger;self.layouts=layouts;self.args=args;self.stop=stop
+        self.evaluation={};self.last_eval=self.last_log=self.last_save=0;self.started=time.monotonic()
+        self.train_calls=self.train_ticks=self.eval_calls=self.eval_ticks=0
+        self.eval_setup_calls=self.eval_setup_ticks=self.eval_settling_ticks=0
+        self.episodes=0;self.recent=deque(maxlen=100);self.best=(-1.,-float('inf'));self.initialization={}
+        self._checkpoint_due=False;self._pending_replay_position=None
+        self.resume_signature=None;self.ancestry=[];self.best_checkpoint=None
+        self.inherited_accounting={};self.setup_base=self.setup_ticks_base=self.settling_base=0
+    def restore(self,checkpoint):
+        state=checkpoint['state'];account=state['accounting'];history=state.get('callback_state',{})
+        self.inherited_accounting=dict(account)
+        self.train_calls=account['training_source_action_calls'];self.train_ticks=account['training_physics_ticks']
+        self.eval_calls=account['evaluation_source_action_calls'];self.eval_ticks=account['evaluation_physics_ticks']
+        self.eval_setup_calls=account['evaluation_setup_source_action_calls'];self.eval_setup_ticks=account['evaluation_setup_physics_ticks']
+        self.eval_settling_ticks=account['evaluation_initialization_physics_ticks']
+        self.setup_base=account['training_setup_source_action_calls'];self.setup_ticks_base=account['training_setup_physics_ticks']
+        self.settling_base=account['training_initialization_physics_ticks']
+        self.initialization=state['initialization'];self.episodes=int(history.get('episodes',self.model._episode_num))
+        self.recent=deque(history.get('recent',[]),maxlen=100)
+        best=history.get('best');self.best=tuple(best) if best is not None else (-1.,-float('inf'))
+        self.best_checkpoint=history.get('best_checkpoint')
+        self.last_eval=int(history.get('last_eval',self.model.num_timesteps))
+        self.last_log=self.last_save=int(self.model.num_timesteps)
+        self.ancestry=list(state.get('ancestry',[]))+[{'run':checkpoint['run_directory'].name,
+            'generation':checkpoint['generation'],'manifest_sha256':checkpoint.get('manifest_sha256'),
+            'legacy_file_hashes':checkpoint.get('legacy_file_hashes'),
+            'online_decisions':self.model.num_timesteps,'online_updates':self.model._n_updates,
+            'accounting':account,'initialization_cost_inherited':True,'legacy_missing':state.get('legacy_missing',[])}]
+    def accounting(self):
+        physical=self.model.env
+        # Schema-only env has no setup; no physical cost is silently fabricated.
+        try:
+            setup=sum(physical.get_attr('setup_action_calls'));ticks=sum(physical.get_attr('setup_physics_ticks'))
+            settling=sum(physical.get_attr('initialization_physics_ticks'))
+        except AttributeError:setup=ticks=settling=0
+        result={'online_decisions':int(self.model.num_timesteps),'training_source_action_calls':self.train_calls,
+            'training_physics_ticks':self.train_ticks,'training_setup_source_action_calls':self.setup_base+setup,
+            'training_setup_physics_ticks':self.setup_ticks_base+ticks,'training_initialization_physics_ticks':self.settling_base+settling,
+            'cost_scope':'cumulative_lineage','inherited_online_decisions':int(self.inherited_accounting.get('online_decisions',0)),
+            'incremental_online_decisions':int(self.model.num_timesteps-self.inherited_accounting.get('online_decisions',0)),
+            'evaluation_source_action_calls':self.eval_calls,'evaluation_physics_ticks':self.eval_ticks,
+            'evaluation_setup_source_action_calls':self.eval_setup_calls,'evaluation_setup_physics_ticks':self.eval_setup_ticks,
+            'evaluation_initialization_physics_ticks':self.eval_settling_ticks}
+        result['incremental_accounting']={key:value-int(self.inherited_accounting.get(key,0))
+            for key,value in result.items() if key=='online_decisions' or key.endswith(('_calls','_ticks'))}
+        return result
+    def evaluate(self,label):
+        records=[]
+        for layout in self.layouts:
+            if self.stop.requested:break
+            key=layout['layout_id']
+            identity={'layout_id':key,'partition':key.split('_')[0],'maze_seed':layout['maze_seed'],
+                      'maze_hash':layout['maze_hash']}
+            if key not in self.evaluation:
+                try:
+                    env=GeneralCarryEnv(maze_seed=layout['maze_seed'],scene_seed=42,object_idx=14,
+                        evaluation=True,build_bank=False,horizon=self.args.horizon,delta_scale=self.args.delta_scale)
+                except Exception as exc:
+                    if not hasattr(exc,'setup_accounting'):raise
+                    costs=exc.setup_accounting
+                    self.eval_setup_calls+=costs.get('source_action_calls',0)
+                    self.eval_setup_ticks+=costs.get('physics_ticks',0)
+                    self.eval_settling_ticks+=costs.get('initialization_physics_ticks',0)
+                    records.append(dict(identity,success=False,evaluation_complete=True,decisions=0,
+                        goal_distance=None,selection_distance_penalty=30.,failure_reason='physical_setup_failed',
+                        error=repr(exc),setup_accounting=costs,source_action_calls=0,physics_ticks=0,trajectory=[]))
+                    self.run_logger.event(f'Validation setup failed for {key}: {exc}','error')
+                    continue
+                self.evaluation[key]=env
+                self.eval_setup_calls+=env.setup_action_calls;self.eval_setup_ticks+=env.setup_physics_ticks
+                self.eval_settling_ticks+=env.initialization_physics_ticks
+            env=self.evaluation[key];obs,_=env.reset(options={'full':True});positions=[];success=False;complete=False
+            info={};decisions=0
+            for decision in range(env.horizon):
+                if self.stop.requested:break
+                action,_=self.model.predict(obs,deterministic=True)
+                obs,_,terminated,truncated,info=env.step(action);decisions=decision+1
+                self.eval_calls+=info['action_calls_delta'];self.eval_ticks+=info['physics_ticks_delta']
+                positions.append(env.controller.base_position().tolist())
+                if info['is_success']:success=True;complete=True;break
+                if terminated or truncated:complete=True;break
+            if decisions==env.horizon:complete=True
+            distance=info.get('goal_distance')
+            if distance is not None and not np.isfinite(distance):distance=None
+            records.append(dict(identity,success=success,evaluation_complete=complete,decisions=decisions,
+                goal_distance=distance,selection_distance_penalty=30. if distance is None else float(distance),
+                failure_reason=info.get('failure_reason') if complete else 'evaluation_interrupted',
+                source_action_calls=env.native.step_count,physics_ticks=env.native.physics_steps,trajectory=positions))
+        validation=[r for r in records if r['partition']=='validation' and r['evaluation_complete']]
+        training=[r for r in records if r['partition']=='train' and r['evaluation_complete']]
+        expected={layout['layout_id'] for layout in self.layouts if layout['layout_id'].startswith('validation_')}
+        complete=bool(expected) and {r['layout_id'] for r in validation}==expected
+        rate=float(np.mean([r['success'] for r in validation])) if validation else None
+        actual=[r['goal_distance'] for r in validation if r['goal_distance'] is not None]
+        distance=float(np.mean(actual)) if actual else None
+        selection=float(np.mean([r['selection_distance_penalty'] for r in validation])) if validation else None
+        out=self.run_logger.directory/'artifacts'/f'evaluation_{label}.json'
+        atomic_json(out,{'scope':'full_carry_validation','online_decisions':int(self.model.num_timesteps),
+            'records':records,'success_rate':rate,'validation_complete':complete,'expected_validation_cases':len(expected),
+            'mean_measured_goal_distance':distance,'selection_distance_penalty':selection,
+            'undefined_distance_selection_penalty':30.,'evaluation_is_full_task':False,'teacher_at_inference':False})
+        self.run_logger.artifact('artifacts/'+out.name,'Navigation validation '+label)
+        self.run_logger.metric(self.model.num_timesteps,scope='skill',evaluation_scope='full_carry_validation',
+            metric_source='evaluation',success_rate=rate,eval_episodes=len(validation),mean_goal_distance=distance,
+            validation_complete=complete,selection_distance_penalty=selection,
+            training_layout_success_rate=float(np.mean([r['success'] for r in training])) if training else None,
+            accounting=self.accounting())
+        if complete and self.model.num_timesteps>0 and (rate,-selection)>self.best:
+            self.best=(rate,-selection)
+            checkpoint=self.run_logger.directory/'checkpoints/best_online.zip'
+            temporary=checkpoint.with_name('best_online.pending.zip');self.model.save(temporary);os.replace(temporary,checkpoint)
+            self.best_checkpoint=str(checkpoint)
+            atomic_json(checkpoint.with_name('best_online_evaluation.json'),{'success_rate':rate,
+                'goal_distance':distance,'selection_distance_penalty':selection,'online_decisions':int(self.model.num_timesteps),
+                'validation_complete':True,'evaluation':str(out)})
+        return records
+    def checkpoint(self,label):
+        if getattr(self.model.env,'waiting',False):raise RuntimeError('Checkpoint while waiting for worker replies')
+        if self._pending_replay_position is not None:
+            replay=self.model.replay_buffer
+            if replay.pos==self._pending_replay_position:
+                fields=self.locals
+                self.model._store_transition(replay,fields['buffer_actions'],fields['new_obs'],fields['rewards'],fields['dones'],fields['infos'])
+            elif replay.pos!=(self._pending_replay_position+1)%replay.buffer_size:
+                raise RuntimeError('Unexpected replay position while flushing interrupted step')
+            self._pending_replay_position=None
+        try:states=self.model.env.env_method('get_training_state')
+        except AttributeError:states=[]
+        state=plain({'accounting':self.accounting(),'training_states':states,'initialization':self.initialization,
+            'ancestry':self.ancestry,'inherited_accounting':self.inherited_accounting,
+            'callback_state':{'episodes':self.episodes,'recent':list(self.recent),
+                'best':self.best if np.isfinite(self.best[1]) else None,'best_checkpoint':self.best_checkpoint,
+                'last_eval':self.last_eval,'last_log':self.last_log,'last_save':self.num_timesteps}})
+        return publish_checkpoint(self.model,self.run_logger.directory,state,self.resume_signature,label)
+    def _on_step(self):
+        self._pending_replay_position=self.model.replay_buffer.pos
+        for info,done in zip(self.locals['infos'],self.locals['dones']):
+            self.train_calls+=info['action_calls_delta'];self.train_ticks+=info['physics_ticks_delta']
+            if done:self.episodes+=1;self.recent.append(float(info.get('episode_success',info['is_success'])))
+        if self.stop.requested:return False
+        if self.num_timesteps-self.last_log>=1000:
+            self.run_logger.metric(self.num_timesteps,scope='skill',metric_source='training',
+                train_success_rate=float(np.mean(self.recent)) if self.recent else 0.,episodes=self.episodes,
+                source_action_calls=self.train_calls,physics_ticks=self.train_ticks,updates=self.model._n_updates,
+                wall_seconds=time.monotonic()-self.started,accounting=self.accounting())
+            self.last_log=self.num_timesteps
+        # Fixed curriculum schedule; validation outcomes do not modify training cases.
+        level=min(5,2+self.num_timesteps//10000)
+        if self.num_timesteps%1000<self.model.n_envs:self.model.env.env_method('set_curriculum_level',level)
+        if self.num_timesteps-self.last_eval>=self.args.eval_every:
+            self.evaluate(f'online_{self.num_timesteps:07d}');self.last_eval=self.num_timesteps
+        if self.num_timesteps-self.last_save>=self.args.checkpoint_every:self._checkpoint_due=True
+        return not self.stop.requested
+    def _on_rollout_end(self):
+        self._pending_replay_position=None
+        if self._checkpoint_due:
+            self.checkpoint(f'online_{self.num_timesteps:07d}');self.last_save=self.num_timesteps;self._checkpoint_due=False
+    def close(self):
+        for env in self.evaluation.values():env.close()
+
+
+def main():
+    p=argparse.ArgumentParser();p.add_argument('--run-id',required=True);p.add_argument('--demonstrations');p.add_argument('--resume-run')
+    p.add_argument('--bank',default='configs/phase2_scene_bank.json');p.add_argument('--layouts',type=int,default=16)
+    p.add_argument('--workers',type=int,default=8);p.add_argument('--seed',type=int,default=7401)
+    p.add_argument('--initial-checkpoint');p.add_argument('--bc-updates',type=int,default=12000);p.add_argument('--warmup-updates',type=int,default=2000)
+    p.add_argument('--steps',type=int,default=40000);p.add_argument('--batch-size',type=int,default=256)
+    p.add_argument('--learning-rate',type=float,default=3e-5);p.add_argument('--delta-scale',type=float,default=.075)
+    p.add_argument('--horizon',type=int,default=900);p.add_argument('--eval-every',type=int,default=10000)
+    p.add_argument('--checkpoint-every',type=int,default=10000);p.add_argument('--device',default='cuda')
+    args=p.parse_args()
+    if args.resume_run and args.initial_checkpoint:p.error('--resume-run and --initial-checkpoint are exclusive')
+    if min(args.steps,args.workers,args.horizon,args.eval_every,args.checkpoint_every)<1:p.error('Positive steps/workers/horizon/intervals required')
+    if args.resume_run:
+        if Path(args.resume_run).name!=args.resume_run:p.error('Use a run ID for --resume-run')
+        parent_config=json.loads((ROOT/'runs'/args.resume_run/'config.json').read_text())
+        explicit={token.split('=')[0] for token in sys.argv[1:] if token.startswith('--')}
+        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate'):
+            if '--'+key.replace('_','-') not in explicit:setattr(args,key,parent_config[key])
+    if not args.demonstrations:p.error('--demonstrations required for a fresh run')
+    if args.workers>args.layouts:p.error('Each worker needs at least one selected layout')
+    torch.set_num_threads(1);np.random.seed(args.seed);random.seed(args.seed);torch.manual_seed(args.seed)
+    bank=load_scene_bank(args.bank);layouts=scene_records(bank,'train')[:args.layouts]
+    validation=scene_records(bank,'validation')[:4]
+    config=dict(vars(args),gamma=.995,shaping_weight=2.,alpha_initial=.005,target_entropy=-4.,
+        n_sampled_goal=1,demonstrations_sha256=hashlib.sha256(Path(args.demonstrations).read_bytes()).hexdigest(),
+        scene_bank_sha256=bank['manifest_sha256'],supervised_loss_during_online_training=False,
+        independent_final_study_seed=False,scene_cache_policy='prime all assigned physical scenes once before learning',critic_initialization='fresh with fixed-actor Bellman warmup',
+        gpu_numerics='cuDNN benchmark enabled; non-bitwise GPU training; float32 matmul high',
+        initial_checkpoint_sha256=None if not args.initial_checkpoint else hashlib.sha256(Path(args.initial_checkpoint).read_bytes()).hexdigest())
+    current_signature=signature(config,ROOT)
+    resumed=load_checkpoint(ROOT/'runs'/args.resume_run,current_signature) if args.resume_run else None
+    inherited=0 if resumed is None else resumed['state']['online_decisions']
+    config.update(steps_are_additional_online_decisions=True,inherited_online_decisions=inherited,
+                  cumulative_online_budget=inherited+args.steps)
+    logger=RunLogger(args.run_id,kind='train',skill='carry',algorithm='BC-initialized SAC+HER',budget=inherited+args.steps,
+        transitions=inherited,name='Spatial multi-maze SAC + HER',
+        summary='Resuming ordinary SAC+HER.' if resumed else 'Initializing map-aware actor from diverse physical demonstrations.')
+    (logger.directory/'artifacts').mkdir();(logger.directory/'checkpoints').mkdir();archive_sources(logger.directory)
+    atomic_json(logger.directory/'config.json',config)
+    dataset=pickle.loads(Path(args.demonstrations).read_bytes())
+    allowed={l['maze_hash'] for l in layouts}
+    if any(e['maze_hash'] not in allowed for e in dataset['episodes']):raise ValueError('Demonstration layout outside selected training partition')
+    rows=[r for e in dataset['episodes'] for r in e['transitions']]
+    if resumed is None:
+        obs={key:torch.as_tensor(np.stack([r['observation'][key] for r in rows]),device=args.device) for key in CarrySchema().observation_space.spaces}
+        targets=torch.as_tensor(np.stack([r['teacher_action'] for r in rows]),device=args.device)
+        labels=targets.detach().cpu().numpy();norm=np.linalg.norm(labels,axis=1)
+        strata=[np.flatnonzero((norm>.5)&(np.abs(labels[:,1])>.15)),np.flatnonzero((norm>.5)&(np.abs(labels[:,1])<=.15)),np.flatnonzero(norm<=.5)]
+        if any(len(s)==0 for s in strata):raise ValueError('Need turns, straights and goal holds for balanced imitation')
+    schema=DummyVecEnv([lambda:CarrySchema() for _ in range(args.workers)])
+    if resumed is not None:
+        model=SAC.load(resumed['model'],env=schema,device=args.device)
+        model.load_replay_buffer(resumed['replay'],truncate_last_traj=True)
+        validate_loaded_model(model,resumed,args.workers)
+    else:
+        model=SAC('MultiInputPolicy',schema,learning_rate=args.learning_rate,buffer_size=100000,
+            learning_starts=0,batch_size=args.batch_size,tau=.01,gamma=.995,train_freq=1,gradient_steps=1,
+            ent_coef='auto_0.005',target_entropy=-4.,replay_buffer_class=HerReplayBuffer,
+            replay_buffer_kwargs={'n_sampled_goal':1,'goal_selection_strategy':'future','copy_info_dict':True},
+            policy_kwargs={'net_arch':[128,128],'features_extractor_class':CarrySpatialExtractor,
+                'features_extractor_kwargs':{'features_dim':128,'channels':32}},device=args.device,seed=args.seed)
+        if args.initial_checkpoint:
+            model=SAC.load(args.initial_checkpoint,env=schema,device=args.device,learning_rate=args.learning_rate)
+            if model.num_timesteps != 0:
+                raise ValueError('This initializer accepts only a zero-online BC checkpoint')
+    # SB3 enables deterministic cuDNN kernels; benchmarked alternatives may be much faster.
+    torch.backends.cudnn.deterministic=False
+    torch.backends.cudnn.benchmark=True
+    torch.set_float32_matmul_precision('high')
+    if resumed is None:model.actor.features_extractor.set_carry_pose_mask(True)
+    model.set_logger(configure(str(logger.directory/'sb3'),['csv']))
+    callback=Progress(logger,layouts[:2]+validation,args,None);callback.model=model;callback.resume_signature=current_signature
+    if resumed is not None:
+        callback.restore(resumed)
+        atomic_json(logger.directory/'artifacts/resume_ancestry.json',plain({'ancestry':callback.ancestry,'inherited_accounting':callback.inherited_accounting}))
+    physical=None
+    with GracefulStop() as stop:
+        callback.stop=stop
+        try:
+            if resumed is None:
+                optimizer=torch.optim.Adam(model.actor.parameters(),lr=3e-4)
+                rng=np.random.default_rng(args.seed);losses=[];bc_started=time.monotonic()
+                update=0
+                for update in range(1,args.bc_updates+1):
+                    sizes=[args.batch_size//2,args.batch_size*35//100];sizes.append(args.batch_size-sum(sizes))
+                    indices=np.concatenate([rng.choice(s,size=n,replace=True) for s,n in zip(strata,sizes)])
+                    batch={k:v[indices] for k,v in obs.items()}
+                    predicted=model.actor(batch,deterministic=True)
+                    loss=torch.mean((predicted-targets[indices])**2)
+                    optimizer.zero_grad();loss.backward();torch.nn.utils.clip_grad_norm_(model.actor.parameters(),10.);optimizer.step()
+                    losses.append(float(loss.detach()))
+                    if update%500==0 or update==args.bc_updates:
+                        logger.metric(0,scope='actor_initialization',metric_source='supervised',bc_updates=update,
+                            bc_training_loss=float(np.mean(losses[-500:])),supervised_examples=update*args.batch_size,
+                            wall_seconds=time.monotonic()-bc_started)
+                    if stop.requested:break
+                callback.initialization['bc']={'updates':update,'batch_size':args.batch_size,'examples':update*args.batch_size,
+                    'wall_seconds':time.monotonic()-bc_started,'strata_counts':[len(s) for s in strata]}
+                callback.initialization['std_calibration']=calibrate_actor_std(model,-3.)
+                model.save(logger.directory/'checkpoints/bc_initialized')
+                atomic_json(logger.directory/'artifacts/initialization.json',plain(callback.initialization))
+                if stop.requested:return
+                logger.update(summary='Measuring initialized actor on training and separate validation layouts.')
+                callback.evaluate('bc_zero_online')
+                logger.update(summary='Seeding real HER replay and fitting fresh critics with actor fixed.')
+                callback.initialization['demonstrations']=seed_replay(model,args.demonstrations)
+                callback.initialization['critic']=critic_only_warmup(model,args.warmup_updates,args.batch_size,
+                    learning_rate=3e-4,log_every=200,on_log=lambda row:logger.metric(0,scope='actor_initialization',metric_source='critic_initialization',**row))
+                callback.checkpoint('initialized')
+                if stop.requested:return
+            parent_pid=os.getpid()
+            def make(index):
+                ignore_worker_stop_signals(parent_pid)
+                return MultiSceneCarry(layouts[index::args.workers],seed=args.seed+index,cache_size=4,
+                    episodes_per_scene=4,horizon=args.horizon,delta_scale=args.delta_scale)
+            physical=SubprocVecEnv([lambda i=i:make(i) for i in range(args.workers)],start_method='spawn')
+            model.set_env(physical)
+            # The reward implementation/spaces are identical; replace the initialization schema.
+            model.replay_buffer.env = None
+            model.replay_buffer.set_env(physical)
+            if resumed is not None and resumed['state'].get('training_states'):
+                for index,state in enumerate(resumed['state']['training_states']):
+                    physical.env_method('set_training_state',state,indices=[index])
+            else:physical.env_method('set_curriculum_level',2)
+            logger.update(summary='Preparing all training scenes in parallel; each physical setup is counted.')
+            priming=physical.env_method('prime_cache')
+            atomic_json(logger.directory/'artifacts/scene_cache_setup.json',plain(priming))
+            if resumed is not None:
+                restore_rng(resumed['rng'])
+                callback.checkpoint('resumed_before_additional_online')
+            logger.update(summary='Ordinary online SAC + HER; no imitation loss or teacher action during training.')
+            model.learn(total_timesteps=args.steps,callback=callback,reset_num_timesteps=resumed is None)
+            callback.checkpoint('final')
+            if not stop.requested:
+                callback.evaluate(f'final_{model.num_timesteps:07d}')
+                callback.checkpoint('final')
+            atomic_json(logger.directory/'artifacts/result.json',plain({'status':'stopped' if stop.requested else 'complete',
+                'online_decisions':model.num_timesteps,'online_updates':model._n_updates,'initialization':callback.initialization,
+                'accounting':callback.accounting(),'ancestry':callback.ancestry,'inherited_accounting':callback.inherited_accounting,
+                'best_checkpoint':callback.best_checkpoint,'best_validation':callback.best if np.isfinite(callback.best[1]) else None}))
+            logger.artifact('artifacts/result.json','Training and accounting result')
+            logger.finish('stopped' if stop.requested else 'complete','Bounded multi-maze SAC+HER experiment finished; see validation results.')
+        except BaseException as exc:
+            logger.event(repr(exc),'error');logger.finish('failed',str(exc));raise
+        finally:
+            callback.close()
+            if physical is not None:physical.close()
+            schema.close()
+            if stop.requested and logger.state['status']=='running':logger.finish('stopped','Stopped after current safe stage.')
+
+if __name__=='__main__':main()

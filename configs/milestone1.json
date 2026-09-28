@@ -1,0 +1,21 @@
+{
+  "name": "first_original_fetch_system",
+  "phase": "development",
+  "upstream_commit": "54ab2d1faa54d1aa7e2738f114531a76c6514cd3",
+  "robot": "original_fetch",
+  "object_idx": 14,
+  "object_name": "061_foam_brick",
+  "scene_seed": 42,
+  "algorithm": "SAC",
+  "replay": "HER",
+  "training_seed": 0,
+  "goal_tolerance_m": 0.1,
+  "physics_substeps_per_env_call": 5,
+  "budget_status": "provisional; select pilot budgets after feasibility and throughput measurement",
+  "evaluation": "development milestone, not final comparative evidence",
+  "acceptance": {
+    "reference": "physical uninterrupted approach, pickup, lift, stable hold, maze transport, retained reach",
+    "learned_system": "trained skills run uninterrupted from original start with disclosed common assistance",
+    "evidence": "saved policies, fixed evaluation cases, raw outcomes, replayable video and live dashboard"
+  }
+}

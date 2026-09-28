@@ -1,0 +1,12 @@
+# Install torch first using the official CUDA 11.8 wheel index (see setup script).
+pybullet==3.2.7
+numpy==1.26.4
+scipy==1.15.3
+trimesh==4.6.13
+matplotlib==3.10.3
+gymnasium==1.2.0
+stable-baselines3==2.7.0
+imageio==2.37.0
+imageio-ffmpeg==0.6.0
+tensorboard==2.20.0
+pytest==8.4.1

@@ -1,0 +1,91 @@
+{
+  "status": "validated_development_baseline",
+  "phase": "development",
+  "algorithm": "SAC+HER with demonstration refinement; carry actor refined after its selected SAC checkpoint",
+  "checkpoints": {
+    "grasp": {
+      "run": "sac_grasp_bc_finetune01",
+      "checkpoint": "runs/milestone1_validation01/artifacts/checkpoints/grasp.zip",
+      "sha256": "15a35328b209d564d36f56d5a4716bcfb1691798029ddc9f47959014f47374d7",
+      "selection": {
+        "transitions": 41008,
+        "success_rate": 1.0,
+        "mean_goal_distance": 0.03385130688548088,
+        "episodes": 1,
+        "evaluation_scope": "full_pregrasp_diagnostic",
+        "evaluation_protocol": "stop_on_first_retained_goal"
+      },
+      "training_note": "40k SAC+HER with physical replay demos, 500 actor-refinement updates, 2k additional SAC decisions completed; selected at41008."
+    },
+    "reach": {
+      "run": "sac_reach_handoff01",
+      "checkpoint": "runs/milestone1_validation01/artifacts/checkpoints/reach.zip",
+      "sha256": "cd0c3f20ad0f938028533a8635e95f119056e0fd3abff185d7c7679f9629c258",
+      "selection": {
+        "transitions": 15000,
+        "success_rate": 1.0,
+        "mean_goal_distance": 0.004201437346637249,
+        "episodes": 1,
+        "evaluation_scope": "reference_carry_handoff"
+      },
+      "training_note": "20k SAC+HER decisions completed; selected at15000; no actor cloning."
+    },
+    "carry": {
+      "checkpoint": "runs/milestone1_validation01/artifacts/checkpoints/carry.zip",
+      "sha256": "ba2bd93bac5f6bc1268b6ef1bd90a3d44447f3f8fda49f53002de4d718aea875",
+      "run": "carry_bc_fullgoal02",
+      "source_sac_run": "sac_carry_long01",
+      "source_generation": "step_000090000_1790558258297679854",
+      "source_online_decisions": 90000,
+      "actor_refinement_updates": 14000,
+      "selection": {
+        "scope": "full_carry",
+        "success_rate": 1.0,
+        "episodes": 1,
+        "bc_updates": 14000
+      },
+      "post_refinement_online_updates": 0
+    }
+  },
+  "original_start": true,
+  "inter_skill_resets": false,
+  "teacher_at_inference": false,
+  "navigation_waypoints_at_inference": false,
+  "planned_assistance": [
+    "antipodal pregrasp approach",
+    "carry arm posture"
+  ],
+  "evaluation_protocol": {
+    "object_idx": 14,
+    "scene_seeds": [
+      42,
+      42,
+      42
+    ],
+    "meaning": "three fresh original-start repetitions of the same development case; not independent held-out cases",
+    "success": "complete physical pickup, retained maze transport, held-object reach <0.1m, stable final hold",
+    "retain_all_failures": true,
+    "record_video_after_candidate_passes": true
+  },
+  "completed_at": "2026-09-28T02:49:53+00:00",
+  "validation": {
+    "summary": "runs/milestone1_validation01/artifacts/summary.json",
+    "detailed_report": "runs/milestone1_validation01/artifacts/milestone_validation.json",
+    "successes": 3,
+    "episodes": 3,
+    "unique_development_cases": 1
+  },
+  "recording": {
+    "run": "learned_system_demo_bc01",
+    "success": true,
+    "webm": "runs/learned_system_demo_bc01/artifacts/episode_000.webm",
+    "mp4": "runs/learned_system_demo_bc01/artifacts/episode_000.mp4",
+    "final_goal_error_m": 0.030768925987665167
+  },
+  "limitations": [
+    "Same provided object14 and scene42 only; repetitions do not establish held-out generalization.",
+    "Carry uses supervised demonstration refinement after90k SAC+HER decisions. Two later ordinary SAC continuations lost route success and are not selected.",
+    "The upstream step wording is ambiguous: source-call deadline interpretation passes;15000-physics-tick reach interpretation does not.",
+    "Algorithm/gripper/seed comparisons and held-out object/maze testing remain future milestones."
+  ]
+}

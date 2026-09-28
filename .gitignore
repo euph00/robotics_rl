@@ -1,0 +1,31 @@
+# Reproducible upstream checkout; source and revision are in upstream.lock.json.
+/upstream/
+
+# Project-local environments, caches, and generated simulation files.
+/.venv/
+/.conda/
+/.tools/
+/.cache/
+/tmp/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Large generated artifacts belong on the workspace volume, outside Git.
+/runs/
+/checkpoints/
+/videos/
+/artifacts/
+
+# Keep explicit configs/manifests/results tables tracked; ignore local secrets.
+.env
+.env.*
+!.env.example
+
+# Packaging and local runtime state.
+*.egg-info/
+/build/
+/dist/
+
+# Local dashboard process state.
+/dashboard/.runtime/

@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/NUS-LinS-Lab/Pick-Nav-Reach-Default-Project.git",
+  "commit": "54ab2d1faa54d1aa7e2738f114531a76c6514cd3",
+  "branch_at_inspection": "main",
+  "checkout_path": "upstream/Pick-Nav-Reach-Default-Project",
+  "inspected_on": "2026-09-28",
+  "policy": "Keep this reference checkout unchanged; track integration code and explicit patches in the outer repository."
+}
