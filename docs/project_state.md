@@ -62,13 +62,18 @@ temperature learned for 40k online decisions. Its fresh 100-case confirmation
 completed 69 tasks, with 24 of 31 failures caused by carry grasp loss. The
 independent audit passed; the milestone did not. This confirmation is now
 retired after informing refinement, with no test trajectories used in training.
-The independently reviewed TRAIN-only grasp-qualification Plan03 collected
-120 original-start preparations, with 88 qualifying after transport and hold; the earlier conditional plan remains
-skipped. Completed-data and trainer reviews passed. One BC fit is fixed at 2,000
-updates, followed by the predeclared paired TRAIN comparison.
-A 20-case paired retention screen must improve by at least three net successes
-without preparation regressions; one permitted full 60-case follow-up would then need
-at least 57 complete and 38 timed successes before consideration of another test. Small gains on the reused 60-case validation
+The [transport-qualified grasp trial](phase2_grasp_qualification.md) collected
+120 original-start preparations, with 88 surviving transport and hold. Its
+fixed 2,000-update imitation refinement **regressed from 18/20 to 15/20** on the
+paired TRAIN retention screen (one win, four losses; all handovers prepared).
+Independent data/model/outcome audits passed. The trial closed as predeclared,
+with no full 60-case follow-up or new held-out evaluation. Total collection/comparison
+cost was 2,024,915 physics ticks. The earlier conditional plan remains skipped.
+
+The next investigation asks whether original-goal downstream-retention feedback
+can improve grasp learning while preserving native transitions and valid HER.
+It starts with TRAIN-only feasibility and method review; no new policy training
+or physical interactions have been authorized for this hypothesis. Small gains on the reused 60-case validation
 bank are insufficient evidence of better generalization. The eventual SAC/TD3 × original/modified gripper × three-seed study
 still requires independent replications and matched assistance/data protocols.
 Current development runs are not those replications.

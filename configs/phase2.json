@@ -36,7 +36,7 @@
     "milestone_test": "freeze candidate before one final test bank evaluation; if subsequently used for debugging, disclose and retire bank as development",
     "final_study": "separate reserve bank and independent training seeds"
   },
-  "status": "grasp_retention_refinement_after_confirmation",
+  "status": "retention_objective_investigation",
   "frozen_baseline": "configs/milestone1_candidate.json",
   "object_indices": [
     14,
@@ -65,5 +65,15 @@
     "timed_action_only": 53,
     "milestone_met": false,
     "future_role": "historical confirmation; retired after informing refinement; no trajectories imported into training"
+  },
+  "qualified_grasp_refinement": {
+    "run": "phase2_grasp_qualified_compare03",
+    "scope": "20 paired TRAIN teacher-transport diagnostics",
+    "control_successes": 18,
+    "candidate_successes": 15,
+    "net_wins": -3,
+    "gate_passed": false,
+    "full_validation_launched": false,
+    "hypothesis_status": "closed_without_retuning"
   }
 }
