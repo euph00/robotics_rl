@@ -1,59 +1,64 @@
-# Retention feedback investigation
+# Grasp retention feedback
 
-**The fixed prediction screen failed; an auxiliary retention critic is not proceeding.**
-A small classifier could not reliably distinguish grasps that would survive
-subsequent transport from those that would fail.
+**The direct-feedback pilot improved its matched control but missed its promotion
+gate: 35/40 retained transports versus 31/40, with 36 required.** The trial is
+closed. No full-system validation, new held-out test or reserve evaluation followed.
+The selected system remains unchanged at 69/100 complete and 53/100 within the
+inclusive 15,000-tick deadline on its last unseen-maze test.
 
-| Case-weighted measure | Logistic model | Comparison / gate |
+| Fixed TRAIN comparison | Control | Transport feedback |
 |---|---:|---:|
-| Brier score (lower is better) |0.23460|Object prevalence: 0.19458|
-| Brier improvement |−20.57%|Required ≥10%|
-| Within-case ranking |0.52|Required ≥0.65|
+| Retained transports |31/40|35/40|
+| Prepared handovers |40/40|40/40|
+| Carry grasp losses |9|5|
 
-The cohort contains 118 actual successful grasp handovers: 88 subsequent retained
-transports and 30 downstream failures. Two grasp-horizon failures remain recorded
-as exclusions. The 40 canonical cases span eight TRAIN layouts; variants from a
-case always remain together. One fixed L2 logistic configuration used the
-existing 70 measured/derived grasp features, with scaling learned inside each
-training fold. Eight leave-one-layout-out fits were compared with global and
-object-specific training-fold prevalence. Within-case ranking is averaged over
-25 discordant cases; its 50 dependent pairs are not treated as independent cases.
+There were seven candidate-only successes and three control-only successes.
+Foam, banana, can, apple and mug scored 5/8, 8/8, 5/8, 5/8 and 8/8 in the
+control; feedback scored 6/8, 8/8, 7/8, 6/8 and 8/8. These are planned-transport
+TRAIN diagnostics after learned pickup, not full-task or unseen-maze results.
 
-All fits converged, but the classifier lost to object prevalence on seven of
-eight excluded layouts. Independent checks reproduced input identities, scaling,
-case weights, coefficients and predictions. The eight fits took 0.62 seconds, excluding preparation and auditing;
-there were no policy updates, policy inference or physics interactions. No
-hyperparameter, feature or cohort search followed. This small negative linear
-screen does not establish fundamental unobservability; it does not justify
-optimizing an action-value critic from these data either.
+The improvement does not establish an advance over the starting grasp policy.
+On the 20 cases overlapping the earlier qualification trial, the original `fa7`
+actor retained 18/20, the new continuation control 15/20, and feedback 18/20.
+Feedback exchanged two original successes for two wins. Shared source hashes,
+settings, map seeds and planned approaches match; recording harnesses differ.
+This historical comparison suggests recovery of continuation damage, rather
+than a demonstrated net gain over the original actor.
 
-The next experiment adds direct feedback from actual transport outcomes alongside
-unchanged SAC+HER. Synthetic checks and independent implementation review passed. The two matched
-branches launched at 22:31:52 UTC on 28 September 2026; their fixed endpoint
-comparison follows only if both finish all four rounds. No improved performance
-has been established yet.
+Both branches began from the same original actor and received four fixed rounds
+of 3,000 native pickup decisions plus 120 fresh stochastic original-start
+transport attempts. Both used unchanged SAC+HER with demonstration regularization
+and the same extra BC minibatch; only one included the actual transport outcome
+in its extra policy-gradient step. Each frozen collection was consumed once.
+The two first-round collections matched exactly before treatment. All four
+single-step proposals per arm passed the fixed change limits; critics,
+temperature, SAC optimizer states and native update counters were untouched by
+these auxiliary steps. No old trajectories entered the score update or HER.
 
-Two matched arms start from the original grasp checkpoint. Each receives four
-rounds of 3,000 native pickup decisions followed by 120 fresh stochastic
-original-start transport attempts on TRAIN layouts. Both get the same extra
-imitation step; only one also uses the measured transport outcome to update its
-grasp policy. Each collection uses a frozen actor and is consumed once. A strict
-change limit accepts or restores the single proposed update. Native HER rewards
-and ending flags remain unchanged; all preparation and transport costs count.
+Per arm, new training totaled 12,000 pickup decisions, 2,000 SAC updates, 2,000
+separate critic-warmup updates and four auxiliary updates. An independent audit
+reconciled all 960 training suffixes and 80 endpoint attempts, original rewards
+and ending flags, checkpoint identities and **14,013,305 new physics ticks**
+including setup and settling. The pilot took 43.0 minutes. No retries, checkpoint
+selection or threshold changes followed its result.
 
-The fixed endpoints will face 40 paired TRAIN cases with deterministic actions.
-The candidate must retain at least 36/40 objects, improve on its matched control,
-and avoid new preparation failures. A passing result can authorize one full
-60-case development evaluation, requiring at least 57 complete tasks and 38
-within the inclusive tick limit. The physical pilot is capped at two hours.
-These are development checks; neither retired test bank nor the final-study
-reserve will be used. High variance and limited useful action variation remain
-reasons this experiment could fail.
+![Matched TRAIN retention comparison](../runs/phase2_grasp_retention_pg_compare01/artifacts/retention_comparison.png)
 
-[Exact prospective protocol](../runs/phase2_grasp_retention_pg_plan01/artifacts/proposal.md) ·
-[Independent implementation review](../runs/phase2_grasp_retention_pg_plan01/artifacts/independent_implementation_review_scene_bank.json) ·
-[Frozen execution](../runs/phase2_grasp_retention_pg_plan01/artifacts/execution_v1.json).
+[Frozen protocol](../runs/phase2_grasp_retention_pg_plan01/artifacts/proposal.md) ·
+[Execution](../runs/phase2_grasp_retention_pg_plan01/artifacts/execution_v1.json) ·
+[All paired outcomes](../runs/phase2_grasp_retention_pg_compare01/artifacts/summary.json) ·
+[Independent result audit](../runs/phase2_grasp_retention_pg_compare01/artifacts/independent_result_audit_scene_bank.json).
 
-[Frozen screen](../runs/phase2_grasp_retention_predictor_plan01/artifacts/plan_v2.json) ·
-[Results and all folds](../runs/phase2_grasp_retention_predictor01/artifacts/report.md) ·
-[Software audit](../runs/phase2_grasp_retention_predictor01/artifacts/independent_software_audit.json).
+## Earlier prediction screen
+
+The preceding fixed logistic predictor also failed its feasibility gate. Across
+118 real handovers from eight TRAIN layouts, its case-weighted Brier score was
+0.23460 versus 0.19458 for object prevalence, and within-case ranking was 0.52
+(required 0.65). All eight leave-one-layout-out fits converged and were independently
+reproduced. Fitting took 0.62 seconds, excluding preparation and auditing; there
+were no policy updates or physics interactions. No feature or hyperparameter
+search followed. This negative small linear screen does not establish fundamental
+unobservability. The proposed auxiliary action-value critic did not proceed.
+
+[Prediction screen](../runs/phase2_grasp_retention_predictor01/artifacts/report.md) ·
+[Prediction audit](../runs/phase2_grasp_retention_predictor01/artifacts/independent_software_audit.json).

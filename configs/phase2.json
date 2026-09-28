@@ -36,7 +36,7 @@
     "milestone_test": "freeze candidate before one final test bank evaluation; if subsequently used for debugging, disclose and retire bank as development",
     "final_study": "separate reserve bank and independent training seeds"
   },
-  "status": "retention_feedback_pilot_running",
+  "status": "carry_command_slew_investigation",
   "frozen_baseline": "configs/milestone1_candidate.json",
   "object_indices": [
     14,
@@ -77,7 +77,7 @@
     "hypothesis_status": "closed_without_retuning"
   },
   "retention_feedback_pilot": {
-    "status": "running",
+    "status": "closed_gate_failed",
     "protocol": "runs/phase2_grasp_retention_pg_plan01/artifacts/proposal.json",
     "protocol_sha256": "59e67e27996ada5c95e35a7a29c76d3cc823ccf96e5963a4c8b5d02de5cce7bf",
     "arms": "matched SAC+HER; extra BC step with retention weight 0 versus 1",
@@ -88,6 +88,20 @@
     "execution_sha256": "811e45c63a1a4e4fe18cc57ce3cdf1885dbc0e575281b652c6499642256de381",
     "control_run": "phase2_grasp_retention_pg_control01",
     "retention_run": "phase2_grasp_retention_pg_positive01",
-    "comparison_run": "phase2_grasp_retention_pg_compare01"
+    "comparison_run": "phase2_grasp_retention_pg_compare01",
+    "control_successes": 31,
+    "retention_successes": 35,
+    "paired_cases": 40,
+    "candidate_only_successes": 7,
+    "control_only_successes": 3,
+    "gate_passed": false,
+    "new_inclusive_physics_ticks": 14013305,
+    "independent_result_audit": "runs/phase2_grasp_retention_pg_compare01/artifacts/independent_result_audit_scene_bank.json"
+  },
+  "next_investigation": {
+    "method": "matched learned-carry command-rate limiter diagnostic",
+    "status": "proposal_and_implementation",
+    "physics_launched": false,
+    "preserve_original_physics": true
   }
 }
