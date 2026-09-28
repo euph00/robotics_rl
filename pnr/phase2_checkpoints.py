@@ -18,7 +18,7 @@ BASE_METHOD_FIELDS = ('workers','layouts','seed','horizon','delta_scale','batch_
                  'gamma','shaping_weight','target_entropy','n_sampled_goal',
                  'demonstrations_sha256','scene_bank_sha256')
 PREPARATION_FIELDS=('preparation_mode','preparation_grasp_sha256','preparation_settings','training_cases_sha256')
-METHOD_FIELDS = BASE_METHOD_FIELDS + ('bc_weight','demo_batch_size','navigation_only','buffer_size','balance_objects','balance_replay_objects') + PREPARATION_FIELDS
+METHOD_FIELDS = BASE_METHOD_FIELDS + ('bc_weight','demo_batch_size','navigation_only','buffer_size','balance_objects','balance_replay_objects','balance_replay_sources') + PREPARATION_FIELDS
 SEMANTIC_SOURCES = ('pnr/env.py','pnr/carry.py','pnr/general_carry.py','pnr/multi_carry.py',
                     'pnr/spatial_features.py','pnr/reference.py','pnr/planning.py',
                     'pnr/local_control.py','pnr/scenes.py')
@@ -48,6 +48,9 @@ def _normalized_method(method):
     result['navigation_only']=bool(result.get('navigation_only',False))
     result['balance_objects']=bool(result.get('balance_objects',False))
     result['balance_replay_objects']=bool(result.get('balance_replay_objects',False))
+    result['balance_replay_sources']=bool(result.get('balance_replay_sources',False))
+    if result['balance_replay_sources'] and not result['balance_replay_objects']:
+        raise ValueError('Preparation source balancing requires object-balanced replay')
     mode=result.get('preparation_mode','reference')
     if mode not in ('reference','learned-grasp'):raise ValueError('Unknown carry preparation mode')
     result['preparation_mode']=mode
@@ -69,7 +72,7 @@ def _normalized_method(method):
 
 def _method(config):
     result={key:config[key] for key in BASE_METHOD_FIELDS}
-    result.update({key:config[key] for key in ('bc_weight','demo_batch_size','navigation_only','buffer_size','balance_objects','balance_replay_objects')+PREPARATION_FIELDS if key in config})
+    result.update({key:config[key] for key in ('bc_weight','demo_batch_size','navigation_only','buffer_size','balance_objects','balance_replay_objects','balance_replay_sources')+PREPARATION_FIELDS if key in config})
     return _normalized_method(result)
 
 
@@ -77,7 +80,8 @@ def _semantic_sources(method):
     preparation_sources=('pnr/learned_carry.py','pnr/system.py','pnr/general_manipulation.py',
         'pnr/skills.py','pnr/clearance_grasps.py','pnr/policies.py','pnr/features.py','pnr/grasp_actor_ablation.py') if method['preparation_mode']=='learned-grasp' else ()
     replay_sources=('pnr/object_balanced_her.py',) if method['balance_replay_objects'] else ()
-    return SEMANTIC_SOURCES+preparation_sources+replay_sources+(('pnr/regularized_sac.py',) if method['bc_weight']>0 else ())+(('pnr/navigation_features.py',) if method['navigation_only'] else ())
+    source_balance_sources=('pnr/preparation_balanced_her.py','pnr/preparation_metadata.py') if method['balance_replay_sources'] else ()
+    return SEMANTIC_SOURCES+preparation_sources+replay_sources+source_balance_sources+(('pnr/regularized_sac.py',) if method['bc_weight']>0 else ())+(('pnr/navigation_features.py',) if method['navigation_only'] else ())
 
 
 def signature(config,source_root):
@@ -217,6 +221,15 @@ def validate_loaded_model(model,checkpoint,workers):
         raise ValueError('Saved replay class differs from declared object-balanced sampling')
     if balanced and (len(replay.object_indices)!=5 or set(replay.object_indices)!={14,5,2,7,10}):
         raise ValueError('Saved object-balanced replay must retain all five declared objects')
+    from pnr.preparation_balanced_her import PreparationBalancedHerReplayBuffer
+    source_balanced=isinstance(replay,PreparationBalancedHerReplayBuffer)
+    if source_balanced!=method['balance_replay_sources']:
+        raise ValueError('Saved replay class differs from declared preparation source balancing')
+    if source_balanced:
+        from pnr.preparation_metadata import PREPARATION_SOURCES_BY_OBJECT
+        expected={int(k):tuple(v) for k,v in PREPARATION_SOURCES_BY_OBJECT.items()}
+        actual={int(k):tuple(v) for k,v in replay.preparation_sources_by_object.items()}
+        if actual!=expected:raise ValueError('Saved replay preparation families differ from declared method')
     if model.buffer_size!=method['buffer_size'] or replay.buffer_size!=max(method['buffer_size']//workers,1):
         raise ValueError('Saved SAC replay capacity differs from declared method')
     if method['navigation_only']:

@@ -345,3 +345,37 @@ def test_resume_replay_class_and_declared_objects_are_validated(bundle):
     replacement.object_indices=(14,5,2,7)
     with pytest.raises(ValueError,match='five declared objects'):
         validate_loaded_model(model,checkpoint,2)
+
+
+def test_preparation_sampling_signature_defaults_and_source_families(bundle):
+    from pnr.phase2_checkpoints import check_signature
+    from pnr.preparation_balanced_her import PreparationBalancedHerReplayBuffer
+    from pnr.preparation_metadata import PREPARATION_SOURCES_BY_OBJECT
+    model,_,logger,source,config,sig=bundle
+    old=copy.deepcopy(sig);old['method'].pop('balance_replay_sources')
+    check_signature(old,sig)
+    for name in ('object_balanced_her','preparation_balanced_her','preparation_metadata'):
+        (source/f'pnr/{name}.py').write_text('# fixed sampler source\n')
+    balanced=signature(dict(config,balance_replay_objects=True,balance_replay_sources=True),source)
+    assert 'pnr/preparation_metadata.py' in balanced['semantic_sources']
+    with pytest.raises(ValueError,match='balance_replay'):
+        check_signature(old,balanced)
+    with pytest.raises(ValueError,match='requires object'):
+        signature(dict(config,balance_replay_sources=True),source)
+    checkpoint=load_checkpoint(logger.directory,sig)
+    checkpoint['state']['resume_signature']=balanced
+    with pytest.raises(ValueError,match='replay class'):
+        validate_loaded_model(model,checkpoint,2)
+    replay=PreparationBalancedHerReplayBuffer(128,model.observation_space,model.action_space,
+        n_envs=2,env=model.env,device='cpu',copy_info_dict=True,n_sampled_goal=1,
+        object_indices=[14,5,2,7,10],preparation_sources_by_object=PREPARATION_SOURCES_BY_OBJECT)
+    replay.pos=checkpoint['state']['replay_position'];replay._current_ep_start[:]=replay.pos
+    model.replay_buffer=replay
+    validate_loaded_model(model,checkpoint,2)
+    checkpoint['state']['resume_signature']['method']['balance_replay_sources']=False
+    with pytest.raises(ValueError,match='preparation source'):
+        validate_loaded_model(model,checkpoint,2)
+    checkpoint['state']['resume_signature']['method']['balance_replay_sources']=True
+    replay.preparation_sources_by_object[14]=('learned',)
+    with pytest.raises(ValueError,match='preparation families'):
+        validate_loaded_model(model,checkpoint,2)

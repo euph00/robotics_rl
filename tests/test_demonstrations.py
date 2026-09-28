@@ -8,8 +8,8 @@ from scripts.profile_learner import SyntheticProfileEnv
 from pnr.demonstrations import seed_replay
 
 
-@pytest.mark.parametrize('object_labels',[False,True])
-def test_real_prefixes_are_imported_without_cross_reset_hindsight(tmp_path,object_labels):
+@pytest.mark.parametrize('object_labels,preparation_labels',[(False,False),(True,False),(True,True)])
+def test_real_prefixes_are_imported_without_cross_reset_hindsight(tmp_path,object_labels,preparation_labels):
     vector=DummyVecEnv([SyntheticProfileEnv,SyntheticProfileEnv])
     model=SAC('MultiInputPolicy',vector,buffer_size=100,replay_buffer_class=HerReplayBuffer,
         replay_buffer_kwargs={'copy_info_dict':True},policy_kwargs={'net_arch':[8,8]},device='cpu')
@@ -24,9 +24,10 @@ def test_real_prefixes_are_imported_without_cross_reset_hindsight(tmp_path,objec
             transitions.append({'observation':obs,'next_observation':following,'action':np.zeros(4,dtype=np.float32),
                 'reward':-1.,'terminated':False,'truncated':step==length-1,
                 'info':{'bilateral_contact':True,'action_calls_delta':3,'physics_ticks_delta':15}})
-        episodes.append({'transitions':transitions,'object_idx':14 if episode==0 else 2,'collection_mode':'test_physical'})
+        episodes.append({'transitions':transitions,'object_idx':14 if episode==0 else 2,'collection_mode':'demonstration' if episode==0 else 'learned-handover'})
     path=tmp_path/'physical.pkl';path.write_bytes(pickle.dumps({'schema_version':1,'metadata':{},'episodes':episodes}))
-    report=seed_replay(model,path,object_labels=object_labels)
+    mapping={'demonstration':'reference','learned-handover':'learned'} if preparation_labels else None
+    report=seed_replay(model,path,object_labels=object_labels,preparation_sources_by_mode=mapping)
     assert report['transitions_imported']==8
     assert report['transitions_omitted_from_replay']==2
     assert report['collector_timeouts']==1
@@ -34,10 +35,16 @@ def test_real_prefixes_are_imported_without_cross_reset_hindsight(tmp_path,objec
     if object_labels:
         assert report['imported_object_transition_counts']=={'14':4,'2':4}
         assert all(buffer.infos[t,0]['object_idx']==14 and buffer.infos[t,1]['object_idx']==2 for t in range(4))
-        assert buffer.infos[0,0]['replay_source']=='test_physical'
+        assert buffer.infos[0,0]['replay_source']=='demonstration'
     else:
         assert report['imported_object_transition_counts']=={}
         assert 'object_idx' not in buffer.infos[0,0]
+    if preparation_labels:
+        assert report['imported_preparation_transition_counts']=={'14/reference':4,'2/learned':4}
+        assert all(buffer.infos[t,0]['preparation_source']=='reference' and buffer.infos[t,1]['preparation_source']=='learned' for t in range(4))
+    else:
+        assert report['imported_preparation_transition_counts']=={}
+        assert 'preparation_source' not in buffer.infos[0,0]
     np.testing.assert_array_equal(buffer.ep_length[:4],4)
     assert buffer.dones[3].all() and buffer.timeouts[3].all()
     np.testing.assert_array_equal(buffer.next_observations['achieved_goal'][3,:,0],[4,14])

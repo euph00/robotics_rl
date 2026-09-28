@@ -231,6 +231,7 @@ def main():
     p.add_argument('--navigation-only',action='store_true')
     p.add_argument('--balance-objects',action='store_true',help='Uniform TRAIN-object BC sampling before per-object direction strata')
     p.add_argument('--balance-replay-objects',action='store_true',help='Uniform original-object sampling before standard HER relabeling')
+    p.add_argument('--balance-replay-sources',action='store_true',help='Uniform fixed preparation families within each replay object')
     p.add_argument('--preparation-grasp',help='Opt-in frozen learned grasp for conditional five-object carry training')
     p.add_argument('--training-layouts',type=int,help='Number of first selected TRAIN layouts used for learned handovers; default8')
     p.add_argument('--training-objects',type=int,nargs='+',default=[14,5,2,7,10])
@@ -246,7 +247,7 @@ def main():
         if Path(args.resume_run).name!=args.resume_run:p.error('Use a run ID for --resume-run')
         parent_config=json.loads((ROOT/'runs'/args.resume_run/'config.json').read_text())
         explicit={token.split('=')[0] for token in sys.argv[1:] if token.startswith('--')}
-        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts','navigation_only','buffer_size','critic_warmup_tau','balance_objects','preparation_grasp','training_layouts','training_objects','balance_replay_objects'):
+        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size','validation_layouts','navigation_only','buffer_size','critic_warmup_tau','balance_objects','preparation_grasp','training_layouts','training_objects','balance_replay_objects','balance_replay_sources'):
             if '--'+key.replace('_','-') not in explicit:setattr(args,key,parent_config.get(key,getattr(args,key)))
         if '--preparation-grasp' not in explicit and parent_config.get('frozen_preparation_grasp'):
             args.preparation_grasp=parent_config['frozen_preparation_grasp']
@@ -254,6 +255,7 @@ def main():
             p.error('Cannot change completed critic-warmup provenance on resume')
     if not args.demonstrations:p.error('--demonstrations required for a fresh run')
     if args.buffer_size<1:p.error('--buffer-size must be positive')
+    if args.balance_replay_sources and not args.balance_replay_objects:p.error('Source balancing requires explicit object-balanced replay')
     if args.balance_replay_objects and not args.preparation_grasp:p.error('Object-balanced replay requires declared learned five-object handover training')
     if args.workers>args.layouts:p.error('Each worker needs at least one selected layout')
     torch.set_num_threads(1);np.random.seed(args.seed);random.seed(args.seed);torch.manual_seed(args.seed)
@@ -285,6 +287,12 @@ def main():
         independent_final_study_seed=False,scene_cache_policy='prime declared learned handovers once; counted restore hold before each full-goal episode' if preparation_cases else 'prime all assigned physical scenes once before learning',critic_initialization='fresh with fixed-actor Bellman warmup',
         gpu_numerics='cuDNN benchmark enabled; non-bitwise GPU training; float32 matmul high',
         initial_checkpoint_sha256=None if not args.initial_checkpoint else hashlib.sha256(Path(args.initial_checkpoint).read_bytes()).hexdigest())
+    preparation_source_mapping=None
+    if args.balance_replay_sources:
+        from pnr.preparation_metadata import PREPARATION_SOURCES_BY_MODE, PREPARATION_SOURCES_BY_OBJECT
+        preparation_source_mapping=dict(PREPARATION_SOURCES_BY_MODE)
+        config['preparation_sources_by_mode']=preparation_source_mapping
+        config['preparation_sources_by_object']=PREPARATION_SOURCES_BY_OBJECT
     current_signature=signature(config,ROOT)
     resumed=load_checkpoint(ROOT/'runs'/args.resume_run,current_signature) if args.resume_run else None
     inherited=0 if resumed is None else resumed['state']['online_decisions']
@@ -323,6 +331,10 @@ def main():
         from pnr.object_balanced_her import ObjectBalancedHerReplayBuffer
         replay_class=ObjectBalancedHerReplayBuffer
         replay_kwargs['object_indices']=list(args.training_objects)
+    if args.balance_replay_sources:
+        from pnr.preparation_balanced_her import PreparationBalancedHerReplayBuffer
+        replay_class=PreparationBalancedHerReplayBuffer
+        replay_kwargs['preparation_sources_by_object']=PREPARATION_SOURCES_BY_OBJECT
     if resumed is not None:
         model=learner.load(resumed['model'],env=schema,device=args.device)
         model.load_replay_buffer(resumed['replay'],truncate_last_traj=True)
@@ -398,7 +410,8 @@ def main():
                 logger.update(summary='Measuring initialized actor on training and separate validation layouts.')
                 callback.evaluate('bc_zero_online')
                 logger.update(summary='Seeding real HER replay and fitting fresh critics with actor fixed.')
-                callback.initialization['demonstrations']=seed_replay(model,args.demonstrations,object_labels=args.balance_replay_objects)
+                callback.initialization['demonstrations']=seed_replay(model,args.demonstrations,object_labels=args.balance_replay_objects,
+                    preparation_sources_by_mode=preparation_source_mapping)
                 if args.balance_replay_objects:
                     callback.initialization['replay_sampling_before_warmup']=model.replay_buffer.sampling_report()
                 callback.initialization['critic']=critic_only_warmup(model,args.warmup_updates,args.batch_size,
@@ -423,9 +436,13 @@ def main():
                 ignore_worker_stop_signals(parent_pid)
                 if preparation_cases is not None:
                     from pnr.learned_carry import LearnedMultiCaseCarry
-                    return LearnedMultiCaseCarry(preparation_cases[index::args.workers],grasp_checkpoint=str(frozen_grasp.resolve()),
+                    env=LearnedMultiCaseCarry(preparation_cases[index::args.workers],grasp_checkpoint=str(frozen_grasp.resolve()),
                         grasp_sha256=preparation_sha,seed=args.seed+index,episodes_per_case=1,
                         horizon=args.horizon,delta_scale=args.delta_scale)
+                    if args.balance_replay_sources:
+                        from pnr.preparation_metadata import LearnedPreparationMetadata
+                        env=LearnedPreparationMetadata(env)
+                    return env
                 return MultiSceneCarry(layouts[index::args.workers],seed=args.seed+index,cache_size=4,
                     episodes_per_scene=4,horizon=args.horizon,delta_scale=args.delta_scale)
             physical=SubprocVecEnv([lambda i=i:make(i) for i in range(args.workers)],start_method='spawn')

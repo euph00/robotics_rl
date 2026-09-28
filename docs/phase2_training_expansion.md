@@ -98,3 +98,24 @@ declared probabilities in expectation. Online demonstration regularization and
 object-balanced HER already used categorical draws and need no correction.
 The active balanced online branch has zero additional BC updates and is
 unaffected; its parent initializer's actual allocation is disclosed here.
+
+
+The object-balanced branch reaches51/60 uninterrupted validation successes at
+40,000 decisions (5,000 SAC updates), versus46/60 for its BC initializer. Timely
+completion including settling is47/60. Its trajectory is not monotonic:8k and
+24k checkpoints score50/60 and46/60. The compact SAC grasp combination scores
+46/60 with the8k carry, so clearance01 remains the stronger complete system.
+No held-out policy or physical evaluation has been used.
+
+A remaining replay mismatch is explicit: learned foam initially receives only
+0.195% of all object-balanced draws because its4,698 rows share a stratum with
+478,363 reference-prepared foam rows. The next controlled branch changes only
+replay preparation-family sampling:10% reference foam,10% learned foam and20%
+each of the other four learned-prepared objects. The actor initializer, physical
+40-case TRAIN cache, dataset, BC regularization, fresh2k critic warmup and40k
+online budget match the object-only branch. It imports fresh source labels from
+a declared collection-mode mapping; online labels are added by a metadata-only
+wrapper. No old replay is relabeled or migrated, and no teacher acts at inference.
+Every required object/family stratum must remain eligible; missing provenance
+or a vanished stratum stops sampling. Source labels do not enter observations.
+This is a preparation-distribution ablation, not prioritized failure replay.

@@ -7,7 +7,7 @@ import pickle
 import numpy as np
 
 
-def seed_replay(model, path, *, object_labels=False):
+def seed_replay(model, path, *, object_labels=False, preparation_sources_by_mode=None):
     """Import a trusted local dataset into a fresh vector HER replay buffer.
 
     Whole demonstration episodes are assigned to worker streams. Only real
@@ -15,6 +15,10 @@ def seed_replay(model, path, *, object_labels=False):
     the final prefix of each unfinished episode gets a collector timeout, so
     subsequent online resets cannot connect unrelated physical trajectories.
     """
+    if preparation_sources_by_mode is not None:
+        if not object_labels:raise ValueError('Preparation labels require explicit original object labels')
+        if not preparation_sources_by_mode or any(value not in ('reference','learned') for value in preparation_sources_by_mode.values()):
+            raise ValueError('Declare known collection modes and canonical preparation families')
     path=Path(path).resolve()
     data=pickle.loads(path.read_bytes())
     if data.get('schema_version') != 1 or not data.get('episodes'):
@@ -35,6 +39,10 @@ def seed_replay(model, path, *, object_labels=False):
             if isinstance(obj,bool) or not isinstance(obj,(int,np.integer)) or not 0<=obj<15:
                 raise ValueError('Object-balanced replay needs each real episode original object_idx')
             source=str(episode.get('collection_mode','demonstration'))
+            if preparation_sources_by_mode is not None:
+                if source not in preparation_sources_by_mode:raise ValueError('Undeclared preparation collection mode: '+source)
+                family=preparation_sources_by_mode[source]
+                if episode.get('preparation_source',family)!=family:raise ValueError('Episode preparation source conflicts with declared lineage')
             stream.extend((row,int(obj),source) for row in transitions)
         else:
             stream.extend(transitions)
@@ -44,7 +52,7 @@ def seed_replay(model, path, *, object_labels=False):
     if length>=replay.buffer_size:
         raise ValueError('Seed data must fit the configured replay capacity')
     action_calls=physics_ticks=collector_timeouts=0
-    imported_objects={}
+    imported_objects={};imported_preparations={}
     for index in range(length):
         entries=[stream[index] for stream in streams]
         records=[entry[0] for entry in entries] if object_labels else entries
@@ -65,6 +73,11 @@ def seed_replay(model, path, *, object_labels=False):
             for info,(_,obj,source) in zip(infos,entries):
                 if 'object_idx' in info and info['object_idx']!=obj:raise ValueError('Transition and episode object labels disagree')
                 info.update(object_idx=obj,replay_source=source)
+                if preparation_sources_by_mode is not None:
+                    family=preparation_sources_by_mode[source]
+                    if info.get('preparation_source',family)!=family:raise ValueError('Transition preparation source conflicts with declared lineage')
+                    info['preparation_source']=family
+                    key=f'{obj}/{family}';imported_preparations[key]=imported_preparations.get(key,0)+1
                 imported_objects[str(obj)]=imported_objects.get(str(obj),0)+1
         dones=np.array([record['terminated'] or record['truncated'] for record in records],dtype=bool)
         for worker,(record,info) in enumerate(zip(records,infos)):
@@ -88,6 +101,8 @@ def seed_replay(model, path, *, object_labels=False):
         'imported_source_action_calls':action_calls,'imported_physics_ticks':physics_ticks,
         'collector_timeouts':collector_timeouts,'object_labels_added':bool(object_labels),
         'imported_object_transition_counts':imported_objects,
+        'preparation_sources_by_mode':preparation_sources_by_mode,
+        'imported_preparation_transition_counts':imported_preparations,
         'teacher_at_evaluation':False,'hindsight_at_evaluation':False,'reward_roundoff_atol':1e-5}
 
 
