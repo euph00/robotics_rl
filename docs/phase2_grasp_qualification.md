@@ -45,3 +45,19 @@ Plan03 collection completed once and passed the independent data audit. All 120 
 The immutable dataset SHA256 is `998437ab00a43c6d6835d2c32bc2a971f4ca924eefaff5bac8171c7bab9181d1`. The audit verifies all 45 collection sources, raw-prefix hashes, unchanged rewards and native flags, all failures, isolated sampling and complete costs. Its record is `runs/phase2_grasp_qualified_demos03/artifacts/independent_data_audit_scene_bank.json`. All five objects have eligible prefixes.
 
 The separate lean runner `scripts/phase2_refine_qualified_grasp.py` implements `inspect`, `fit` and `compare` as explicit stages. It reuses the existing old-data groups and unchanged physical collector, checks the audited dataset and raw-prefix identity, and never edits native tuples or seeds replay. Fitting uses a separate BC optimizer, verifies unchanged critics, target critics, log-standard-deviation head parameters, temperature and inherited SAC counters, then saves only the fixed endpoint and checks its reload. Shared actor layers can change the conditional standard deviation even though the standard-deviation head is not updated or recalibrated. Deterministic inference remains the comparison contract. The 20-case comparison freezes both checkpoints and settings before its 40 fresh starts, retains all outcomes, and implements the declared net-win and preparation guards without launching a full60 evaluation. At this implementation-review stage, no BC fit or paired comparison has run.
+
+The reviewed implementation was committed as `4a54166`. Root then authorized exactly one fit and one paired comparison in `runs/phase2_grasp_qualified_plan03/artifacts/root_refinement_authorization.json`, binding runner SHA `bd5409f3397b2c4ecf1e9678d404825f7b0d68d8d076e44eca5cfabeba5664bd`. The fixed fit completed **2,000 updates / 800,000 examples**, exactly 400,000 from each source, with uniform-object sampling counts between 79,672 and 80,264. All protected parameter/counter checks and checkpoint reload passed. There were zero new physical interactions or SAC updates during fitting. The candidate is `runs/phase2_grasp_qualified_bc03/checkpoints/grasp_bc_002000.zip`, SHA256 `b88768e204c98cec391691f9e48a0340b033ce76e74f21704c9f72a96e52473b`.
+
+The fixed 20-case TRAIN comparison **failed its prospective gate**: control retention was 18/20 and candidate retention 15/20. There was one candidate-only success and four control-only successes, giving **−3 net wins**, below the required +3. Both policies reached all 20 handovers, so the preparation guard passed. All 40 branches and costs remain in `runs/phase2_grasp_qualified_compare03/artifacts/summary.json`.
+
+| Object | Control retained / 4 | Candidate retained / 4 |
+|---|---:|---:|
+| Foam brick | 4 | 3 |
+| Banana | 4 | 4 |
+| Tomato can | 3 | 3 |
+| Apple | 3 | 2 |
+| Mug | 4 | 3 |
+
+The candidate-only win was `train_011_object_02`; control-only wins were `train_009_object_02`, `train_009_object_14`, `train_010_object_10` and `train_011_object_07`. Comparison cost was **522,190 inclusive physics ticks**; collection plus comparison cost was **2,024,915 ticks**. This is measured teacher-transport retention on development cases, not full-task or independent-test performance. The result does not support this fixed qualification-and-BC refinement. Under the prospective rule, the hypothesis is closed: no retuning, replacement collection, full60 evaluation or heldout rollout follows. The original grasp checkpoint remains selected.
+
+Independent endpoint/comparison audit passed at `runs/phase2_grasp_qualified_compare03/artifacts/independent_endpoint_pair_audit_scene_bank.json`. It reproduced all 800,000 sampling draws, verified unchanged protected state and six changed actor mean-network tensors, checked every paired branch and cost, and confirmed the failed gate. All 20 pairs had identical first recorded grasp inputs; this does not establish identity of unrecorded simulator state.
