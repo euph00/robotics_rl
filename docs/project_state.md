@@ -10,6 +10,12 @@ Frozen scene bank:64training/12validation/20milestone-test/20final-reserve layou
 
 An audit verified excessive stochastic action noise in the old final navigation actor and mismatch between its narrow BC goals and inherited HER/curriculum data. Neither std calibration nor critic warmup alone is claimed sufficient; physical validation before and after online updates will decide. See [audit](phase2_sac_audit.md), [scope](../configs/phase2.json), and live dashboard.
 
+Current evidence: the new BC navigation actor passed4/4 development navigation checks, but ordinary SAC continuation fell to0/4. Multi-object grasp fell from9/10 after BC to0/10 after1,024 online decisions. Both failed continuations are stopped and retained as evidence. The active pivot adds an explicitly labeled demonstration-action loss during SAC; carry coefficients10/100 are being compared, and grasp uses a separately justified coefficient200. This is not ordinary SAC.
+
+The initial uninterrupted phase-2 BC system passed3/10 development cases, all within15,000 ticks including settling. A bounded IK fallback subsequently fixed all three exposed grasp failures with the unchanged actor and zero actual wall/table contacts. A shared24cm lift subgoal addresses long-object clearance; broader full-system validation is running. Can retention remains difficult: original position control produces measured within-call acceleration pulses up to259m/s². Slower physical transport works but misses the timing target. Reduced finger closure and tighter teacher closure gates were tested and rejected.
+
+Git snapshot `7650b3e` preserves the pre-cleanup development tree. Commit `9f2a827` removes obsolete pilot trainers/diagnostics; active source and useful tests remain in the working tree. Logs, datasets and checkpoints remain under ignored `runs/` with lineage and costs.
+
 ## Frozen first milestone result
 
 Three fresh original-start repetitions on foam brick 14 / scene 42 passed every stage, with no drops or wall/table contacts. Each ended 3.94 cm from the goal. A separate recorded rollout passed at 3.08 cm.

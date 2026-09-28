@@ -28,6 +28,7 @@ from pnr.multi_carry import CarrySchema, MultiSceneCarry
 from pnr.scenes import load_scene_bank, scene_records
 from pnr.spatial_features import CarrySpatialExtractor
 from pnr.sac_initialization import calibrate_actor_std,critic_only_warmup
+from pnr.regularized_sac import RegularizedSAC
 from pnr.demonstrations import seed_replay
 from pnr.telemetry import RunLogger,atomic_json
 from pnr.train import GracefulStop,ignore_worker_stop_signals
@@ -197,7 +198,8 @@ class Progress(BaseCallback):
             self.run_logger.metric(self.num_timesteps,scope='skill',metric_source='training',
                 train_success_rate=float(np.mean(self.recent)) if self.recent else 0.,episodes=self.episodes,
                 source_action_calls=self.train_calls,physics_ticks=self.train_ticks,updates=self.model._n_updates,
-                wall_seconds=time.monotonic()-self.started,accounting=self.accounting())
+                wall_seconds=time.monotonic()-self.started,accounting=self.accounting(),
+                regularization=getattr(self.model,'last_regularization_metrics',{}))
             self.last_log=self.num_timesteps
         # Fixed curriculum schedule; validation outcomes do not modify training cases.
         level=min(5,2+self.num_timesteps//10000)
@@ -223,15 +225,17 @@ def main():
     p.add_argument('--learning-rate',type=float,default=3e-5);p.add_argument('--delta-scale',type=float,default=.075)
     p.add_argument('--horizon',type=int,default=900);p.add_argument('--eval-every',type=int,default=10000)
     p.add_argument('--checkpoint-every',type=int,default=10000);p.add_argument('--device',default='cuda')
+    p.add_argument('--bc-weight',type=float,default=0.);p.add_argument('--demo-batch-size',type=int,default=256)
     args=p.parse_args()
+    if not np.isfinite(args.bc_weight) or args.bc_weight<0 or args.demo_batch_size<1:p.error('Invalid demonstration regularization settings')
     if args.resume_run and args.initial_checkpoint:p.error('--resume-run and --initial-checkpoint are exclusive')
     if min(args.steps,args.workers,args.horizon,args.eval_every,args.checkpoint_every)<1:p.error('Positive steps/workers/horizon/intervals required')
     if args.resume_run:
         if Path(args.resume_run).name!=args.resume_run:p.error('Use a run ID for --resume-run')
         parent_config=json.loads((ROOT/'runs'/args.resume_run/'config.json').read_text())
         explicit={token.split('=')[0] for token in sys.argv[1:] if token.startswith('--')}
-        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate'):
-            if '--'+key.replace('_','-') not in explicit:setattr(args,key,parent_config[key])
+        for key in ('demonstrations','bank','layouts','workers','seed','horizon','delta_scale','batch_size','learning_rate','bc_weight','demo_batch_size'):
+            if '--'+key.replace('_','-') not in explicit:setattr(args,key,parent_config.get(key,getattr(args,key)))
     if not args.demonstrations:p.error('--demonstrations required for a fresh run')
     if args.workers>args.layouts:p.error('Each worker needs at least one selected layout')
     torch.set_num_threads(1);np.random.seed(args.seed);random.seed(args.seed);torch.manual_seed(args.seed)
@@ -239,7 +243,7 @@ def main():
     validation=scene_records(bank,'validation')[:4]
     config=dict(vars(args),gamma=.995,shaping_weight=2.,alpha_initial=.005,target_entropy=-4.,
         n_sampled_goal=1,demonstrations_sha256=hashlib.sha256(Path(args.demonstrations).read_bytes()).hexdigest(),
-        scene_bank_sha256=bank['manifest_sha256'],supervised_loss_during_online_training=False,
+        scene_bank_sha256=bank['manifest_sha256'],supervised_loss_during_online_training=args.bc_weight>0,
         independent_final_study_seed=False,scene_cache_policy='prime all assigned physical scenes once before learning',critic_initialization='fresh with fixed-actor Bellman warmup',
         gpu_numerics='cuDNN benchmark enabled; non-bitwise GPU training; float32 matmul high',
         initial_checkpoint_sha256=None if not args.initial_checkpoint else hashlib.sha256(Path(args.initial_checkpoint).read_bytes()).hexdigest())
@@ -248,7 +252,9 @@ def main():
     inherited=0 if resumed is None else resumed['state']['online_decisions']
     config.update(steps_are_additional_online_decisions=True,inherited_online_decisions=inherited,
                   cumulative_online_budget=inherited+args.steps)
-    logger=RunLogger(args.run_id,kind='train',skill='carry',algorithm='BC-initialized SAC+HER',budget=inherited+args.steps,
+    algorithm='SAC+HER+demonstration regularization' if args.bc_weight>0 else 'BC-initialized SAC+HER'
+    learner=RegularizedSAC if args.bc_weight>0 else SAC
+    logger=RunLogger(args.run_id,kind='train',skill='carry',algorithm=algorithm,budget=inherited+args.steps,
         transitions=inherited,name='Spatial multi-maze SAC + HER',
         summary='Resuming ordinary SAC+HER.' if resumed else 'Initializing map-aware actor from diverse physical demonstrations.')
     (logger.directory/'artifacts').mkdir();(logger.directory/'checkpoints').mkdir();archive_sources(logger.directory)
@@ -265,24 +271,35 @@ def main():
         if any(len(s)==0 for s in strata):raise ValueError('Need turns, straights and goal holds for balanced imitation')
     schema=DummyVecEnv([lambda:CarrySchema() for _ in range(args.workers)])
     if resumed is not None:
-        model=SAC.load(resumed['model'],env=schema,device=args.device)
+        model=learner.load(resumed['model'],env=schema,device=args.device)
         model.load_replay_buffer(resumed['replay'],truncate_last_traj=True)
         validate_loaded_model(model,resumed,args.workers)
     else:
-        model=SAC('MultiInputPolicy',schema,learning_rate=args.learning_rate,buffer_size=100000,
+        model=learner('MultiInputPolicy',schema,learning_rate=args.learning_rate,buffer_size=100000,
             learning_starts=0,batch_size=args.batch_size,tau=.01,gamma=.995,train_freq=1,gradient_steps=1,
             ent_coef='auto_0.005',target_entropy=-4.,replay_buffer_class=HerReplayBuffer,
             replay_buffer_kwargs={'n_sampled_goal':1,'goal_selection_strategy':'future','copy_info_dict':True},
             policy_kwargs={'net_arch':[128,128],'features_extractor_class':CarrySpatialExtractor,
                 'features_extractor_kwargs':{'features_dim':128,'channels':32}},device=args.device,seed=args.seed)
         if args.initial_checkpoint:
-            model=SAC.load(args.initial_checkpoint,env=schema,device=args.device,learning_rate=args.learning_rate)
+            model=learner.load(args.initial_checkpoint,env=schema,device=args.device,learning_rate=args.learning_rate)
             if model.num_timesteps != 0:
                 raise ValueError('This initializer accepts only a zero-online BC checkpoint')
     # SB3 enables deterministic cuDNN kernels; benchmarked alternatives may be much faster.
     torch.backends.cudnn.deterministic=False
     torch.backends.cudnn.benchmark=True
     torch.set_float32_matmul_precision('high')
+    if args.bc_weight>0:
+        demo_obs={key:np.stack([r['observation'][key] for r in rows]) for key in CarrySchema().observation_space.spaces}
+        demo_actions=np.stack([r['teacher_action'] for r in rows]);norm=np.linalg.norm(demo_actions,axis=1)
+        groups={'turn':np.flatnonzero((norm>.5)&(np.abs(demo_actions[:,1])>.15)),
+                'straight':np.flatnonzero((norm>.5)&(np.abs(demo_actions[:,1])<=.15)),
+                'hold':np.flatnonzero(norm<=.5)}
+        model.bc_weight=args.bc_weight;model.demo_batch_size=args.demo_batch_size
+        manifest=model.set_demonstrations(demo_obs,demo_actions,groups,
+            group_probabilities=[.5,.35,.15],seed=args.seed+9000 if resumed is None else None)
+        atomic_json(logger.directory/'artifacts/actor_regularization.json',manifest|{'weight':args.bc_weight,
+            'demo_batch_size':args.demo_batch_size,'objective':'SAC actor loss + weight * original-goal demonstration action MSE'})
     if resumed is None:model.actor.features_extractor.set_carry_pose_mask(True)
     model.set_logger(configure(str(logger.directory/'sb3'),['csv']))
     callback=Progress(logger,layouts[:2]+validation,args,None);callback.model=model;callback.resume_signature=current_signature
@@ -310,7 +327,8 @@ def main():
                             bc_training_loss=float(np.mean(losses[-500:])),supervised_examples=update*args.batch_size,
                             wall_seconds=time.monotonic()-bc_started)
                     if stop.requested:break
-                callback.initialization['bc']={'updates':update,'batch_size':args.batch_size,'examples':update*args.batch_size,
+                callback.initialization['bc']={'parent_checkpoint':args.initial_checkpoint,
+                    'parent_checkpoint_sha256':config['initial_checkpoint_sha256'],'updates':update,'batch_size':args.batch_size,'examples':update*args.batch_size,
                     'wall_seconds':time.monotonic()-bc_started,'strata_counts':[len(s) for s in strata]}
                 callback.initialization['std_calibration']=calibrate_actor_std(model,-3.)
                 model.save(logger.directory/'checkpoints/bc_initialized')
@@ -344,7 +362,8 @@ def main():
             if resumed is not None:
                 restore_rng(resumed['rng'])
                 callback.checkpoint('resumed_before_additional_online')
-            logger.update(summary='Ordinary online SAC + HER; no imitation loss or teacher action during training.')
+            logger.update(summary=('Online SAC + HER with continuing demonstration action regularization; no teacher at inference.'
+                if args.bc_weight>0 else 'Ordinary online SAC + HER; no imitation loss or teacher action during training.'))
             model.learn(total_timesteps=args.steps,callback=callback,reset_num_timesteps=resumed is None)
             callback.checkpoint('final')
             if not stop.requested:

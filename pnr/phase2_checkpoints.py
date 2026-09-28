@@ -14,9 +14,10 @@ import torch
 from pnr.telemetry import atomic_json
 
 VERSION = 'phase2-checkpoint-v1'
-METHOD_FIELDS = ('workers','layouts','seed','horizon','delta_scale','batch_size','learning_rate',
+BASE_METHOD_FIELDS = ('workers','layouts','seed','horizon','delta_scale','batch_size','learning_rate',
                  'gamma','shaping_weight','target_entropy','n_sampled_goal',
                  'demonstrations_sha256','scene_bank_sha256')
+METHOD_FIELDS = BASE_METHOD_FIELDS + ('bc_weight','demo_batch_size')
 SEMANTIC_SOURCES = ('pnr/env.py','pnr/carry.py','pnr/general_carry.py','pnr/multi_carry.py',
                     'pnr/spatial_features.py','pnr/reference.py','pnr/planning.py',
                     'pnr/local_control.py','pnr/scenes.py')
@@ -37,10 +38,34 @@ def _resource_fingerprint(path):
     return hashlib.sha256(ast.dump(tree,include_attributes=False).encode()).hexdigest()
 
 
+def _normalized_method(method):
+    """Absent regularization fields in an old checkpoint mean ordinary SAC."""
+    result=dict(method)
+    weight=float(result.get('bc_weight',0.))
+    if not np.isfinite(weight) or weight<0:raise ValueError('Invalid checkpoint bc_weight')
+    result['bc_weight']=weight
+    # This setting is inactive for plain SAC, including pre-regularization runs.
+    size=result.get('demo_batch_size',256) if weight>0 else None
+    if weight>0 and (isinstance(size,bool) or not isinstance(size,(int,np.integer)) or size<1):
+        raise ValueError('Invalid checkpoint demo_batch_size')
+    result['demo_batch_size']=size
+    return result
+
+
+def _method(config):
+    result={key:config[key] for key in BASE_METHOD_FIELDS}
+    result.update({key:config[key] for key in ('bc_weight','demo_batch_size') if key in config})
+    return _normalized_method(result)
+
+
+def _semantic_sources(method):
+    return SEMANTIC_SOURCES+(('pnr/regularized_sac.py',) if method['bc_weight']>0 else ())
+
+
 def signature(config,source_root):
-    root=Path(source_root)
-    return {'version':VERSION,'method':{key:config[key] for key in METHOD_FIELDS},
-            'semantic_sources':{key:digest(root/key) for key in SEMANTIC_SOURCES},
+    root=Path(source_root);method=_method(config)
+    return {'version':VERSION,'method':method,
+            'semantic_sources':{key:digest(root/key) for key in _semantic_sources(method)},
             'resource_normalizations':{'pnr/multi_carry.py':_resource_fingerprint(root/'pnr/multi_carry.py')}}
 
 
@@ -48,9 +73,11 @@ def check_signature(expected,actual):
     if expected.get('version')!=VERSION or actual.get('version')!=VERSION:
         raise ValueError('Unsupported phase-2 checkpoint protocol')
     for group in ('method','semantic_sources'):
-        if set(expected[group])!=set(actual[group]):raise ValueError('Resume signature fields differ: '+group)
-        for key,value in expected[group].items():
-            if actual[group][key]!=value:
+        before_group=_normalized_method(expected[group]) if group=='method' else expected[group]
+        after_group=_normalized_method(actual[group]) if group=='method' else actual[group]
+        if set(before_group)!=set(after_group):raise ValueError('Resume signature fields differ: '+group)
+        for key,value in before_group.items():
+            if after_group[key]!=value:
                 if group=='semantic_sources' and key=='pnr/multi_carry.py':
                     before=expected.get('resource_normalizations',{}).get(key)
                     after=actual.get('resource_normalizations',{}).get(key)
@@ -133,8 +160,9 @@ def load_checkpoint(run_directory,current_signature):
     if status.get('status')=='running':raise ValueError('Stop the legacy run before reading its mutable checkpoint')
     config=json.loads((directory/'config.json').read_text())
     sources=json.loads((directory/'source_manifest.json').read_text())
-    old_signature={'version':VERSION,'method':{key:config[key] for key in METHOD_FIELDS},
-                   'semantic_sources':{key:sources[key] for key in SEMANTIC_SOURCES}}
+    old_method=_method(config)
+    old_signature={'version':VERSION,'method':old_method,
+                   'semantic_sources':{key:sources[key] for key in _semantic_sources(old_method)}}
     archived=directory/'sources/pnr/multi_carry.py'
     if archived.is_file():
         if digest(archived)!=sources['pnr/multi_carry.py']:raise ValueError('Archived scene-rotation source hash mismatch')
@@ -164,7 +192,16 @@ def validate_loaded_model(model,checkpoint,workers):
     if model.num_timesteps!=state['online_decisions'] or model._n_updates!=state['online_gradient_updates']:
         raise ValueError('Resume model counters differ from checkpoint state')
     if not getattr(replay,'copy_info_dict',False):raise ValueError('HER physical reward information missing')
-    method=state['resume_signature']['method']
+    method=_normalized_method(state['resume_signature']['method'])
+    declared_weight=method['bc_weight']
+    if float(getattr(model,'bc_weight',0.))!=declared_weight:
+        raise ValueError('Saved SAC bc_weight differs from declared method')
+    if declared_weight>0:
+        from pnr.regularized_sac import RegularizedSAC
+        if not isinstance(model,RegularizedSAC):raise ValueError('Regularized checkpoint requires RegularizedSAC.load')
+        if (model.demo_batch_size or model.batch_size)!=method['demo_batch_size']:
+            raise ValueError('Saved SAC demo_batch_size differs from declared method')
+        if model.demo_manifest is None:raise ValueError('Regularized checkpoint lacks demonstration manifest')
     if model.gamma!=method['gamma'] or model.target_entropy!=method['target_entropy']:
         raise ValueError('Saved SAC discount/entropy differs from declared method')
     if replay.n_sampled_goal!=method['n_sampled_goal'] or model.batch_size!=method['batch_size']:

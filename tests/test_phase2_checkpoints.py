@@ -243,3 +243,35 @@ def test_legacy_missing_one_interrupted_vector_is_explicitly_flagged(bundle):
     model.num_timesteps+=2
     checkpoint['state']['online_decisions']=model.num_timesteps
     with pytest.raises(ValueError,match='more than one'):validate_loaded_model(model,checkpoint,2)
+
+
+def test_regularization_signature_is_explicit_but_plain_legacy_compatible(bundle):
+    from pnr.phase2_checkpoints import check_signature
+    _,_,logger,source,config,sig=bundle
+    old=copy.deepcopy(sig)
+    old['method'].pop('bc_weight');old['method'].pop('demo_batch_size')
+    check_signature(old,signature(dict(config,bc_weight=0.,demo_batch_size=256),source))
+    (source/'pnr/regularized_sac.py').write_text('# auxiliary objective v1\n')
+    regular=signature(dict(config,bc_weight=10.,demo_batch_size=256),source)
+    assert 'pnr/regularized_sac.py' in regular['semantic_sources']
+    assert 'pnr/regularized_sac.py' not in sig['semantic_sources']
+    for before,after in [(old,regular),(regular,old),
+                         (regular,signature(dict(config,bc_weight=100.,demo_batch_size=256),source))]:
+        with pytest.raises(ValueError,match='bc_weight'):check_signature(before,after)
+    with pytest.raises(ValueError,match='demo_batch_size'):
+        check_signature(regular,signature(dict(config,bc_weight=10.,demo_batch_size=128),source))
+    (source/'pnr/regularized_sac.py').write_text('# different auxiliary objective\n')
+    with pytest.raises(ValueError,match='regularized_sac'):
+        check_signature(regular,signature(dict(config,bc_weight=10.,demo_batch_size=256),source))
+    load_checkpoint(logger.directory,signature(dict(config,bc_weight=0.,demo_batch_size=256),source))
+
+
+def test_loaded_regularized_identity_cannot_be_claimed_for_plain_sac(bundle):
+    model,cb,logger,_,_,sig=bundle
+    model.replay_buffer.truncate_last_trajectory()
+    checkpoint=load_checkpoint(logger.directory,sig)
+    checkpoint['state']['resume_signature']['method'].update(bc_weight=10.,demo_batch_size=256)
+    with pytest.raises(ValueError,match='bc_weight'):validate_loaded_model(model,checkpoint,2)
+    # Even extra ZIP metadata does not turn SAC.load into the modified algorithm.
+    model.bc_weight=10.
+    with pytest.raises(ValueError,match='RegularizedSAC.load'):validate_loaded_model(model,checkpoint,2)
