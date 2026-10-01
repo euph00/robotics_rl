@@ -28,7 +28,7 @@ from pnr.video import webm_copy  # noqa: E402
 VIEW = dict(distance=6, pitch=-75)   # near top-down chase view: the default follow camera is occluded by 2 m walls
 
 
-def record_case(case, execution, output, every, width, height):
+def record_case(case, execution, output, every, width, height, video=True):
     current = {}
     for cls in (E.LearnedSystem, E.ReferenceController):   # remember the live controller for stage labels
         original = cls.__init__
@@ -47,22 +47,24 @@ def record_case(case, execution, output, every, width, height):
         trajectory.append({'call': native.step_count, 'stage': stage, 'qpos': native.agent_qpos.round(4).tolist(),
                            'object_position': np.round(native.object_pose()[0], 4).tolist(),
                            'bilateral_contact': bool(native.contacts()['bilateral_contact'])})
-        if native.step_count % every == 0:
+        if video and native.step_count % every == 0:
             frames.append(native.render_rgb('follow', width=width, height=height, **VIEW))
         return result
     native.step = recording_step
     try:
         result = E.run_reference(native, execution) if execution['controller'] == 'reference' else E.run_learned(native, execution)
     finally:
-        frames.append(native.render_rgb('follow', width=width, height=height, **VIEW))
+        if video:
+            frames.append(native.render_rgb('follow', width=width, height=height, **VIEW))
         native.close()
     name = case['case_id']
-    video = output / 'artifacts' / f'{name}.mp4'
-    imageio.mimwrite(video, frames, fps=30, quality=7, macro_block_size=8)
-    webm_copy(video)
-    carry = [i for i, row in enumerate(trajectory) if row['stage'] == 'carry']
-    preview_index = (carry[len(carry) // 2] // every) if carry else len(frames) // 2
-    imageio.imwrite(output / 'artifacts' / f'{name}_preview.png', frames[min(preview_index, len(frames) - 1)])
+    if video:
+        path = output / 'artifacts' / f'{name}.mp4'
+        imageio.mimwrite(path, frames, fps=30, quality=7, macro_block_size=8)
+        webm_copy(path)
+        carry = [i for i, row in enumerate(trajectory) if row['stage'] == 'carry']
+        preview_index = (carry[len(carry) // 2] // every) if carry else len(frames) // 2
+        imageio.imwrite(output / 'artifacts' / f'{name}_preview.png', frames[min(preview_index, len(frames) - 1)])
     with (output / 'artifacts' / f'{name}_trajectory.jsonl').open('w') as stream:
         for row in trajectory:
             stream.write(json.dumps(row) + '\n')
@@ -81,6 +83,7 @@ def main():
     parser.add_argument('--label', default='')
     parser.add_argument('--every', type=int, default=3, help='Native calls per video frame')
     parser.add_argument('--size', type=int, nargs=2, default=(960, 540))
+    parser.add_argument('--no-video', action='store_true', help='Trajectories and results only')
     args = parser.parse_args()
     execution, checkpoints = dict(E.DEFAULT_EXECUTION, controller=args.controller), {}
     if args.candidate:
@@ -103,10 +106,11 @@ def main():
                        name=args.label or f'Recording · {args.output.name}', summary=f'{len(args.cases)} episodes')
     E.initialize_worker(checkpoints)
     for case_id in args.cases:
-        name, summary = record_case(by_id[case_id], execution, args.output, args.every, *args.size)
+        name, summary = record_case(by_id[case_id], execution, args.output, args.every, *args.size, video=not args.no_video)
         outcome = 'delivered' if summary['success'] else f"failed in {summary['failed_stage']}"
-        logger.artifact(f'artifacts/{name}.webm', f'{name} · {outcome}', kind='video')
-        logger.artifact(f'artifacts/{name}_preview.png', f'{name} preview', kind='image')
+        if not args.no_video:
+            logger.artifact(f'artifacts/{name}.webm', f'{name} · {outcome}', kind='video')
+            logger.artifact(f'artifacts/{name}_preview.png', f'{name} preview', kind='image')
         print(name, summary, flush=True)
     logger.finish(summary=f'{len(args.cases)} recorded episodes')
 

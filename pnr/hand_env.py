@@ -1,15 +1,28 @@
 """Grasp-lift-hold with the Allegro rig, as a Gymnasium environment for RL.
 
 One episode: an object (random among `objects`) rests on the table with a random yaw and a
-small shift; the hand starts palm-down above it with a random wrist yaw. Each decision sets
-wrist deltas (position ±1 cm, angles ±0.05 rad) and absolute finger joint targets, and runs
-five physics ticks. Success: object lifted at least 15 cm above its resting height while
+small shift; the hand starts palm-down above it with a random wrist yaw. Each decision moves
+the wrist target (±1 cm, ±0.05 rad) and the finger joint targets (±0.08 rad; 'absolute' mode
+sets the finger targets directly), and runs five physics ticks. Delta targets hold the hand
+still under zero action, so exploration noise does not reopen a grasp. Success: object lifted at least 15 cm above its resting height while
 the thumb and another finger touch it.
+
+With `carry=True`, once the object has been held (success) for 10 decisions the wrist follows
+a synthetic base carry for `carry_calls` decisions while the policy keeps controlling the
+fingers (its wrist actions are ignored): +1 per decision while the object stays >= 10 cm up and
+touches the hand twice, -20 and termination if it drops, +10 for finishing the carry. Carry
+motions reproduce the course base controller: commanded targets advancing 18 mm per call with
+pauses at waypoints (A*), or jumping 7.5 cm every five calls (learned carry), along
+axis-aligned corridors, executed by the course motor law on the wrist.
 
 Observations are in the palm frame (object pose, velocity, 32 surface points, fingertips),
 plus finger joints, per-finger contacts, gravity direction, lift and the previous action.
-Rewards are dense: approach (grasp point and fingertips to the object), contacts, a grasp
-bonus (thumb + another finger), lift while grasped, and a success bonus.
+Rewards are dense but dominated by lifting: approach (grasp point and fingertips to the
+object, at most 1 per step), small contact and grasp bonuses, 50 x lift height while grasped
+(two or more hand contacts, palm included; up to 10) and +5 per step at success. Smaller lift weights leave a plateau where the hand
+holds the object on the table forever. The wrist target stays within `wrist_lag` (default
+2 cm) / 0.1 rad of the measured wrist, so the stiff course motor law cannot build up large
+pressing forces.
 """
 from __future__ import annotations
 
@@ -23,6 +36,35 @@ from .hand import GRASP_POINT, TABLE_TOP, HandRig, pregrasp_wrist
 POINTS = 32
 WRIST_STEP = np.array([.01, .01, .01, .05, .05, .05])
 WRIST_ANGLE_LIMIT = 1.6
+FINGER_STEP = .08
+HOLD_TO_CARRY = 10
+CARRY_LIFT = .10
+
+
+def synthetic_carry(rng, calls):
+    """Commanded base xy targets (relative to the start) for `calls` native calls."""
+    style = rng.choice(('astar', 'learned'))
+    heading = rng.integers(4) * np.pi / 2
+    targets, position, k = [], np.zeros(2), 0
+    while len(targets) < calls:
+        direction = np.array([np.cos(heading), np.sin(heading)])
+        goal = position + direction * rng.uniform(.5, 2.5)
+        if style == 'astar':
+            while np.linalg.norm(goal - position) > 1e-9 and len(targets) < calls:
+                step = goal - position
+                position = position + step * min(1., .018 / np.linalg.norm(step))
+                targets.append(position.copy())
+            targets += [position.copy()] * 8
+        else:
+            while np.dot(goal - position, direction) > 0 and len(targets) < calls:
+                k += 1
+                if k % 5 == 0:
+                    position = position + direction * .075
+                targets.append(position.copy())
+        heading += rng.choice((-1, 1)) * np.pi / 2
+    return np.array(targets[:calls])
+# Part-closed power grasp used for curriculum starts (fingers flexed, thumb rotated in).
+CLOSED = np.array([0, 1.4, 1.2, 1.0] * 3 + [1.396, 1.0, 1.0, 1.0])
 SUCCESS_LIFT = .15
 
 
@@ -30,7 +72,16 @@ class HandGraspEnv(gym.Env):
     metadata = {'render_modes': ['rgb_array']}
 
     def __init__(self, objects=(14, 5, 2, 7, 10), horizon=120, seed=0, friction=None, finger_kp=None,
+                 finger_actions='delta', near_start=0., wrist_lag=.02, carry=False, carry_calls=200,
                  render_mode=None):
+        if finger_actions not in ('delta', 'absolute'):
+            raise ValueError('finger_actions must be delta or absolute')
+        self.finger_actions = finger_actions
+        # Training curriculum: this fraction of episodes starts with the palm just above the object
+        # and the fingers part-closed, so holding and lifting are experienced early. Evaluate with 0.
+        self.near_start = float(near_start)
+        self.carry, self.carry_calls = bool(carry), int(carry_calls)
+        self.wrist_lag = np.array([wrist_lag] * 3 + [.1] * 3)
         self.objects = list(objects)
         self.horizon = int(horizon)
         self.render_mode = render_mode
@@ -51,7 +102,7 @@ class HandGraspEnv(gym.Env):
 
     @staticmethod
     def _observation_size():
-        return 3 + 6 + 6 + 3 * POINTS + 16 + 16 + 3 + 12 + 5 + 1 + 1 + 22
+        return 3 + 6 + 6 + 3 * POINTS + 16 + 16 + 16 + 3 + 12 + 5 + 1 + 1 + 22 + 4
 
     # ---------------- episode ----------------
     def reset(self, *, seed=None, options=None):
@@ -84,24 +135,60 @@ class HandGraspEnv(gym.Env):
         self.finger_target = rig.finger_open.copy()
         rig.data.ctrl[:] = self.finger_target
         mujoco.mj_forward(rig.model, d)
+        if rng.random() < self.near_start:
+            low = (top + .011 + rng.uniform(.0, .015) - .05) - centre[2]
+            wrist = pregrasp_wrist(rig, wrist[3], height=low, offset=rng.uniform(-.015, .015, 2))
+            rig.set_wrist(wrist)
+            self.wrist_home = wrist.copy()
+            closed = np.clip(CLOSED, rig.finger_low, rig.finger_high)
+            self.finger_target = rig.finger_open + rng.uniform(.2, .8) * (closed - rig.finger_open)
+            mujoco.mj_forward(rig.model, d)
+            for _ in range(8):
+                rig.step(wrist, self.finger_target)
         self.steps, self.previous_action = 0, np.zeros(22)
         self.ever_success = False
+        self.phase, self.held, self.carry_step, self.carried = 'grasp', 0, 0, False
         return self._observation(), {'object_idx': idx}
 
     def step(self, action):
         rig = self.rig
         action = np.clip(np.asarray(action, dtype=np.float64), -1, 1)
-        target = rig.wrist_target + action[:6] * WRIST_STEP
+        current = rig.wrist()
+        target = np.clip(rig.wrist_target + action[:6] * WRIST_STEP, current - self.wrist_lag, current + self.wrist_lag)
         target[:2] = np.clip(target[:2], self.wrist_home[:2] - .25, self.wrist_home[:2] + .25)
         target[2] = np.clip(target[2], TABLE_TOP + .02, TABLE_TOP + .6)
         target[4:] = np.clip(target[4:], -WRIST_ANGLE_LIMIT, WRIST_ANGLE_LIMIT)
-        fingers = rig.finger_low + (action[6:] + 1) / 2 * (rig.finger_high - rig.finger_low)
-        rig.step(target, fingers)
+        if self.phase == 'carry':
+            dx, dy = self.carry_path[min(self.carry_step, len(self.carry_path) - 1)]
+            target = self.carry_origin + [dx, dy, 0., 0., 0., 0.]
+            self.carry_step += 1
+        if self.finger_actions == 'delta':
+            self.finger_target = np.clip(self.finger_target + action[6:] * FINGER_STEP, rig.finger_low, rig.finger_high)
+        else:
+            self.finger_target = rig.finger_low + (action[6:] + 1) / 2 * (rig.finger_high - rig.finger_low)
+        rig.step(target, self.finger_target)
         self.steps += 1
         self.previous_action = action
         reward, info = self._reward()
         terminated = info['fell']
-        truncated = self.steps >= self.horizon
+        if self.phase == 'carry':
+            lift, hold = info['lift'], info['contacts'] + info['palm_contact'] >= 2
+            kept = lift >= CARRY_LIFT and hold
+            reward = 1. * kept + .5 * info['success']
+            if lift < .05:
+                reward, terminated, info['dropped_in_carry'] = -20., True, True
+            elif self.carry_step >= self.carry_calls:
+                self.carried = kept
+                reward += 10. * kept
+        elif self.carry:
+            self.held = self.held + 1 if info['success'] else 0
+            if self.held >= HOLD_TO_CARRY:
+                self.phase, self.carry_step = 'carry', 0
+                self.carry_path = synthetic_carry(self.np_random, self.carry_calls)
+                self.carry_origin = rig.wrist_target.copy()
+        info.update(phase=self.phase, carried=self.carried)
+        done_carry = self.phase == 'carry' and self.carry_step >= self.carry_calls
+        truncated = done_carry or self.steps >= self.horizon + (self.carry_calls if self.phase == 'carry' else 0)
         return self._observation(), reward, terminated, truncated, info
 
     # ---------------- reward ----------------
@@ -114,11 +201,12 @@ class HandGraspEnv(gym.Env):
         tip_gaps = np.min(np.linalg.norm(tips[:, None, :] - points[None], axis=2), axis=1)
         fingers, palm, table, depth = rig.contacts()
         grasped = bool(fingers[3] and fingers[:3].any())
+        holding = int(fingers.sum()) + int(palm) >= 2
         lift = float(np.clip(centre[2] - rig.rest_height, 0., .2))
         success = grasped and lift >= SUCCESS_LIFT
         fell = centre[2] < TABLE_TOP - .05
         reward = (.5 * (1 - np.tanh(10 * grasp_gap)) + .5 * (1 - np.tanh(10 * tip_gaps.mean()))
-                  + .25 * fingers.sum() / 4 + .5 * grasped + 20 * lift * grasped + 2 * success - 5 * fell)
+                  + .1 * fingers.sum() / 4 + .25 * grasped + 50 * lift * holding + 5 * success - 5 * fell)
         self.ever_success |= success
         info = {'success': success, 'ever_success': self.ever_success, 'lift': lift, 'grasped': grasped,
                 'contacts': int(fingers.sum()), 'palm_contact': bool(palm), 'table_contact': bool(table),
@@ -142,12 +230,15 @@ class HandGraspEnv(gym.Env):
             local(velocity[:3]), local(velocity[3:]) * .1,
             points.ravel(),
             2 * (q - rig.finger_low) / (rig.finger_high - rig.finger_low) - 1, np.clip(qd * .1, -5, 5),
+            2 * (self.finger_target - rig.finger_low) / (rig.finger_high - rig.finger_low) - 1,
             local(np.array([0., 0., -1.])),
             local(rig.fingertips() - centre).ravel(),
             fingers.astype(float), [float(palm_contact)],
             [np.clip(centre[2] - rig.rest_height, -.1, .3)],
             [anchor[2] - TABLE_TOP],
-            self.previous_action])
+            self.previous_action,
+            [float(getattr(self, 'phase', 'grasp') == 'carry')],
+            local(rig.data.qvel[rig._wd[:3]]) * .5])
         return observation.astype(np.float32)
 
     def render(self):
