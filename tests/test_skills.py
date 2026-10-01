@@ -35,7 +35,7 @@ def test_physical_skill_reset_shapes_counters_and_timeout(skill_env):
     first, _ = env.reset(seed=79)
     assert env.observation_space.contains(first)
     assert first['observation'].shape == (50,)
-    assert env.native.p.getContactPoints(env.native.object_id, env.native.table_id)
+    assert env.native.touching('object', 'table')
     np.testing.assert_allclose(env.base_xy, env.controller.base_position(), atol=1e-6)
     for i in range(env.horizon):
         obs, reward, terminated, truncated, info = env.step(np.array([0, 0, 0, -1], dtype=np.float32))
@@ -109,7 +109,7 @@ def test_analytic_jacobian_and_local_ik_do_not_mutate_physics(skill_env):
         np.testing.assert_array_equal(target[fixed], q[fixed])
         assert np.max(np.abs(target[local.active]-q[local.active])) <= .35+1e-8
         with env.controller.planner.query():
-            native._set_qpos(target)
+            native.set_joint_positions(target)
             end_pos, end_orn = env.controller.planner.ee_pose()
             assert np.linalg.norm(end_pos-position-direction) <= .0015
             assert (Rotation.from_quat(end_orn)*Rotation.from_quat(orientation).inv()).magnitude() <= .02

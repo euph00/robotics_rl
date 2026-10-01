@@ -62,8 +62,7 @@ DEFAULT_EXECUTION = {'grasp_horizon': 600, 'carry_horizon': 1200, 'reach_horizon
                      'holding_speed_scale': 0.,  # 0: same as planned_speed_scale
                      'controller': 'learned',  # or 'reference': classical planner end to end
                      'carry_max_turn_deg': 0., 'carry_slip_drift_mm': 0., 'carry_slip_scale': .5,
-                     'grasp_mode': 'learned', 'carry_mode': 'learned',  # 'planned' swaps in the classical stage
-                     'backend': 'pybullet'}  # or 'mujoco'
+                     'grasp_mode': 'learned', 'carry_mode': 'learned'}  # 'planned' swaps in the classical stage
 _POLICIES = None
 
 
@@ -90,15 +89,6 @@ def select_cases(name, objects=OBJECTS, layout_limit=None):
     if len({case['case_id'] for case in cases}) != len(cases):
         raise ValueError('Duplicate case identifiers across banks')
     return cases
-
-
-def make_env(backend, **kwargs):
-    if backend == 'mujoco':
-        from pnr.mj_env import MjPickNavReachEnv
-        return MjPickNavReachEnv(**kwargs)
-    if backend != 'pybullet':
-        raise ValueError(f'Unknown backend {backend}')
-    return PickNavReachEnv(**kwargs)
 
 
 def initialize_worker(checkpoints):
@@ -197,7 +187,7 @@ def evaluate_case(case, execution):
     started = time.monotonic()
     native = None
     try:
-        native = make_env(execution['backend'], **case['env_kwargs'])
+        native = PickNavReachEnv(**case['env_kwargs'])
         if case['maze_hash'] is not None and native.scene_manifest()['maze_hash'] != case['maze_hash']:
             raise ValueError('Native layout differs from the case maze hash')
         if execution['controller'] == 'reference':

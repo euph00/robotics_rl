@@ -39,7 +39,7 @@ def test_failed_grasp_stops_system_without_resets_or_teacher_descents():
         assert len(seen)==native.step_count==sum(result['source_calls_by_controller'].values())
         assert np.linalg.norm(native.observe()['object_pos']-initial_position)<.005
         assert native.step==original_step
-        assert native.p.getNumConstraints()==0
+        assert native.model.neq==0
         with pytest.raises(ValueError,match='fresh original-start'):
             system.run()
 
@@ -114,7 +114,7 @@ def scripted_handover_diagnostic():
         result['assistance']['carry_waypoints_during_policy']=True
         calls=result['source_calls_by_controller']
         calls['analytical_test_policy']=calls.pop('learned')
-        assert native.p.getNumConstraints()==0
+        assert native.model.neq==0
         return result
 
 

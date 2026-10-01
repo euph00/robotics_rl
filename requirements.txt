@@ -1,5 +1,4 @@
 # Install torch first using the official CUDA 11.8 wheel index (see setup script).
-pybullet==3.2.7
 mujoco==3.14.0
 numpy==1.26.4
 scipy==1.15.3

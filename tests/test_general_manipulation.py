@@ -45,7 +45,7 @@ def test_bound_general_grasp_reads_only_and_exposes_measured_target():
         for key, value in before.items():
             np.testing.assert_array_equal(value, native.observe()[key])
         wrapper.close()
-        assert native.p.isConnected()
+        assert not native._closed
 
 
 def test_bounded_fallback_preserves_physics_and_rejects_branch_jump(monkeypatch):

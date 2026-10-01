@@ -45,7 +45,7 @@ def test_physical_bank_has_contacts_no_constraints_and_accounted_setup(carry):
     assert carry.setup_action_calls > 0
     assert carry.setup_physics_ticks == carry.setup_action_calls * carry.native.substeps
     assert len(carry.snapshots) > 10
-    assert carry.native.p.getNumConstraints() == 0
+    assert carry.native.model.neq == 0
     observation, info = carry.reset(seed=123)
     assert carry.observation_space.contains(observation)
     assert carry.native.contacts()['bilateral_contact']
@@ -108,18 +108,18 @@ def test_xy_action_physically_reaches_a_nearby_goal_without_attachments(carry):
     assert success, info['goal_distance']
     assert np.linalg.norm(observation['achieved_goal'] * carry.goal_scale - initial_xy) > .05
     assert carry.native.contacts()['bilateral_contact']
-    assert carry.native.p.getNumConstraints() == 0
+    assert carry.native.model.neq == 0
 
 
 def test_live_binding_preserves_state_policy_contract_and_external_ownership(carry):
     observation, _ = carry.reset(seed=789, options={'evaluation_mode': 'full'})
     before = carry.native.observe()
     counters = (carry.native.step_count, carry.native.physics_steps)
-    state_ids = set(carry.native._saved_states)
+    state_ids = set(carry.native._saved)
     bound = CarrySkillEnv.bind(carry.native, carry.controller, horizon=10)
     try:
         assert (carry.native.step_count, carry.native.physics_steps) == counters
-        assert set(carry.native._saved_states) == state_ids
+        assert set(carry.native._saved) == state_ids
         assert bound.setup_action_calls == bound.setup_physics_ticks == 0
         assert not bound.snapshots
         assert bound.observation_space == carry.observation_space
@@ -136,4 +136,4 @@ def test_live_binding_preserves_state_policy_contract_and_external_ownership(car
         assert info['action_calls_delta'] == carry.repeat
     finally:
         bound.close()
-    assert carry.native.p.isConnected()
+    assert not carry.native._closed
