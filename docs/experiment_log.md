@@ -86,3 +86,31 @@ Hold-out (20 fresh mazes): planner 98, imitation 92, imitation + SAC 92. Course 
 3. Drops are rare (≤3% for any grasp × carry pairing) and concentrated on the can.
 4. Episodes are chaotic at the margin: library load order alone flips the can on
    validation maze 8. Recordings therefore import the evaluator first.
+
+## 2026-10-02: dexterous-hand feasibility with RL (in progress)
+
+Rig (`pnr/hand.py`): Menagerie Allegro hand (16 joints, position actuators kp = 1 N m/rad,
+roughly the hardware's torque range) on a six-axis wrist that follows the course motor law,
+over the course table, with the task's physics settings. Hand–object friction equals the
+Fetch fingers' (0.25). Task (`pnr/hand_env.py`): from a palm-down pregrasp, grasp and lift
+15 cm while thumb and a finger touch the object; five objects. Training: `scripts/train_hand.py`.
+
+| Experiment | Result |
+|---|---|
+| Scripted top-down power grasp, μ 0.25, kp 1 or 3 | 0/5 objects lifted |
+| Same, μ 1.0 | foam (kp 1); banana, can, mug (kp 3) |
+| SAC (8 updates per 20 transitions) | ~200 steps/s: too slow; PPO used instead |
+| PPO, absolute finger targets | no learning by 3M steps (exploration noise reopens grasps) |
+| PPO, delta finger targets, small lift weight | hand wraps the object and stays on the table (reward plateau) |
+| PPO, lift-dominant reward, μ 0.25 | lifts foam and banana (up to 100% each at some checkpoints; 20–33% over five objects), never can, apple or mug through 14M steps |
+| Holds during the lift | 15–42 N total normal force, ~1 mm median penetration: physical, not an exploit |
+| Frozen grasp through 10 recorded maze carries | 1/10 retained; μ 1.0 or maximum squeeze during the carry do not help |
+| Carry phase in training (policy active, synthetic course-style motions), μ 0.25 | 1/30 evaluation carries completed after 8M steps |
+| Near-grasp curriculum starts | slower than without |
+
+Throughput is ~1,400 decisions/s per run on 40 CPU workers: contact-heavy steps cost
+5–10 ms (elliptic friction cones; CoACD objects with up to 98 convex parts).
+
+The binding constraints are physical. The course gripper survives the carry because of
+its 450 N squeeze (~110 N of friction at μ 0.25); a hand of realistic strength exerts
+15–40 N, and the course motor law gives the carried hand ~25–30 m/s² acceleration pulses.
