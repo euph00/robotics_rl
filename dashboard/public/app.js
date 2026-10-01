@@ -283,32 +283,36 @@ function renderMaze(maze) {
   const poly = (points, cls) => svg('polyline', {points: points.map(p => `${p[0]},${-p[1]}`).join(' '), class: cls});
   s.append(poly(maze.astar, 'path-astar'));
   s.append(poly(maze.learned_success, 'path-learned'));
-  s.append(poly(maze.learned_drop, 'path-drop'));
+  const drop = maze.learned_drop || [];   // a failed learned carry, when the evaluation has one
+  if (drop.length) s.append(poly(drop, 'path-drop'));
   for (const [x, y] of maze.astar.slice(1, -1)) s.append(svg('circle', {cx: x, cy: -y, r: 0.09, class: 'waypoint'}));
-  const [dx, dy] = maze.drop_point;
-  s.append(svg('path', {d: `M${dx - .3},${-dy - .3} L${dx + .3},${-dy + .3} M${dx - .3},${-dy + .3} L${dx + .3},${-dy - .3}`, class: 'drop-x'}));
-  // Timing in native calls: learned traces are sampled every 5 calls; A* moves 18 mm per call and pauses 8 calls per waypoint.
+  if (drop.length) {
+    const [dx, dy] = maze.drop_point;
+    s.append(svg('path', {d: `M${dx - .3},${-dy - .3} L${dx + .3},${-dy + .3} M${dx - .3},${-dy + .3} L${dx + .3},${-dy - .3}`, class: 'drop-x'}));
+  }
+  // Timing in native calls: learned traces are sampled every few calls; A* moves 18 mm per call and pauses 8 calls per waypoint.
   const step = maze.trace_interval_native_calls || 5;
   const learnedTimes = maze.learned_success.map((_, i) => i * step);
-  const dropTimes = maze.learned_drop.map((_, i) => i * step);
+  const dropTimes = drop.map((_, i) => i * step);
   const astarTimes = [0];
   for (let i = 1; i < maze.astar.length; i++) {
     const a = maze.astar[i - 1], b = maze.astar[i];
     astarTimes.push(astarTimes[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.018 + 8);
   }
-  const total = Math.max(learnedTimes.at(-1), dropTimes.at(-1), astarTimes.at(-1)) + 120;
+  const total = Math.max(learnedTimes.at(-1), dropTimes.at(-1) || 0, astarTimes.at(-1)) + 120;
   s.append(motion(maze.astar, astarTimes, total, COLORS.planned, 0.28));
   s.append(motion(maze.learned_success, learnedTimes, total, COLORS.imitation, 0.3));
-  s.append(motion(maze.learned_drop, dropTimes, total, '#d64545', 0.17));  // on top: paths coincide until the drop
+  if (drop.length) s.append(motion(drop, dropTimes, total, '#d64545', 0.17));  // on top: paths coincide until the drop
   target.append(s);
-  target.append(legend([['Planner: A* waypoints, stops at each', COLORS.planned, 'swatch-dash'],
-    [maze.captions?.success || 'Learned carry', COLORS.imitation], [maze.captions?.drop || 'Learned carry, dropped', '#d64545']]));
+  const keys = [['Planner: A* waypoints, stops at each', COLORS.planned, 'swatch-dash'], [maze.captions?.success || 'Learned carry', COLORS.imitation]];
+  if (drop.length) keys.push([maze.captions?.drop || 'Learned carry, dropped', '#d64545']);
+  target.append(legend(keys));
   // In-hand slip over the carry.
-  const n = Math.max(maze.slip_success_mm.length, maze.slip_drop_mm.length);
+  const n = Math.max(maze.slip_success_mm.length, (maze.slip_drop_mm || []).length);
   const xs = [0, Math.round(n * step / 100) * 100];
-  const toPoints = arr => arr.map((v, i) => [i * step, Math.max(-60, v)]);
+  const toPoints = arr => (arr || []).map((v, i) => [i * step, Math.max(-60, v)]);
   const chart = slipChart(toPoints(maze.slip_success_mm), toPoints(maze.slip_drop_mm), xs[1]);
-  $('slip').replaceChildren(figure('Object height in the hand during carry', 'Delivered object settles ~10 mm; dropped object slides ~30 mm, then falls', chart));
+  $('slip').replaceChildren(figure('Object height in the hand during carry', maze.captions?.slip || '', chart));
 }
 
 function slipChart(success, drop, xMax) {
@@ -391,77 +395,11 @@ function renderFindings(overview) {
   $('findings').replaceChildren(
     figure('Faster planned motion', 'Approach and posture run faster → more runs meet the deadline',
       planned, legend([['complete', COLORS.imitation], ['within deadline', COLORS.planned, 'swatch-dash']])),
-    figure('Carry speed', 'Slowing the carry does not reduce drops',
+    figure('Carry speed', 'Slower carry drops less (5 → 0) but runs out of time',
       carry, legend([['complete', COLORS.imitation], ['dropped in carry', '#d64545']])),
     figure('Does SAC fine-tuning help?', 'Complete · dev · all within noise (±3%)', sacFig || el('p', '—')),
-    figure('Which stage causes drops?', 'Drop rate · dev · the carry controller matters, the grasp barely', swapFig || el('p', '—')),
-    figure('Hand-written carry rules', 'Drops (red) vs wall hits (purple) · dev', rulesFig));
-}
-
-function renderHandSpike(spike) {
-  const target = $('hand');
-  target.replaceChildren();
-  if (!spike) return;
-  const image = el('figure', undefined, 'fig');
-  const img = el('img');
-  img.src = `/artifacts/${encodeURIComponent(spike.image.run)}/${spike.image.path.split('/').map(encodeURIComponent).join('/')}`;
-  img.alt = spike.image.caption;
-  image.append(img, el('figcaption', spike.image.caption));
-  target.append(image);
-  for (const test of spike.tests) {
-    const rows = [...spike.objects, 'total'];
-    const total = key => test[key].reduce((a, b) => a + b, 0);
-    const width = 320, rowH = 26, height = 10 + rows.length * rowH;
-    const s = frame(width, height);
-    rows.forEach((name, i) => {
-      const y = 6 + i * rowH, of = name === 'total' ? test.of * spike.objects.length : test.of;
-      const values = name === 'total' ? [total('fetch'), total('allegro')] : [test.fetch[i], test.allegro[i]];
-      s.append(svg('text', {x: 52, y: y + 15, class: 'label', 'text-anchor': 'end'}, name));
-      values.forEach((v, k) => {
-        const w = (v / of) * (width - 120);
-        s.append(svg('rect', {x: 58, y: y + k * 10, width: Math.max(1, w), height: 9, rx: 2, fill: k ? '#8d5bd6' : COLORS.planned}));
-        s.append(svg('text', {x: 62 + w, y: y + k * 10 + 8, class: 'axis'}, `${v}/${of}`));
-      });
-    });
-    target.append(figure(test.title, null, s, legend([['Fetch gripper', COLORS.planned], ['Allegro hand', '#8d5bd6']])));
-  }
-  target.append(el('p', spike.verdict, 'verdict'));
-}
-
-function renderBackends(spec) {
-  const target = $('backends');
-  target.replaceChildren();
-  if (!spec) return;
-  const MJ = '#d6772b';
-  const checks = el('div');
-  for (const [label, value] of spec.checks) {
-    const row = el('div', undefined, 'check');
-    row.append(el('span', '✓ ', 'ok'), el('span', label + ': '), el('strong', value));
-    checks.append(row);
-  }
-  target.append(figure('Replication checks', 'MuJoCo vs PyBullet', checks));
-  for (const pair of spec.pairs) {
-    const pb = run(pair.pybullet), mj = run(pair.mujoco);
-    if (!pb || !mj) continue;
-    const rows = [...OBJECTS, 'total', 'dropped'];
-    const width = 320, rowH = 26, height = 10 + rows.length * rowH;
-    const s = frame(width, height);
-    rows.forEach((name, i) => {
-      const y = 6 + i * rowH;
-      const pick = e => name === 'total' ? [e.success, e.completed] : name === 'dropped' ? [e.drops, e.completed]
-        : [e.by_object[name]?.success ?? 0, e.by_object[name]?.cases ?? 0];
-      s.append(svg('text', {x: 52, y: y + 15, class: 'label', 'text-anchor': 'end'}, name));
-      [pb, mj].forEach((e, k) => {
-        const [v, of] = pick(e);
-        const w = (v / Math.max(of, 1)) * (width - 120);
-        s.append(svg('rect', {x: 58, y: y + k * 10, width: Math.max(1, w), height: 9, rx: 2,
-          fill: name === 'dropped' ? (k ? '#e79a9a' : '#d64545') : (k ? MJ : COLORS.planned)}));
-        s.append(svg('text', {x: 62 + w, y: y + k * 10 + 8, class: 'axis'}, `${v}/${of}`));
-      });
-    });
-    target.append(figure(pair.title, 'Complete per object', s, legend([['PyBullet', COLORS.planned], ['MuJoCo', MJ]])));
-  }
-  target.append(el('p', spec.verdict, 'verdict'));
+    figure('Which stage causes drops?', 'Drop rate · dev · rare with every grasp × carry pairing (≤ 3%)', swapFig || el('p', '—')),
+    figure('Hand-written carry rules', 'Drops (red) vs wall hits (purple) · dev · fewer drops, many more wall hits', rulesFig));
 }
 
 function renderRubric(overview) {
@@ -577,8 +515,6 @@ async function poll() {
       renderResults(STATE.overview);
       renderFindings(STATE.overview);
       renderRubric(STATE.overview);
-      renderHandSpike(STATE.overview.hand_spike);
-      renderBackends(STATE.overview.backends);
       renderTables(state.evaluations || [], state.history || []);
       const docs = $('documents');
       docs.replaceChildren();

@@ -38,7 +38,7 @@ pandas==2.3.3
 pillow==12.3.0
 pluggy==1.6.0
 protobuf==7.36.2
-pybullet==3.2.7
+mujoco==3.14.0
 Pygments==2.21.0
 pyparsing==3.3.3
 pytest==8.4.1
@@ -57,3 +57,7 @@ triton==3.3.1
 typing_extensions==4.16.0
 tzdata==2026.4
 Werkzeug==3.1.9
+websockets==16.1.1
+etils==1.13.0
+glfw==2.10.2
+PyOpenGL==3.1.10

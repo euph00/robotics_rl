@@ -8,7 +8,9 @@ The current user instruction makes the [course repository](https://github.com/NU
 
 Build a working system that approaches the table, generates antipodal grasps from the supplied point cloud and normals, physically picks and lifts a supplied object, carries it through the maze, and brings the object within **0.1 m in 3-D** of the goal sphere while retaining it. Then compare SAC+HER with TD3+HER across two gripper configurations, using independently trained complete systems and a reproducible evaluation.
 
-The extension is the goal-conditioned learning study, staged learned control, gripper comparison, and rigorous evaluation on the original task. A new placement surface, object release, a different simulator, or wheel-dynamics task is unnecessary for this extension.
+The extension is the goal-conditioned learning study, staged learned control, gripper comparison, and rigorous evaluation on the original task. A new placement surface, object release, or wheel-dynamics task is unnecessary for this extension.
+
+**Simulator (decided 2026-10-01):** the task runs in MuJoCo (`pnr/env.py`) instead of the course's PyBullet, keeping the course robot, objects, mazes, seed mapping, motor law, friction coefficients and success criterion. The course grader is a sanity check, not a constraint; its rubric is estimated by `scripts/rubric.py`. The PyBullet-era record is in `docs/archive/pybullet/`.
 
 ## Reconciliation decisions
 
@@ -40,7 +42,7 @@ First implement the course-required components in our own controller module:
 3. Maze representation, footprint/held-object clearance checks, and a navigation reference (for example, our own grid A* and path following).
 4. Physical grasp validation, lift and hold checks, and a complete approach–pick–carry–reach reference rollout using the original action contract.
 
-The reference establishes physical feasibility and provides rubric-visible functions. It is evaluated separately from the learned systems. Bullet's kinematics/collision primitives can support our algorithms; calling a keyboard controller or importing an end-to-end planner does not replace their implementation.
+The reference establishes physical feasibility and provides rubric-visible functions. It is evaluated separately from the learned systems. The simulator's kinematics/collision primitives can support our algorithms; calling a keyboard controller or importing an end-to-end planner does not replace their implementation.
 
 Use a fixed supervisor and independently trained goal-conditioned skills for the extension:
 
@@ -98,14 +100,14 @@ Primary reporting: uninterrupted complete-task success by training seed, success
 
 ## Implementation gates and deliverables
 
-1. **Environment and reference:** create a project-local Python 3.10 environment; pin compatible dependencies; integrate headless PyBullet; repair/reset/seed/isolation issues; implement explicit baseline algorithms; verify contact grasping and complete reference rollouts. Measure table height, controllable frame transforms, simulator time, physical feasibility, and end-to-end throughput.
+1. **Environment and reference:** create a project-local Python 3.10 environment; pin compatible dependencies; integrate a headless simulator (PyBullet at first, MuJoCo since 2026-10-01); repair/reset/seed/isolation issues; implement explicit baseline algorithms; verify contact grasping and complete reference rollouts. Measure table height, controllable frame transforms, simulator time, physical feasibility, and end-to-end throughput.
 2. **Goal-conditioned adapter:** define observation/achieved/desired goals and replayable vectorized rewards; check HER behavior, episode boundaries, truncation and physical failures, observation consistency, fresh-process load, and resume. Add Gymnasium, SB3, and PyTorch after compatibility checks.
 3. **First learned complete system:** run bounded SAC+HER pilots on the original gripper; train and join skills; inspect real contact and handovers; establish repeated uninterrupted successes and progression toward held-out mazes/objects.
 4. **Comparison readiness:** physically validate the second gripper, integrate TD3, estimate affordable budgets/concurrency from profiling, and freeze the exact assistance/evaluation/experiment manifest.
 5. **Replicated results:** train the 12 independent final systems, evaluate the same held-out cases, preserve trajectories/checkpoints/raw results, analyze failures and variability, and verify reproduction from a fresh process.
 6. **Delivery and understanding:** runnable code/configs, asset provenance and patches, dependency record, train/evaluate commands, policies and preprocessing, manifests/recovery records, plots, selected raw clips, and an evidence-based 5–8 page NeurIPS-style report as requested in the local brief. The upstream README does not verify that report format; check course submission instructions later. Slides, final-video production, external publication, and submission remain deferred.
 
-The available machine has an A100 80 GB, 48 logical CPUs, and about 251 GiB RAM. PyBullet simulation is expected to need CPU profiling; GPU availability alone is not a training-rate estimate. Keep dependencies, caches, temporary meshes, replay storage, and outputs on the workspace volume because the system disk is nearly full. No extra GPU machine or paid resource is assumed.
+The available machine has an A100 80 GB, 48 logical CPUs, and about 251 GiB RAM. Physics simulation is CPU-bound; GPU availability alone is not a training-rate estimate. Keep dependencies, caches, temporary meshes, replay storage, and outputs on the workspace volume because the system disk is nearly full. No extra GPU machine or paid resource is assumed.
 
 ## Current limits of knowledge
 

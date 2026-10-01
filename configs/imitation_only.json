@@ -1,0 +1,32 @@
+{
+  "candidate_id": "imitation_only",
+  "created": "2026-10-01",
+  "simulator": "mujoco",
+  "description": "Imitation-only arm: the behaviour-cloned grasp and carry actors that SAC fine-tuning starts from (zero online updates); SAC+HER reach (no imitation exists for reach).",
+  "checkpoints": {
+    "grasp": {
+      "frozen_path": "runs/mj_grasp01/candidate/grasp_zero_online.zip",
+      "sha256": "2661235758935a33d8b0da91a9c499671c2a4fb3e88bb3d5bef4f9f465025527"
+    },
+    "carry": {
+      "frozen_path": "runs/mj_carry_init02/checkpoints/bc_initialized.zip",
+      "sha256": "e04888870fd5f999170a529e6014c0b34470a973c57eadf116c63c2631c700c2"
+    },
+    "reach": {
+      "frozen_path": "runs/mj_reach01/checkpoints/best/model.zip",
+      "sha256": "f8556f7289f5247322daa0224b112e97feda6e5359655afcc6e46a54d16de654"
+    }
+  },
+  "execution": {
+    "grasp_horizon": 600,
+    "carry_horizon": 1200,
+    "reach_horizon": 150,
+    "delta_scale": 0.075,
+    "planned_speed_scale": 3.0,
+    "holding_speed_scale": 2.0,
+    "deadline_physics_ticks": 15000,
+    "grasp_lift_m": 0.24,
+    "reach_tolerance_m": 0.08,
+    "grasp_proposal_mode": "clearance-v2"
+  }
+}

@@ -1,99 +1,93 @@
-# Goal-conditioned RL for Pick–Nav–Reach
+# Goal-conditioned RL for Pick–Nav–Reach (MuJoCo)
 
-A Fetch robot in PyBullet must drive to a table, grasp a supplied YCB object from
-its point cloud, carry it through a random maze, and hold it within 10 cm of an
-elevated goal sphere. The course task is
+A Fetch robot must drive to a table, grasp a supplied YCB object from its point
+cloud, carry it through a random maze, and hold it within 10 cm of an elevated
+goal sphere. The task comes from the course project
 [NUS-LinS-Lab/Pick-Nav-Reach-Default-Project](https://github.com/NUS-LinS-Lab/Pick-Nav-Reach-Default-Project),
-pinned at `54ab2d1` ([upstream.lock.json](upstream.lock.json)); the checkout under
-`upstream/` stays unchanged.
+pinned at `54ab2d1` ([upstream.lock.json](upstream.lock.json)). The project runs it in
+**MuJoCo** (`pnr/env.py`) with the course's robot, objects, mazes, seeds, motor law,
+friction coefficients and success criterion; the course checkout under `upstream/`
+supplies the assets and maze generator and stays unchanged.
 
-**Current goal:** a strong SAC+HER baseline on the original gripper that
-generalises to unseen mazes. Later: TD3+HER, a modified gripper, and a 3-seed
-comparison ([spec](docs/project_spec.md)).
+**Study:** how much each component contributes — a classical planner, imitation of
+that planner, and online RL (SAC+HER, later TD3+HER) on top of imitation.
 
-**Status:** candidate 3 ([configs/candidate03.json](configs/candidate03.json)) completes
-**80/100** unseen-maze tasks on a fresh hold-out bank, 79/100 within 15,000 physics
-ticks. Details: [docs/project_state.md](docs/project_state.md). History of all
-earlier experiments: [docs/experiment_log.md](docs/experiment_log.md).
+**Status (2026-10-01):** on 20 fresh mazes × 5 objects, the planner alone completes
+98/100, imitation 92/100 and imitation + SAC 92/100. SAC fine-tuning adds nothing
+measurable over imitation. Details: [docs/project_state.md](docs/project_state.md).
 
 ## System
 
-A fixed supervisor runs three learned skills from the original task start, with
-no resets between skills and no object attachment:
+A fixed supervisor runs each phase from the original start, with no resets between
+phases and no object attachment:
 
-| Stage | Controller |
-|---|---|
-| Approach table, pre-grasp | Planned: antipodal grasp proposal from the point cloud, IK, collision-checked motion |
-| Grasp and lift | Learned: SAC+HER (BC-initialized, demonstration-regularized) |
-| Carry posture | Planned arm posture |
-| Carry through maze | Learned: SAC+HER over base XY from maze-geometry maps; no route oracle |
-| Reach goal while holding | Learned: SAC+HER |
-
-A classical reference (A* navigation, planned grasp and reach) is in
-`pnr/reference.py` and `scripts/run_reference.py`.
+| Phase | Planner only | Imitation / Imitation + SAC |
+|---|---|---|
+| Approach table, pre-grasp | Antipodal grasp proposal from the point cloud, IK, collision-checked motion | same (planned) |
+| Grasp and lift | Planned descent, close, lift | Learned (BC, optionally SAC+HER fine-tuned) |
+| Carry posture | Planned arm posture | same (planned) |
+| Carry through maze | A* waypoints | Learned base controller on a maze map (no route oracle) |
+| Reach goal while holding | Base and torso servo | Learned (SAC+HER from reward) |
 
 ## Layout
 
 | Path | Contents |
 |---|---|
-| `pnr/` | Environment adapter, skills, planners, feature extractors, SAC variants |
+| `pnr/env.py` | MuJoCo environment: course scene, motor law, contacts, snapshots, rendering |
+| `pnr/` | Skills, planners, feature extractors, SAC variants, learned system |
 | `scripts/eval.py` | Full-task evaluation on fixed maze sets (start here) |
-| `scripts/phase2_train_{grasp,carry}.py`, `pnr/train.py` | Skill training (grasp, carry, reach) |
+| `scripts/train_mujoco.sh`, `scripts/evaluate_mujoco.sh` | The full training recipe and every evaluation behind the docs |
 | `scripts/phase2_{grasp,carry,learned_carry}_demos.py` | Demonstration collection |
-| `scripts/build_scene_bank.py`, `build_confirmation_bank.py` | Maze banks (train/validation/test) |
-| `configs/` | Scene banks and candidate manifests (checkpoints + execution settings) |
-| `runs/` | Checkpoints, datasets, evaluation results (ignored by Git) |
+| `scripts/phase2_train_{grasp,carry}.py`, `pnr/train.py` | Skill training (grasp, carry, reach) |
+| `scripts/record.py`, `scripts/dashboard_maze.py` | Episode videos/trajectories; dashboard maze figure |
+| `configs/` | Maze banks and candidate manifests (`imitation_sac.json`, `imitation_only.json`) |
+| `runs/` | Checkpoints, datasets, evaluation results (ignored by Git; PyBullet era in `runs/archive_pybullet/`) |
 | `dashboard/` | Read-only live dashboard |
 
 ## Setup
 
 ```bash
-source .venv/bin/activate   # Python 3.10, PyBullet, SB3 2.7, PyTorch 2.7.1+cu118
-python -m pytest -q         # ~3 minutes
+source .venv/bin/activate   # Python 3.10, MuJoCo 3.14, SB3 2.7, PyTorch 2.7.1+cu118
+python -m pytest -q         # ~2 minutes
 ```
 
 Fresh machine: clone the upstream repository into `upstream/Pick-Nav-Reach-Default-Project`,
 check out `54ab2d1faa54d1aa7e2738f114531a76c6514cd3`, then
-`PNR_PYTHON_BIN=python3.10 bash scripts/setup.sh`.
+`PNR_PYTHON_BIN=python3.10 bash scripts/setup.sh`. Rendering uses headless EGL on the
+GPU (`MUJOCO_GL=egl`, device 0 by default).
 
 ## Common commands
 
-Evaluate a candidate on the 260-case development set (52 unseen mazes × 5 objects, ~5 minutes on 44 CPU workers):
+Evaluate a system on the 260-case development set (52 unseen mazes × 5 objects, ~4 minutes on 44 CPU workers):
 
 ```bash
-python scripts/eval.py --candidate configs/phase2_candidate02.json --set dev --output runs/eval_example
-# overrides: --carry runs/.../model.zip, --delta-scale 0.05 --carry-horizon 1800, --grasp-settle-calls 30
+python scripts/eval.py --candidate configs/imitation_sac.json --set dev --output runs/eval_example
+python scripts/eval.py --controller reference --set course --planned-speed-scale 3 --holding-speed-scale 2 --output runs/planner_example
+python scripts/rubric.py runs/eval_example   # course rubric estimate per trial
 ```
 
-Sets: `validation` (60), `test1` (100), `test2` (100), `dev` (all 260). The
-`reserve` set (100 cases on 20 unseen mazes) is kept sealed for a final claim.
+Sets: `validation` (60), `test1` (100), `test2` (100), `dev` (all 260), `holdout` (100 on
+20 fresh mazes), `course` (course seeds 1000–1019). The `reserve` set (100 cases on 20
+unseen mazes) stays sealed for a final claim. Overrides: `--grasp/--carry/--reach model.zip`,
+`--grasp-mode planned`, `--carry-mode planned`, `--delta-scale`, `--carry-horizon`.
 
-Physical reference rollout with video:
+Record episodes (video, preview, per-call trajectory) exactly as the evaluator runs them:
 
 ```bash
-python scripts/run_reference.py --seed 42 --object-idx 14 --video --output runs/reference_example
+python scripts/record.py --candidate configs/imitation_sac.json --set dev \
+  --cases validation_008_object_05 --output runs/recording_example
 ```
 
-Carry training as used for the current candidate (BC-initialized actor, demonstration-regularized SAC+HER):
-
-```bash
-python scripts/phase2_train_carry.py --run-id carry_example \
-  --initial-checkpoint runs/phase2_actor_spatial_freeze_plan01/artifacts/initial_actor.zip \
-  --demonstrations runs/phase2_carry_learned_mix01/artifacts/demonstrations.pkl \
-  --bank configs/phase2_scene_bank_expanded.json --layouts 192 --workers 8 --bc-updates 0 \
-  --warmup-updates 2000 --critic-warmup-tau 0.1 --steps 40000 --learning-rate 3e-05 \
-  --delta-scale 0.075 --horizon 900 --validation-layouts 12 --encoder gated48-k20-f5 \
-  --preparation-grasp runs/phase2_actor_spatial_freeze_plan01/artifacts/grasp.zip \
-  --training-layouts 8 --buffer-size 600000 --bc-weight 100 --balance-objects \
-  --balance-replay-objects --freeze-actor-spatial
-```
+Retrain everything and rerun all evaluations: `bash scripts/train_mujoco.sh && bash scripts/evaluate_mujoco.sh`
+(about 2 + 2 hours on 48 CPUs and one GPU).
 
 Dashboard: `python dashboard/server.py --port 8766`, then open http://127.0.0.1:8766
 (forward the port over SSH from a remote machine).
 
 ## Documents
 
-- [Project spec](docs/project_spec.md): task authority, learning boundary, final study design.
+- [Project spec](docs/project_spec.md): task authority, learning boundary, study design.
 - [Project state](docs/project_state.md): current results and next steps.
-- [Experiment log](docs/experiment_log.md): condensed history; full reports in `docs/archive/`.
-- [Upstream audit](docs/upstream_audit.md): source defects and compatibility decisions.
+- [Experiment log](docs/experiment_log.md): MuJoCo-era experiments.
+- [PyBullet era](docs/archive/pybullet/): the original course simulator — results, experiment log,
+  upstream audit and the dexterous-hand spike, kept for the report.

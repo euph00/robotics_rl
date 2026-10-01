@@ -15,12 +15,14 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-import imageio
-import numpy as np
+# Import the evaluator first, exactly as its workers do: library load order changes low-level
+# floating-point paths, and borderline episodes (chaotic contact) then end differently.
+import scripts.eval as E  # noqa: E402
+import imageio  # noqa: E402
+import numpy as np  # noqa: E402
 
-import scripts.eval as E
-from pnr.telemetry import RunLogger, atomic_json
-from pnr.video import webm_copy
+from pnr.telemetry import RunLogger, atomic_json  # noqa: E402
+from pnr.video import webm_copy  # noqa: E402
 
 
 VIEW = dict(distance=6, pitch=-75)   # near top-down chase view: the default follow camera is occluded by 2 m walls
@@ -33,14 +35,15 @@ def record_case(case, execution, output, every, width, height):
 
         def init(self, *args, _original=original, **kwargs):
             _original(self, *args, **kwargs)
-            current.setdefault('owner', self)
+            current.setdefault(type(self).__name__, self)
         cls.__init__ = init
     native = E.PickNavReachEnv(**case['env_kwargs'])
     step, frames, trajectory = native.step, [], []
 
     def recording_step(action):
         result = step(action)
-        stage = getattr(current.get('owner'), 'stage', None)
+        system, controller = current.get('LearnedSystem'), current.get('ReferenceController')
+        stage = system.display_stage if system is not None else getattr(controller, 'stage', None)
         trajectory.append({'call': native.step_count, 'stage': stage, 'qpos': native.agent_qpos.round(4).tolist(),
                            'object_position': np.round(native.object_pose()[0], 4).tolist(),
                            'bilateral_contact': bool(native.contacts()['bilateral_contact'])})

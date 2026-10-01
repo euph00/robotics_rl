@@ -1,28 +1,28 @@
 {
   "title": "Pick–Nav–Reach",
-  "phase": "Baseline established",
+  "phase": "MuJoCo baseline",
   "updated": "2026-10-01",
-  "summary": "Pick a supplied object, carry it through an unseen maze, hold it at the goal.",
+  "summary": "Pick a supplied object, carry it through an unseen maze, hold it at the goal · MuJoCo.",
   "headline": [
     {
-      "label": "Best system · fresh mazes",
-      "value": "80%",
-      "detail": "Imitation + SAC · 80/100 complete · 79 within deadline"
+      "label": "Imitation + SAC · fresh mazes",
+      "value": "92%",
+      "detail": "92/100 complete · 83 within deadline · course seeds 93/100"
     },
     {
-      "label": "Course seeds",
-      "value": "83%",
-      "detail": "Rubric estimate ≈ 97 / 100"
+      "label": "Planner only · fresh mazes",
+      "value": "98%",
+      "detail": "Strongest system in MuJoCo · course rubric ≈ 39.4/40 per trial"
     },
     {
-      "label": "Main failure",
-      "value": "Grip slip",
-      "detail": "Object slides out during carry · ~13% of cases"
+      "label": "Learned systems lose in",
+      "value": "Carry",
+      "detail": "Timeouts, wall hits, the can slipping · ~6% of dev cases"
     },
     {
       "label": "RL fine-tuning gain",
       "value": "≈ 0",
-      "detail": "Imitation 362/460 vs + SAC 374/460"
+      "detail": "Imitation 421/460 vs + SAC 423/460"
     }
   ],
   "phases": [
@@ -101,8 +101,9 @@
         "hold"
       ],
       "runs": {
-        "dev": "reference_dev_s30_h20",
-        "course": "reference_course_s30_h20"
+        "dev": "mj_planner_dev",
+        "holdout": "mj_planner_holdout",
+        "course": "mj_planner_course"
       }
     },
     {
@@ -117,9 +118,9 @@
         "hold"
       ],
       "runs": {
-        "dev": "ablation_bc_grasp_carry",
-        "holdout": "holdout_imitation_only",
-        "course": "course_imitation_only"
+        "dev": "mj_imitation_dev",
+        "holdout": "mj_imitation_holdout",
+        "course": "mj_imitation_course"
       }
     },
     {
@@ -134,9 +135,9 @@
         "hold"
       ],
       "runs": {
-        "dev": "split_s30_h20",
-        "holdout": "holdout_candidate03",
-        "course": "course_candidate03"
+        "dev": "mj_imitation_sac_dev",
+        "holdout": "mj_imitation_sac_holdout",
+        "course": "mj_imitation_sac_course"
       },
       "best": true
     },
@@ -165,7 +166,7 @@
     {
       "skill": "Carry",
       "teacher": "A* path + 15 cm look-ahead follower",
-      "data": "1,795 episodes · 504k steps · 192 mazes · 77% with injected noise",
+      "data": "1,799 episodes · 509k steps · 192 mazes · with noise recoveries",
       "policy": "CNN on maze map → base XY"
     }
   ],
@@ -190,47 +191,47 @@
     "timeline": [
       [
         "Imitation + SAC",
-        "split_s30_h20"
+        "mj_imitation_sac_dev"
       ],
       [
         "Planner only",
-        "reference_dev_s30_h20"
+        "mj_planner_dev"
       ]
     ],
     "planned_speed": [
       [
         1.0,
-        "sweep_c1_d0075"
+        "mj_planspeed_10"
       ],
       [
         1.5,
-        "planspeed_c1_s15"
+        "mj_planspeed_15"
       ],
       [
         2.0,
-        "planspeed_c1_s20"
+        "mj_planspeed_20"
       ],
       [
         2.5,
-        "planspeed_c1_s25"
+        "mj_planspeed_25"
       ],
       [
         3.0,
-        "planspeed_c1_s30"
+        "mj_planspeed_30"
       ]
     ],
     "carry_speed": [
       [
         0.035,
-        "sweep_c1_d0035"
+        "mj_carryspeed_0035"
       ],
       [
         0.05,
-        "sweep_c1_d005"
+        "mj_carryspeed_005"
       ],
       [
         0.075,
-        "sweep_c1_d0075"
+        "mj_planspeed_10"
       ]
     ],
     "sac_ablation": {
@@ -244,12 +245,12 @@
       ],
       "runs": [
         [
-          "split_s30_h20",
-          "ablation_bc_carry"
+          "mj_imitation_sac_dev",
+          "mj_ablation_sac_grasp_bc_carry"
         ],
         [
-          "ablation_bc_grasp",
-          "ablation_bc_grasp_carry"
+          "mj_ablation_bc_grasp_sac_carry",
+          "mj_imitation_dev"
         ]
       ]
     },
@@ -264,49 +265,49 @@
       ],
       "runs": [
         [
-          "ablation_bc_grasp_carry",
-          "swap_planned_carry"
+          "mj_imitation_dev",
+          "mj_swap_planned_carry"
         ],
         [
-          "swap_planned_grasp",
-          "reference_dev_s30_h20"
+          "mj_swap_planned_grasp",
+          "mj_planner_dev"
         ]
       ]
     },
     "carry_rules": [
       [
         "No rule",
-        "ablation_bc_grasp_carry"
+        "mj_imitation_dev"
       ],
       [
         "Turn ≤ 30°",
-        "step1_turn30"
+        "mj_rules_turn30"
       ],
       [
         "Turn ≤ 15°",
-        "step1_turn15"
+        "mj_rules_turn15"
       ],
       [
         "Slow on slip",
-        "step1_slip2mm"
+        "mj_rules_slip2mm"
       ],
       [
         "Both",
-        "step1_turn15_slip2mm"
+        "mj_rules_turn15_slip2mm"
       ]
     ],
     "rubric": [
       [
         "Planner only",
-        "reference_course_s30_h20"
+        "mj_planner_course"
       ],
       [
         "Imitation",
-        "course_imitation_only"
+        "mj_imitation_course"
       ],
       [
         "Imitation + SAC",
-        "course_candidate03"
+        "mj_imitation_sac_course"
       ]
     ]
   },
@@ -324,104 +325,22 @@
       "href": "/reports/project_spec.md"
     },
     {
-      "label": "Candidate 3 config",
-      "href": "/reports/candidate03.json"
+      "label": "Imitation + SAC config",
+      "href": "/reports/imitation_sac.json"
+    },
+    {
+      "label": "Imitation-only config",
+      "href": "/reports/imitation_only.json"
     }
   ],
   "recordings": [
     {
-      "run": "reference_demo_visible_seed42",
-      "label": "Planner only · foam brick · course maze 42"
+      "run": "mj_recordings_learned01",
+      "label": "Imitation + SAC · validation maze 8 · banana delivered, can slips out"
     },
     {
-      "run": "phase2_candidate02_recordings01",
-      "label": "Learned system (older carry) · validation maze 0"
+      "run": "mj_recordings_planner01",
+      "label": "Planner only · validation maze 8 · banana"
     }
-  ],
-  "hand_spike": {
-    "image": {
-      "run": "hand_feasibility01",
-      "path": "artifacts/hands.png",
-      "caption": "Test rig: Fetch gripper pinching the foam brick · Allegro hand wrapping the mug"
-    },
-    "objects": [
-      "foam",
-      "banana",
-      "can",
-      "apple",
-      "mug"
-    ],
-    "tests": [
-      {
-        "title": "Scripted grasp · 10 recorded routes",
-        "of": 10,
-        "fetch": [
-          9,
-          10,
-          5,
-          6,
-          10
-        ],
-        "allegro": [
-          1,
-          0,
-          5,
-          8,
-          6
-        ]
-      },
-      {
-        "title": "After 5,400-trial robustness search · unseen routes",
-        "of": 5,
-        "fetch": [
-          4,
-          5,
-          1,
-          3,
-          5
-        ],
-        "allegro": [
-          3,
-          4,
-          1,
-          3,
-          3
-        ]
-      }
-    ],
-    "verdict": "No-go: in PyBullet the 16-joint hand holds objects no better than the two-finger gripper; outcomes flip with millimetre placement changes."
-  },
-  "backends": {
-    "pairs": [
-      {
-        "title": "Course seeds · 100 cases",
-        "pybullet": "reference_course_s30_h20",
-        "mujoco": "mj_reference_course_s30_h20"
-      },
-      {
-        "title": "Development set · 260 cases",
-        "pybullet": "reference_dev_s30_h20",
-        "mujoco": "mj_reference_dev_s30_h20"
-      }
-    ],
-    "checks": [
-      [
-        "Scene, mazes, point clouds, kinematics",
-        "identical"
-      ],
-      [
-        "Motor law (base, first 3 ticks)",
-        "4.50/3.15/2.21 mm vs 4.47/3.17/2.22"
-      ],
-      [
-        "Grip force on the can",
-        "450 N vs 432 N"
-      ],
-      [
-        "Grip slips under external load",
-        "110 N in both (≈ μN)"
-      ]
-    ],
-    "verdict": "Same task, same planner: MuJoCo removes most carry drops (PyBullet contact artifacts). The planner alone nearly saturates the course task there."
-  }
+  ]
 }
