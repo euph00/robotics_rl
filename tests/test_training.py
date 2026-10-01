@@ -8,7 +8,7 @@ import torch
 from stable_baselines3 import SAC, HerReplayBuffer
 from stable_baselines3.common.vec_env import DummyVecEnv
 
-from scripts.profile_learner import SyntheticProfileEnv
+from synthetic_env import SyntheticProfileEnv
 from pnr.telemetry import RunLogger, atomic_json
 from pnr.train import ProgressCallback, make_resume_signature, resume_preflight, validate_replay_layout
 

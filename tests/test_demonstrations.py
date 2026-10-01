@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from stable_baselines3 import SAC, HerReplayBuffer
 from stable_baselines3.common.vec_env import DummyVecEnv
-from scripts.profile_learner import SyntheticProfileEnv
+from synthetic_env import SyntheticProfileEnv
 from pnr.demonstrations import seed_replay
 
 

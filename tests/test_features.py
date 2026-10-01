@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from stable_baselines3 import SAC
 from pnr.features import RelativeGoalExtractor
-from scripts.profile_learner import SyntheticProfileEnv
+from synthetic_env import SyntheticProfileEnv
 
 
 def test_relabelled_goal_changes_relative_features_and_survives_checkpoint(tmp_path):

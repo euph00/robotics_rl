@@ -26,13 +26,9 @@ REPO = Path(__file__).resolve().parents[1]
 PUBLIC = Path(__file__).resolve().parent / "public"
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,100}$")
 REPORTS = {
-    "phase2_test01.md": REPO / "docs/phase2_test01.md",
-    "phase2_diverse_carry_preparation.md": REPO / "docs/phase2_diverse_carry_preparation.md",
-    "phase2_carry_return_audit.md": REPO / "docs/phase2_carry_return_audit.md",
+    "project_state.md": REPO / "docs/project_state.md",
+    "experiment_log.md": REPO / "docs/experiment_log.md",
     "phase2_candidate.json": REPO / "configs/phase2_candidate.json",
-    "phase2_confirmation_test01.md": REPO / "docs/phase2_confirmation_test01.md",
-    "phase2_confirmation_bank.md": REPO / "docs/phase2_confirmation_bank.md",
-    "phase2_actor_spatial_freeze.md": REPO / "docs/phase2_actor_spatial_freeze.md",
     "phase2_candidate02.json": REPO / "configs/phase2_candidate02.json",
 }
 
