@@ -13,7 +13,10 @@ from .planning import JointPlanner, antipodal_grasps, maze_astar
 
 
 class ReferenceController:
-    def __init__(self, env, on_step=None, seed=0, speed_scale=1., grasp_proposal_mode='legacy'):
+    HOLDING_STAGES = ('lift', 'retreat', 'carry_posture', 'carry', 'reach')
+
+    def __init__(self, env, on_step=None, seed=0, speed_scale=1., grasp_proposal_mode='legacy',
+                 holding_speed_scale=None):
         if grasp_proposal_mode not in ('legacy', 'clearance-v2'):
             raise ValueError('Unknown grasp proposal mode')
         self.grasp_proposal_mode = grasp_proposal_mode
@@ -23,6 +26,8 @@ class ReferenceController:
         self.on_step = on_step
         self.stage = 'initial'
         self.speed_scale = float(speed_scale)
+        # Planned motions while holding the object can run slower than empty-hand motions.
+        self.holding_speed_scale = float(speed_scale if holding_speed_scale is None else holding_speed_scale)
         self.wall_contact_steps = 0
         self.table_contact_steps = 0
         self.first_lift_action = None
@@ -63,7 +68,8 @@ class ReferenceController:
         target = np.asarray(target,dtype=float)
         path = self.planner.plan(target,include_object) if check else [self.env.agent_qpos.copy(),target]
         for a,b in zip(path[:-1],path[1:]):
-            n = max(2,int(np.ceil(np.max(np.abs(b-a))/(step_size*self.speed_scale))))
+            scale = self.holding_speed_scale if stage in self.HOLDING_STAGES else self.speed_scale
+            n = max(2,int(np.ceil(np.max(np.abs(b-a))/(step_size*scale))))
             for t in np.linspace(0,1,n+1)[1:]:
                 command = a+(b-a)*t
                 if stage in ('lift','hold','carry','reach','retreat','carry_posture'):
@@ -212,9 +218,9 @@ class ReferenceController:
                 break
             target = self._closed_target()
             target[:2] += error[:2]
-            target[torso] += error[2]
-            if not self.env.joint_lower[torso] <= target[torso] <= self.env.joint_upper[torso]:
-                raise ValueError('Final torso translation exceeds native joint range')
+            # Clamp to the torso range; any remaining height error counts against
+            # the native 10 cm tolerance instead of aborting the reach.
+            target[torso] = np.clip(target[torso]+error[2], self.env.joint_lower[torso], self.env.joint_upper[torso])
             self.move_joint(target,'reach',step_size=.006)
         self.hold(60,'reach')
         return self.env.evaluate()

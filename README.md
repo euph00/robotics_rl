@@ -1,114 +1,99 @@
 # Goal-conditioned RL for Pick–Nav–Reach
 
-Build and compare SAC + HER and TD3 + HER systems that physically pick an object, carry it through the supplied maze, and reach the goal while holding it. The eventual study compares two grippers across three independent system seeds per algorithm/gripper condition.
+A Fetch robot in PyBullet must drive to a table, grasp a supplied YCB object from
+its point cloud, carry it through a random maze, and hold it within 10 cm of an
+elevated goal sphere. The course task is
+[NUS-LinS-Lab/Pick-Nav-Reach-Default-Project](https://github.com/NUS-LinS-Lab/Pick-Nav-Reach-Default-Project),
+pinned at `54ab2d1` ([upstream.lock.json](upstream.lock.json)); the checkout under
+`upstream/` stays unchanged.
 
-The foundation is [NUS-LinS-Lab/Pick-Nav-Reach-Default-Project](https://github.com/NUS-LinS-Lab/Pick-Nav-Reach-Default-Project), pinned at `54ab2d1` in [upstream.lock.json](upstream.lock.json). Its checkout stays unchanged under `upstream/`.
+**Current goal:** a strong SAC+HER baseline on the original gripper that
+generalises to unseen mazes. Later: TD3+HER, a modified gripper, and a 3-seed
+comparison ([spec](docs/project_spec.md)).
 
-## Current milestone
+**Status:** candidate 3 ([configs/candidate03.json](configs/candidate03.json)) completes
+**80/100** unseen-maze tasks on a fresh hold-out bank, 79/100 within 15,000 physics
+ticks. Details: [docs/project_state.md](docs/project_state.md). History of all
+earlier experiments: [docs/experiment_log.md](docs/experiment_log.md).
 
-The revised policy completed **69/100 tasks** on a fresh confirmation bank,
-with **53/100 within 15,000 physics ticks including settling and final hold**.
-The 80/100 target remains unmet. The earlier policy scored 78/100 on different
-unseen maps; both results are preserved. Current work targets grasp retention.
+## System
 
-[Dashboard](http://127.0.0.1:8766) · [Confirmation report](docs/phase2_confirmation_test01.md) ·
-[First test](docs/phase2_test01.md) · [Current state](docs/project_state.md) ·
-[Frozen revised candidate](configs/phase2_candidate02.json).
+A fixed supervisor runs three learned skills from the original task start, with
+no resets between skills and no object attachment:
 
-This is a three-skill hybrid: BC-initialized SAC+HER grasp/carry with continuing
-demonstration regularization, ordinary SAC+HER reach, and declared planned
-approach/carry-posture assistance. Learned navigation has no route oracle.
-The original gripper and upstream physics remain unchanged.
+| Stage | Controller |
+|---|---|
+| Approach table, pre-grasp | Planned: antipodal grasp proposal from the point cloud, IK, collision-checked motion |
+| Grasp and lift | Learned: SAC+HER (BC-initialized, demonstration-regularized) |
+| Carry posture | Planned arm posture |
+| Carry through maze | Learned: SAC+HER over base XY from maze-geometry maps; no route oracle |
+| Reach goal while holding | Learned: SAC+HER |
 
-Both tests are preserved as historical results and retired from future
-held-out claims after informing further development. Their trajectories are
-not added to training; the final-study reserve remains sealed. The earlier single-maze
-[development baseline](docs/milestone1.md) remains frozen.
+A classical reference (A* navigation, planned grasp and reach) is in
+`pnr/reference.py` and `scripts/run_reference.py`.
 
-## Environment
+## Layout
 
-Run commands from the repository root. This host already has the Python 3.10 environment and dependencies:
+| Path | Contents |
+|---|---|
+| `pnr/` | Environment adapter, skills, planners, feature extractors, SAC variants |
+| `scripts/eval.py` | Full-task evaluation on fixed maze sets (start here) |
+| `scripts/phase2_train_{grasp,carry}.py`, `pnr/train.py` | Skill training (grasp, carry, reach) |
+| `scripts/phase2_{grasp,carry,learned_carry}_demos.py` | Demonstration collection |
+| `scripts/build_scene_bank.py`, `build_confirmation_bank.py` | Maze banks (train/validation/test) |
+| `configs/` | Scene banks and candidate manifests (checkpoints + execution settings) |
+| `runs/` | Checkpoints, datasets, evaluation results (ignored by Git) |
+| `dashboard/` | Read-only live dashboard |
 
-```bash
-source .venv/bin/activate
-python -c "import pybullet, gymnasium, stable_baselines3, torch; print(torch.__version__, torch.cuda.is_available())"
-```
-
-For a fresh checkout, restore the pinned source and install using an available Python 3.10 interpreter:
-
-```bash
-git clone https://github.com/NUS-LinS-Lab/Pick-Nav-Reach-Default-Project.git upstream/Pick-Nav-Reach-Default-Project
-git -C upstream/Pick-Nav-Reach-Default-Project checkout --detach 54ab2d1faa54d1aa7e2738f114531a76c6514cd3
-PNR_PYTHON_BIN=python3.10 bash scripts/setup.sh
-source .venv/bin/activate
-```
-
-`PNR_PYTHON_BIN` can be an absolute interpreter path. [requirements.txt](requirements.txt) pins direct dependencies; [requirements.lock.txt](requirements.lock.txt) records the installed environment, including PyTorch 2.7.1+cu118. Setup keeps package caches and temporary files on the workspace volume. A fresh machine setup has not yet been independently reproduced.
-
-Checks covering real physics, rewards, HER, geometry, and inference are available through:
-
-```bash
-python -m pytest -q
-```
-
-## Dashboard and reference
-
-The current dashboard is **http://127.0.0.1:8766**. To start it when absent:
+## Setup
 
 ```bash
-python dashboard/server.py --port 8766
+source .venv/bin/activate   # Python 3.10, PyBullet, SB3 2.7, PyTorch 2.7.1+cu118
+python -m pytest -q         # ~3 minutes
 ```
 
-From a remote workstation, forward the server's loopback port:
+Fresh machine: clone the upstream repository into `upstream/Pick-Nav-Reach-Default-Project`,
+check out `54ab2d1faa54d1aa7e2738f114531a76c6514cd3`, then
+`PNR_PYTHON_BIN=python3.10 bash scripts/setup.sh`.
+
+## Common commands
+
+Evaluate a candidate on the 260-case development set (52 unseen mazes × 5 objects, ~5 minutes on 44 CPU workers):
 
 ```bash
-ssh -L 8766:127.0.0.1:8766 <user>@<host>
+python scripts/eval.py --candidate configs/phase2_candidate02.json --set dev --output runs/eval_example
+# overrides: --carry runs/.../model.zip, --delta-scale 0.05 --carry-horizon 1800, --grasp-settle-calls 30
 ```
 
-The dashboard displays live runs, scoped evaluations, reference/learned recordings, and host resources. Runtime files for the currently detached server are `dashboard/.runtime/server.pid` and `dashboard/.runtime/server.log`. [Logging and dashboard details](dashboard/README.md).
+Sets: `validation` (60), `test1` (100), `test2` (100), `dev` (all 260). The
+`reserve` set (100 cases on 20 unseen mazes) is kept sealed for a final claim.
 
-To reproduce the validated physical-reference case, use a new output directory:
+Physical reference rollout with video:
 
 ```bash
-python scripts/run_reference.py --seed 42 --object-idx 14 --video --output runs/reference_reproduction01
+python scripts/run_reference.py --seed 42 --object-idx 14 --video --output runs/reference_example
 ```
 
-This command executes the original approach, physical pickup, maze transport, and retained-object reach. It writes results, a trajectory, video, and simple figures.
-
-## Training and evaluation
-
-For a new reach pilot using the current handover configuration:
+Carry training as used for the current candidate (BC-initialized actor, demonstration-regularized SAC+HER):
 
 ```bash
-python -m pnr.train --skill reach --run-id reach_example01 \
-  --steps 20000 --seed 0 --scene-seed 42 --object-idx 14 \
-  --horizon 100 --num-envs 4 --device cpu --gradient-steps -1 \
-  --goal-features --eval-every 2500 --eval-episodes 1
+python scripts/phase2_train_carry.py --run-id carry_example \
+  --initial-checkpoint runs/phase2_actor_spatial_freeze_plan01/artifacts/initial_actor.zip \
+  --demonstrations runs/phase2_carry_learned_mix01/artifacts/demonstrations.pkl \
+  --bank configs/phase2_scene_bank_expanded.json --layouts 192 --workers 8 --bc-updates 0 \
+  --warmup-updates 2000 --critic-warmup-tau 0.1 --steps 40000 --learning-rate 3e-05 \
+  --delta-scale 0.075 --horizon 900 --validation-layouts 12 --encoder gated48-k20-f5 \
+  --preparation-grasp runs/phase2_actor_spatial_freeze_plan01/artifacts/grasp.zip \
+  --training-layouts 8 --buffer-size 600000 --bc-weight 100 --balance-objects \
+  --balance-replay-objects --freeze-actor-spatial
 ```
 
-Every run needs a unique ID. `--skill grasp` and `--skill carry` select the other adapters; their curricula and evaluation scopes differ. Inspect existing jobs before launching additional workers. Training records setup interactions, metrics, source snapshots, policy/replay checkpoints, and curriculum state under `runs/<run-id>/`. Resume requires matching skill/curriculum state; use `--resume` with the existing run ID and a larger total `--steps` budget.
+Dashboard: `python dashboard/server.py --port 8766`, then open http://127.0.0.1:8766
+(forward the port over SSH from a remote machine).
 
-Once candidate checkpoints are available, the full-system evaluator accepts run folders or exact model ZIPs:
+## Documents
 
-```bash
-python scripts/evaluate_system.py \
-  --grasp runs/milestone1_validation01/artifacts/checkpoints/grasp.zip \
-  --carry runs/milestone1_validation01/artifacts/checkpoints/carry.zip \
-  --reach runs/milestone1_validation01/artifacts/checkpoints/reach.zip \
-  --episodes 1 --scene-seeds 42 --object-idx 14 \
-  --algorithm-label 'Demonstration-refined SAC+HER pilot' \
-  --video --output runs/system_candidate01
-```
-
-It freezes the exact checkpoint bytes, begins at the original start, uses no inter-skill resets or planner waypoints during learned carry, and records failures as well as successes. Planned pre-grasp approach and carry-posture transitions are declared assistance. The selected development pilot passed the reported same-case checks; this does not establish held-out performance.
-
-Generated videos, logs, and checkpoints stay on the workspace volume and are ignored by Git. Preserve the relevant `runs/` directories when transferring an experiment.
-
-## Project documents
-
-- [Aligned specification](docs/project_spec.md): task authority, learning boundary, evaluation, and final comparison.
-- [Current state](docs/project_state.md) and [implementation record](docs/implementation_log.md): measured progress and known limits.
+- [Project spec](docs/project_spec.md): task authority, learning boundary, final study design.
+- [Project state](docs/project_state.md): current results and next steps.
+- [Experiment log](docs/experiment_log.md): condensed history; full reports in `docs/archive/`.
 - [Upstream audit](docs/upstream_audit.md): source defects and compatibility decisions.
-- [Project guide](mobile_manipulation_project_guide.md) and [handoff](mobile_manipulation_codex_handoff.md).
-
-Original drafts are in [docs/archive/](docs/archive/). The unchanged presentation is historical; release/placement assumptions are superseded by the aligned specification.

@@ -1,113 +1,98 @@
 # Project state
 
-The revised original Fetch system completed **69/100 tasks on 20 fresh maze
-layouts**, with 53/100 within 15,000 physics ticks including settling and final
-hold. The 80/100 milestone is **not met**. The earlier candidate scored 78/100
-on a different test bank. Refinement now targets grasp retention within the
-agreed window ending 2026-09-29 05:53:20 UTC.
+Updated 2026-09-29. Goal for this phase: a strong SAC+HER baseline on the
+original gripper that completes the full task on unseen mazes. Earlier history
+and every experiment of this phase: [experiment_log.md](experiment_log.md).
 
-[Confirmation result](phase2_confirmation_test01.md) ·
-[First unseen-maze result](phase2_test01.md) ·
-[Frozen revised candidate](../configs/phase2_candidate02.json) ·
-[Dashboard](http://127.0.0.1:8766).
+## Current best system: candidate 3
 
-## Current system
+[configs/candidate03.json](../configs/candidate03.json). Models are the candidate 1
+checkpoints (`runs/phase2_milestone_test_plan01/artifacts/checkpoints/`):
+BC-initialized, demonstration-regularized SAC+HER grasp and carry (CNN map
+encoder), ordinary SAC+HER reach. Planned approach and carry posture are declared
+assistance; they now run faster (3× without the object, 2× while holding it).
 
-Three policies perform grasp, carry and reach. Grasp and carry use
-BC-initialized SAC+HER with continuing demonstration regularization; reach uses
-ordinary SAC+HER. Selected online decisions are 12k/40k/15k respectively.
-Planned approach, carry posture and IK are explicit assistance. The original
-gripper, native physics, goal acceptance and retained hold remain unchanged.
-There is no learned-navigation route oracle, teacher correction, object weld or
-inter-skill reset at evaluation.
+| Fresh hold-out (20 unseen mazes × 5 objects, never used for selection) | Complete | Within 15k ticks |
+|---|---:|---:|
+| **Candidate 3** | **80/100** | **79/100** |
+| Candidate 1, original execution settings | 70/100 | 58/100 |
 
-The previous candidate scored 51/60 complete and 47/60 within 15k ticks
-including settling. Extending it to 200k decisions scored 48/60 and 47/60; training
-with 240 varied grasp preparations scored 49/60 and 48/60. All outcomes and costs
-remain recorded. [Training comparisons](phase2_diverse_carry_preparation.md).
+On the 260-case development set candidate 3 scores 211 (81.2%) complete and
+200 (76.9%) timed, versus 203 and 167 for candidate 1's original settings.
 
-## Evidence and remaining work
+Per object on the hold-out: banana 19/20, foam 17/20, mug 17/20, apple 14/20,
+can 13/20. Failures: 12 carry grasp losses, 4 carry timeouts, 2 reach timeouts,
+1 reach drop, 1 grasp timeout.
 
-The first 100-case test used five supplied objects crossed with 20 distinct mazes.
-Its 22 failures were 14 carry grasp losses, six navigation horizons, one posture
-loss and one reach drop. An independent audit reconciled all 100 outcomes and
-1,504,190 physics ticks. Full success and deadline success are separate metrics.
+## Course rubric estimate
 
-The first test is now a historical result and will not be reused for held-out
-promotion after further development. Its trajectories are not training data.
-Training and validation records remain frozen; a new confirmation bank was
-fixed before revision, while the separate final-study reserve remains untouched.
+The upstream README rubric: 60 points for implementing grasp generation (point
+cloud + normals), motion planning and navigation functions, plus per-trial points
+averaged over 5 graded seeds. `scripts/rubric.py` estimates the per-trial part.
+Candidate 3 under the unmodified course seed mapping (`eval.py --set course`,
+seeds 1000–1019, 19 distinct mazes, none in training) completes 83/100, 81/100
+within 15k ticks:
 
-The [carry-discount experiment](phase2_discount_trial.md) did not improve
-validation: 45/60 and 44/60 complete at 40k and 80k decisions. It is not promoted.
-The [matched navigation-network experiment](phase2_encoder_screen.md) reached
-51/60 complete and 39/60 within the deadline with the gated encoder, versus
-42/60 and 34/60 for its fresh CNN control. Its imitation-only initializer already
-scored 50/60 and 43/60, so the contribution of SAC remains small and mixed.
-Continuing the gated branch regressed to 39/60 and 29/60 at 80k decisions,
-then 44/60 and 35/60 at 120k. Broader grasp experience scored 47/60 and 40/60.
-A [minimum demonstration replay share](phase2_demonstration_floor_replay.md)
-scored 47/60 and 35/60 at 40k, then 46/60 and 38/60 at 80k; it is not promoted.
+| Per-trial item | Points | Candidate 3 average |
+|---|---:|---:|
+| Lift within 3000 sim steps | 6 | 5.94 |
+| Lift ≥ 10 cm above table | 6 | 5.94 |
+| Hold ≥ 50 steps | 6 | 5.94 |
+| Final pose close to target grasp (no threshold given; scored at 2 cm / 0.1 rad; median 10.9 mm) | 6 | 5.70 |
+| Reach within 10 cm | 6 | 4.98 |
+| Reach within 15,000 sim steps | 6 | 4.86 (4.98 if steps = env calls) |
+| Carry stability (heading says 4 pts; sub-line says 2 each, max 8) | 4 | 3.36 |
+| **Per-trial total** | **40** | **36.7** |
 
-The [pretraining audit](phase2_carry_bc_curriculum.md) found that the historical
-best inherited 60k BC updates, versus 16k for the fresh encoder comparison.
-The staged 52k map-pretraining + 8k object-adaptation experiment scored
-49/60 full and 44/60 timed, with no navigation timeouts but nine carry drops
-and two reach drops. It missed its predeclared 50/60 screen and was stopped
-without online training. The [actor map-core freeze](phase2_actor_spatial_freeze.md)
-scored **52/60 complete and 38/60 within the deadline**. It was selected under
-the predeclared completion-first rule, despite being slower than the previous
-candidate. The learned map core remains fixed; other actor weights, critics and
-temperature learned for 40k online decisions. Its fresh 100-case confirmation
-completed 69 tasks, with 24 of 31 failures caused by carry grasp loss. The
-independent audit passed; the milestone did not. This confirmation is now
-retired after informing refinement, with no test trajectories used in training.
-The [transport-qualified grasp trial](phase2_grasp_qualification.md) collected
-120 original-start preparations, with 88 surviving transport and hold. Its
-fixed 2,000-update imitation refinement **regressed from 18/20 to 15/20** on the
-paired TRAIN retention screen (one win, four losses; all handovers prepared).
-Independent data/model/outcome audits passed. The trial closed as predeclared,
-with no full 60-case follow-up or new held-out evaluation. Total collection/comparison
-cost was 2,024,915 physics ticks. The earlier conditional plan remains skipped.
+With the 60 function points, the expected score is about 97/100; nearly all lost
+points come from objects dropped during carry.
 
-The [retention prediction screen](phase2_retention_feedback.md) failed: the
-fixed classifier was worse than object prevalence and ranked within-case
-variants at 0.52 (required 0.65). No auxiliary action-value critic is proceeding.
-The direct on-policy feedback pilot finished at **35/40 retained transports versus
-31/40 control**, with seven wins and three losses. It missed its fixed 36/40 gate
-and is closed without full-system validation. Independent auditing reconciled
-all 1,040 suffix/comparison attempts and 14,013,305 new physics ticks. On 20 cases
-with a historical original-actor baseline, feedback matches the original 18/20;
-the continuation control fell to 15/20. The next bounded investigation concerns
-a command-rate limiter for learned carry, preserving original physics and
-checking both full success and inclusive timing. No physics has started for it.
-Small gains on the reused 60-case validation
-bank are insufficient evidence of better generalization. The eventual SAC/TD3 × original/modified gripper × three-seed study
-still requires independent replications and matched assistance/data protocols.
-Current development runs are not those replications.
+## How we evaluate
 
-## Operation and recordings
+`scripts/eval.py` runs full original-start episodes in parallel (~5 minutes for
+260 cases on 44 CPU workers). Two numbers per run: **complete** (retained object
+within 10 cm of the goal after the 60-call final hold) and **timed** (complete
+within 15,000 physics ticks, including initial settling and the final hold).
 
-Dashboard: **http://127.0.0.1:8766**. From another machine, forward that port to
-this host with SSH; see [instructions](../dashboard/README.md). Server PID/logs
-are in `dashboard/.runtime/`.
+| Set | Cases | Role |
+|---|---:|---|
+| `dev` | 260 | Development: 12 validation + 20 first-test + 20 confirmation mazes × 5 objects; ±7 cases noise |
+| `holdout` | 100 | Fresh bank built 2026-09-29 (`configs/holdout_bank_20260929.json`); used once for candidate 3 |
+| `reserve` | 100 | Sealed for the final SAC/TD3 study |
 
-The featured revised-policy recordings cover all five objects on the first
-validation maze, fixed before the confirmation results. Banana, can and mug
-complete; foam and apple drop while carrying. All five recordings reproduce
-the saved validation trajectories and tick counts exactly. They are
-visualization diagnostics, not additional unseen cases. Older recordings,
-including the historical reach-drop discrepancy, remain preserved.
+Objects: foam brick 14, banana 5, tomato can 2, apple 7, mug 10.
 
-Models, replay, data, videos and immutable source snapshots live under ignored
-`runs/`; preserve those directories when transferring experiments. Source and
-small manifests are versioned in Git. The upstream checkout stays pinned at
-`54ab2d1`; the local Python 3.10/CUDA environment uses the available A100 80 GB,
-48 logical CPUs and 251 GiB RAM.
+## What limits performance
 
-## Historical first development milestone
+- **Grasp creep during carry** is most remaining failures. The object slides down
+  between the finger pads under base-motion pulses; it is partly random from run
+  to run and not predicted by route length. Slower carry, settle holds and a
+  tilted carry posture did not help (see the experiment log). A modified finger
+  geometry, planned for the gripper study, is the natural remedy.
+- **Online SAC adds no measurable performance** for grasp or carry: replacing both
+  with their imitation-only initializers gives 205/260 vs 211/260 (within noise).
+  Competence comes from planned assistance plus imitation of a planner (with
+  noise-injected demonstrations over 192 mazes); only reach is learned by RL.
+  The demonstration loss (weight 100) keeps the actor near the teacher. Removing it where the critic
+  disagrees (Q-filter) collapsed the policy, so the critic, not the regulariser,
+  is the bottleneck for making online RL contribute more.
 
-The earlier single-maze demonstration remains frozen and recoverable:
-[report](milestone1.md) · [candidate](../configs/milestone1_candidate.json).
-It passed three repetitions on foam brick 14/scene42 but did not establish
-cross-maze generalization. It must not be confused with the first 100-case result.
+## Reproducibility
+
+Retraining the candidate 1 carry recipe with a new seed (7402) gives 214/260
+complete and 200/260 timed on dev, matching the original model (211/200). The
+recipe is stable across at least two training seeds.
+
+## Agreed study design (2026-10-01)
+
+Imitation-only (BC) is a baseline arm of its own. Per gripper, compare:
+**BC only**, **BC + SAC+HER**, **BC + TD3+HER**, with matched data and budgets.
+Next work gives RL a measurable job the teacher does not do (grip-safe, fast
+carrying) and makes online RL strong enough to move beyond the BC policy.
+
+## Operations
+
+- Dashboard: `python dashboard/server.py --port 8766` → http://127.0.0.1:8766.
+- Replay buffers, superseded datasets and caches were deleted on 2026-10-01
+  (`runs/` 340 GB → 17 GB). Superseded run folders (small) remain in `runs/`.
+- The Codex agent that built most of this repository is paused.

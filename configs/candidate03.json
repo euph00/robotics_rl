@@ -1,0 +1,23 @@
+{
+  "candidate_id": "candidate03",
+  "created": "2026-09-29",
+  "description": "Candidate 1 models (BC-initialized, demonstration-regularized SAC+HER grasp and CNN carry; SAC+HER reach) with faster planned motions: empty-hand approach at 3x, planned motions while holding the object at 2x. Carry speed unchanged.",
+  "selection": "Best completion/timing trade-off among execution settings on the 260-case dev set; see docs/project_state.md",
+  "checkpoints": {
+    "grasp": {"frozen_path": "runs/phase2_milestone_test_plan01/artifacts/checkpoints/grasp.zip", "sha256": "fa7b8d54cdc916d6e68753721993b66b7e571bf09af84e70cf4e4030618dfbe2"},
+    "carry": {"frozen_path": "runs/phase2_milestone_test_plan01/artifacts/checkpoints/carry.zip", "sha256": "a07f79281a48066ef3281d1d0b261f85ede542915b81873f7eb13cefc3a7838e"},
+    "reach": {"frozen_path": "runs/phase2_milestone_test_plan01/artifacts/checkpoints/reach.zip", "sha256": "cd0c3f20ad0f938028533a8635e95f119056e0fd3abff185d7c7679f9629c258"}
+  },
+  "execution": {
+    "grasp_horizon": 600,
+    "carry_horizon": 1200,
+    "reach_horizon": 150,
+    "delta_scale": 0.075,
+    "planned_speed_scale": 3.0,
+    "holding_speed_scale": 2.0,
+    "deadline_physics_ticks": 15000,
+    "grasp_lift_m": 0.24,
+    "reach_tolerance_m": 0.08,
+    "grasp_proposal_mode": "clearance-v2"
+  }
+}

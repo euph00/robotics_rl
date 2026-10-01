@@ -1,0 +1,26 @@
+{
+  "protocol": "predeclared-confirmation-generation-v1",
+  "created_at": "2026-09-29T02:29:28.223807+00:00",
+  "parent_path": "/mnt/sdb/chieh/RL_robotics/configs/phase2_scene_bank_expanded.json",
+  "parent_file_sha256": "411393c5a5c7e0ce53331970ab83206a0c48d56f57752cf48082b5689ca9c6c7",
+  "parent_manifest_sha256": "d6f130f4dae03b9ee4a27635bb5146cc5db48661240dd0d1da59e58e18424553",
+  "confirmation_seed": 20261001,
+  "layout_count": 20,
+  "objects": [
+    14,
+    5,
+    2,
+    7,
+    10
+  ],
+  "retired_evaluation": {
+    "run_id": "phase2_system_confirmation_test01",
+    "summary_sha256": "304e0926671ef482d63670faa0e876d56bf507b47d42793795e0384161161f78"
+  },
+  "admission": "exclude every parent and course-legacy content hash; connected gate cells only",
+  "route_length_filter": false,
+  "learned_outcome_filter": false,
+  "policy_or_physical_trials": 0,
+  "generator_source_sha256": "12f01d77779e7ed7b540104d33a4ca43ba735baf28bd7e3a012b4b0b0ed7e948",
+  "geometry_source_sha256": "69f63edf8f8726ff51a062f8afc5d57047d8a2922acb9dfa974a548d477d2125"
+}
