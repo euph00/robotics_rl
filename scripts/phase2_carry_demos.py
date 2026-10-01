@@ -368,7 +368,7 @@ def main():
             p.error('Explicit layouts must be unique members of the frozen TRAIN partition')
         layouts=[indexed[key] for key in args.layout_ids]
     else:layouts=available[args.start_layout:args.start_layout+args.layouts]
-    if not layouts or not 1<=args.workers<=6 or args.episodes<1:p.error('Need layouts, episodes>0 and1–6 workers')
+    if not layouts or not 1<=args.workers<=48 or args.episodes<1:p.error('Need layouts, episodes>0 and 1–48 workers')
     if args.mode=='recovery' and args.episodes>6:p.error('Recovery mode has at most six distinct offset attempts per layout')
     if args.recovery_noise_std<0 or not np.isfinite(args.recovery_noise_std):p.error('Noise std must be finite nonnegative')
     if args.mode=='on-policy-recovery':

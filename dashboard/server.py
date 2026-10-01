@@ -28,9 +28,8 @@ SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,100}$")
 REPORTS = {
     "project_state.md": REPO / "docs/project_state.md",
     "experiment_log.md": REPO / "docs/experiment_log.md",
-    "phase2_candidate.json": REPO / "configs/phase2_candidate.json",
-    "phase2_candidate02.json": REPO / "configs/phase2_candidate02.json",
-    "candidate03.json": REPO / "configs/candidate03.json",
+    "imitation_sac.json": REPO / "configs/imitation_sac.json",
+    "imitation_only.json": REPO / "configs/imitation_only.json",
     "project_spec.md": REPO / "docs/project_spec.md",
 }
 

@@ -152,8 +152,8 @@ def main():
     parser.add_argument('--grasp-proposal-mode', choices=['legacy','clearance-v2'], default='legacy')
     parser.add_argument('--teacher-approach-control', choices=['component','ray-tilted'], default='component')
     args = parser.parse_args()
-    if not 1 <= args.workers <= 8 or not 0 <= args.jitter_xy <= .02 or not .15 <= args.lift_range[0] <= args.lift_range[1] <= .30:
-        raise ValueError('Use at most eight workers and two centimeters start jitter')
+    if not 1 <= args.workers <= 48 or not 0 <= args.jitter_xy <= .02 or not .15 <= args.lift_range[0] <= args.lift_range[1] <= .30:
+        raise ValueError('Use 1–48 workers, at most two centimeters start jitter and a 15–30 cm lift')
     os.environ.update(OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', MKL_NUM_THREADS='1')
     from pnr.telemetry import RunLogger, atomic_json
     from scripts.generate_grasp_demos import save_dataset
