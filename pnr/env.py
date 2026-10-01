@@ -141,7 +141,7 @@ def _object_parts(object_dir):
 @dataclass(frozen=True)
 class SavedState:
     env_id: int
-    state: np.ndarray
+    state: object      # full MjData copy, so contacts and constraint forces restore bit-exactly
     target: tuple
     step_count: int
     physics_steps: int
@@ -487,9 +487,10 @@ class PickNavReachEnv:
 
     # ---------------- snapshots ----------------
     def save_state(self):
-        spec = mujoco.mjtState.mjSTATE_INTEGRATION
-        state = np.empty(mujoco.mj_stateSize(self.model, spec))
-        mujoco.mj_getState(self.model, self.data, state, spec)
+        # A full copy rather than mj_getState + mj_forward: after mj_step the contact forces in
+        # data belong to the pre-integration state, and recomputing them changes observations.
+        state = mujoco.MjData(self.model)
+        mujoco.mj_copyData(state, self.model, self.data)
         saved = SavedState(id(self), state, tuple(self.last_target), self.step_count, self.physics_steps,
                            self.stable_hold_steps, self.ever_lifted, self.ever_stably_held, self.had_grasp, self.drop_events)
         self._saved[id(saved)] = saved
@@ -498,8 +499,7 @@ class PickNavReachEnv:
     def restore_state(self, state, reset_counters=False):
         if state.env_id != id(self) or self._saved.get(id(state)) is not state:
             raise ValueError('Snapshot belongs to another or reset/closed environment')
-        mujoco.mj_setState(self.model, self.data, state.state, mujoco.mjtState.mjSTATE_INTEGRATION)
-        mujoco.mj_forward(self.model, self.data)
+        mujoco.mj_copyData(self.data, self.model, state.state)
         self.last_target = np.asarray(state.target, dtype=np.float64)
         for field in ('step_count', 'physics_steps', 'stable_hold_steps', 'ever_lifted', 'ever_stably_held', 'had_grasp', 'drop_events'):
             setattr(self, field, getattr(state, field))

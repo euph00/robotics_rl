@@ -75,8 +75,12 @@ def test_snapshot_restores_motion_and_counter_state(env):
     target[0] = 0.06
     env.step(target)
     state = env.save_state()
+    measured, contacts = env.observe(), env.contacts()
     expected, expected_info = env.step(target)
     env.restore_state(state)
+    for key, value in env.observe().items():     # bit-exact, including contact-derived quantities
+        np.testing.assert_array_equal(value, measured[key])
+    assert env.contacts() == contacts
     actual, actual_info = env.step(target)
     for key in expected:
         np.testing.assert_allclose(actual[key], expected[key], atol=1e-7)
