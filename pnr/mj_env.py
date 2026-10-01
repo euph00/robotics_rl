@@ -57,15 +57,26 @@ BITS = {'static': (1, 3), 'robot': (2, 1), 'object': (1, 7), 'floor': (4, 4)}
 
 
 def _course_fetch_urdf():
-    """Course Fetch URDF with a MuJoCo compiler block (meshes resolved, tiny masses bounded)."""
-    out = CACHE / 'fetch.urdf'
+    """Course Fetch URDF prepared for MuJoCo: meshes resolved, PyBullet's default inertials.
+
+    PyBullet gives links without <inertial> (the five head-camera frames) mass 1 and unit
+    inertia at the link origin; the same values are written here.
+    """
+    out = CACHE / 'fetch_v2.urdf'
     if not out.exists():
         CACHE.mkdir(parents=True, exist_ok=True)
-        text = (UPSTREAM / 'assets/fetch/fetch.urdf').read_text()
+        root = ET.parse(UPSTREAM / 'assets/fetch/fetch.urdf').getroot()
+        for link in root.findall('link'):
+            if link.find('inertial') is None:
+                inertial = ET.SubElement(link, 'inertial')
+                ET.SubElement(inertial, 'origin', xyz='0 0 0', rpy='0 0 0')
+                ET.SubElement(inertial, 'mass', value='1')
+                ET.SubElement(inertial, 'inertia', ixx='1', iyy='1', izz='1', ixy='0', ixz='0', iyz='0')
         meshdir = UPSTREAM / 'assets/fetch'
-        block = (f'<mujoco><compiler meshdir="{meshdir}" balanceinertia="true" boundmass="0.001" '
-                 f'boundinertia="0.000001" discardvisual="true" fusestatic="false" strippath="false"/></mujoco>')
-        out.write_text(re.sub(r'(<robot[^>]*>)', r'\1' + block, text, count=1))
+        root.insert(0, ET.fromstring(
+            f'<mujoco><compiler meshdir="{meshdir}" balanceinertia="true" boundmass="0.001" '
+            f'boundinertia="0.000001" discardvisual="true" fusestatic="false" strippath="false"/></mujoco>'))
+        out.write_text(ET.tostring(root, encoding='unicode'))
     return out
 
 
