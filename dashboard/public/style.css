@@ -116,3 +116,7 @@ details summary { cursor: pointer; font-weight: 600; }
 .report { max-width: 860px; margin: 0 auto; padding: 24px; }
 .report table { margin: 10px 0; }
 .table-scroll { overflow-x: auto; }
+.hand-row { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 18px; align-items: start; }
+@media (max-width: 900px) { .hand-row { grid-template-columns: 1fr; } }
+.hand-row img { width: 100%; border-radius: 8px; }
+.verdict { grid-column: 1 / -1; margin: 4px 0 0; font-weight: 600; color: var(--drop); }

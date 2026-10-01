@@ -87,6 +87,14 @@ Retraining the candidate 1 carry recipe with a new seed (7402) gives 214/260
 complete and 200/260 timed on dev, matching the original model (211/200). The
 recipe is stable across at least two training seeds.
 
+## Dexterous hand: negative result (2026-10-01)
+
+An Allegro hand (16 joints) was tested against Fetch's gripper on a rig reproducing
+the carry motion ([hand_feasibility.md](hand_feasibility.md)). It retained fewer
+objects (20/50 vs 40/50; 14/25 vs 18/25 on unseen routes after a robustness search
+of scripted grasps). Many-contact grasps in PyBullet are not more reliable, so the
+project does not pursue dexterous hands. Kept as a reported negative result.
+
 ## Agreed study design (2026-10-01)
 
 Imitation-only (BC) is a baseline arm of its own. Per gripper, compare:

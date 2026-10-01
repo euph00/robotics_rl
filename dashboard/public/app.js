@@ -398,6 +398,36 @@ function renderFindings(overview) {
     figure('Hand-written carry rules', 'Drops (red) vs wall hits (purple) · dev', rulesFig));
 }
 
+function renderHandSpike(spike) {
+  const target = $('hand');
+  target.replaceChildren();
+  if (!spike) return;
+  const image = el('figure', undefined, 'fig');
+  const img = el('img');
+  img.src = `/artifacts/${encodeURIComponent(spike.image.run)}/${spike.image.path.split('/').map(encodeURIComponent).join('/')}`;
+  img.alt = spike.image.caption;
+  image.append(img, el('figcaption', spike.image.caption));
+  target.append(image);
+  for (const test of spike.tests) {
+    const rows = [...spike.objects, 'total'];
+    const total = key => test[key].reduce((a, b) => a + b, 0);
+    const width = 320, rowH = 26, height = 10 + rows.length * rowH;
+    const s = frame(width, height);
+    rows.forEach((name, i) => {
+      const y = 6 + i * rowH, of = name === 'total' ? test.of * spike.objects.length : test.of;
+      const values = name === 'total' ? [total('fetch'), total('allegro')] : [test.fetch[i], test.allegro[i]];
+      s.append(svg('text', {x: 52, y: y + 15, class: 'label', 'text-anchor': 'end'}, name));
+      values.forEach((v, k) => {
+        const w = (v / of) * (width - 120);
+        s.append(svg('rect', {x: 58, y: y + k * 10, width: Math.max(1, w), height: 9, rx: 2, fill: k ? '#8d5bd6' : COLORS.planned}));
+        s.append(svg('text', {x: 62 + w, y: y + k * 10 + 8, class: 'axis'}, `${v}/${of}`));
+      });
+    });
+    target.append(figure(test.title, null, s, legend([['Fetch gripper', COLORS.planned], ['Allegro hand', '#8d5bd6']])));
+  }
+  target.append(el('p', spike.verdict, 'verdict'));
+}
+
 function renderRubric(overview) {
   const rows = (overview.figures?.rubric || []).map(([label, id]) => [label, run(id)]).filter(([, e]) => e && e.rubric);
   const target = $('rubric');
@@ -511,6 +541,7 @@ async function poll() {
       renderResults(STATE.overview);
       renderFindings(STATE.overview);
       renderRubric(STATE.overview);
+      renderHandSpike(STATE.overview.hand_spike);
       renderTables(state.evaluations || [], state.history || []);
       const docs = $('documents');
       docs.replaceChildren();
