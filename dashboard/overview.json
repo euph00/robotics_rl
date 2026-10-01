@@ -80,8 +80,8 @@
       "status": "done"
     },
     {
-      "step": "Grasp vs carry swap: which stage decides drops?",
-      "status": "active"
+      "step": "Swap test: the carry, not the grasp, decides drops (A* carry drops 2× more)",
+      "status": "done"
     },
     {
       "step": "Step 2: slip-aware reward for carry",

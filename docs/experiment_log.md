@@ -126,6 +126,20 @@ lower counts with a 15° limit only reflect episodes ending earlier in wall
 collisions). With the earlier speed sweep, settle hold and tilted-posture
 results, carry motion has little leverage on retention.
 
+Which stage decides drops? A 2×2 swap on dev (`eval.py --grasp-mode/--carry-mode
+planned`), imitation-only policies vs the classical controller's stages:
+
+| Complete (carry drops) | Learned carry | A* carry |
+|---|---:|---:|
+| Learned grasp | 205 (41) | 177 (71) |
+| Planned grasp | 209 (35) | 190 (62) |
+
+The carry controller decides drops; the grasp barely matters. The A* carry moves
+waypoint to waypoint (stopping at each, sharp corners, 18 mm per native call at
+2× holding speed) and drops nearly twice as often as the learned policy's
+continuous motion. Yet the step-1 rules (gentler turns, slowing on slip) did not
+reduce the learned carry's drops further.
+
 Drop analysis (saved traces and repeated runs):
 
 - Lost objects slide down 10–35 mm relative to the base before contact is lost;
