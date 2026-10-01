@@ -91,6 +91,20 @@ All four are within noise (±7): online SAC fine-tuning adds no measurable
 performance for grasp or carry. Reach (pure SAC+HER, no demonstrations) is the
 only skill whose competence comes from RL.
 
+Planner-only baseline (classical reference: antipodal grasp, IK and planned
+descent/lift, A* carry, base/torso reach; the reach now clamps the torso to its
+joint range instead of aborting):
+
+| Planner only | Complete | Timed | Rubric / trial | Carry drops |
+|---|---:|---:|---:|---:|
+| Course seeds, original speed | 63/100 | 0/100 | 24.2/40 | 33 |
+| Course seeds, 3× empty-hand / 2× holding | 76/100 | 76/100 | 36.2/40 | 21 |
+| Dev, 3× / 2× | 190/260 | 183/260 | 35.5/40 | 62 |
+
+The learned system (candidate 3: 83/100 course, 211/260 dev) wins mainly by
+dropping the object about half as often during carry; A* never fails to reach
+the exit.
+
 Drop analysis (saved traces and repeated runs):
 
 - Lost objects slide down 10–35 mm relative to the base before contact is lost;

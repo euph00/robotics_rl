@@ -44,6 +44,10 @@ within 15k ticks:
 | Carry stability (heading says 4 pts; sub-line says 2 each, max 8) | 4 | 3.36 |
 | **Per-trial total** | **40** | **36.7** |
 
+The planner-only pipeline at the same planned speeds scores 76/100 and 36.2/40
+per trial under the course seed mapping (63/100 and 24.2/40 at the original
+speed, where no case meets the deadline).
+
 With the 60 function points, the expected score is about 97/100; nearly all lost
 points come from objects dropped during carry.
 
