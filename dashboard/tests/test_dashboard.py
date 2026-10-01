@@ -178,7 +178,7 @@ class DashboardTests(unittest.TestCase):
                 decoded = json.loads(gzip.decompress(response.read()))
                 self.assertEqual(decoded["runs"], body["runs"])
             with urlopen(base + "/") as response:
-                self.assertIn(b"Study arms", response.read())
+                self.assertIn(b"who controls each phase", response.read())
             report = self.root / "report.md"
             report.write_text("# Test result\n\nTarget not met.\n")
             with patch.dict("dashboard.server.REPORTS", {"fixture.md": report}):
