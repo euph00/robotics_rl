@@ -351,6 +351,12 @@ def evaluation_summary(directory):
             label = failure_label(row)
             failures[label] = failures.get(label, 0) + 1
     execution = config["execution"]
+    durations = {}
+    for row in rows:
+        if row.get("success"):
+            for stage, ticks in (row.get("stage_ticks") or {}).items():
+                if isinstance(ticks, (int, float)):
+                    durations.setdefault(stage, []).append(ticks)
     summary = {
         "id": directory.name, "label": config.get("label") or status.get("name") or directory.name,
         "set": config["set"], "planned": config.get("cases"), "completed": len(rows),
@@ -358,6 +364,8 @@ def evaluation_summary(directory):
         "by_object": by_object, "by_set": by_set,
         "failures": dict(sorted(failures.items(), key=lambda item: -item[1])),
         "rubric": rubric_points(rows), "execution": execution,
+        "drops": sum(1 for row in rows if not row.get("success") and failure_label(row) == "carry: object dropped"),
+        "stage_ticks_median": {stage: sorted(values)[len(values) // 2] for stage, values in durations.items()},
         "controller": execution.get("controller", "learned"),
         "models": {name: _model_source(path) for name, path in (config.get("checkpoints") or {}).items()},
         "status": "running" if _alive(status) else status.get("status", "complete"),
@@ -398,11 +406,19 @@ def get_overview(runs_root):
             if item:
                 arm["results"][split] = {key: item[key] for key in ("id", "success", "timed", "completed", "planned", "rubric")}
     for recording in curated.get("recordings", []):
-        raw = read_json(runs_root / str(recording.get("run", "")) / "status.json") or {}
-        recording["media"] = [item for item in raw.get("artifacts", []) if isinstance(item, dict)
-                              and item.get("kind") == "video" and isinstance(item.get("path"), str)
-                              and safe_artifact(runs_root, recording["run"], item["path"]) is not None]
-    return finite_json({"timestamp": utcnow(), "overview": curated, "evaluations": evaluations,
+        run_id = str(recording.get("run", ""))
+        raw = read_json(runs_root / run_id / "status.json") or {}
+        artifacts = [item for item in raw.get("artifacts", []) if isinstance(item, dict) and isinstance(item.get("path"), str)]
+        images = [item["path"] for item in artifacts if item.get("kind") == "image"]
+        recording["media"] = []
+        for item in artifacts:
+            if item.get("kind") != "video" or safe_artifact(runs_root, run_id, item["path"]) is None:
+                continue
+            preview = str(Path(item["path"]).with_name(Path(item["path"]).stem + "_preview.png"))
+            poster = preview if safe_artifact(runs_root, run_id, preview) else (images[0] if images else None)
+            recording["media"].append(dict(item, poster=poster))
+    maze = read_json(OVERVIEW.with_name("maze_example.json"))
+    return finite_json({"timestamp": utcnow(), "overview": curated, "maze": maze, "evaluations": evaluations,
                         "active": active, "history": history})
 
 

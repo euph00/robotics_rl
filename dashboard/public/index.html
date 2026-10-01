@@ -10,26 +10,54 @@
   <header class="top">
     <div>
       <h1 id="title">Pick–Nav–Reach</h1>
-      <p class="meta"><span class="pill" id="phase">Loading</span> <span id="updated"></span></p>
+      <p class="meta"><span class="pill" id="phase">Loading</span> <span id="summary"></span></p>
     </div>
-    <div class="resources" id="resources" aria-label="Machine resources"></div>
+    <div class="top-right">
+      <div class="resources" id="resources"></div>
+      <div class="muted small" id="updated"></div>
+    </div>
   </header>
 
   <main>
-    <p class="summary" id="summary"></p>
-    <section class="cards" id="headline" aria-label="Headline results"></section>
+    <section class="cards" id="headline"></section>
 
-    <div class="columns">
-      <section class="panel wide">
-        <h2>Study arms</h2>
-        <p class="hint">Complete tasks (within 15k ticks in brackets). Dev: 260 cases on 52 mazes · Hold-out: 100 cases on 20 fresh mazes · Course: 100 cases with the unmodified course seed mapping.</p>
-        <div class="scroll"><table id="arms"></table></div>
-      </section>
-      <section class="panel">
-        <h2>Plan</h2>
-        <ol class="plan" id="plan"></ol>
-      </section>
-    </div>
+    <section class="panel">
+      <h2>Systems: who controls each phase, and how they score</h2>
+      <div id="systems"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Where the time goes <span class="muted small">median successful run, physics ticks</span></h2>
+      <div id="timeline"></div>
+    </section>
+
+    <section class="panel">
+      <h2>How the learned policies are made</h2>
+      <div id="imitation"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Carry through an unseen maze <span class="muted small">recorded trajectories, replayed</span></h2>
+      <div class="maze-row">
+        <div id="maze" class="maze-box"></div>
+        <div id="slip" class="slip-box"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Results</h2>
+      <div class="figs" id="results"></div>
+    </section>
+
+    <section class="panel">
+      <h2>What we learned</h2>
+      <div class="figs" id="findings"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Course rubric estimate <span class="muted small">per trial · course seeds</span></h2>
+      <div id="rubric"></div>
+    </section>
 
     <section class="panel" id="active-panel" hidden>
       <h2>Running now</h2>
@@ -37,27 +65,20 @@
     </section>
 
     <section class="panel">
-      <h2>Evaluations</h2>
-      <p class="hint">Every <code>scripts/eval.py</code> run, newest first. Select a row for per-object results, failures and settings.</p>
-      <div class="scroll"><table id="evaluations"></table></div>
+      <h2>Recordings</h2>
+      <div id="recordings"></div>
     </section>
 
-    <div class="columns">
-      <section class="panel wide">
-        <h2>Recordings</h2>
-        <div class="recordings" id="recordings"></div>
-      </section>
-      <section class="panel">
-        <h2>Documents</h2>
-        <ul class="links" id="documents"></ul>
-      </section>
-    </div>
-
     <section class="panel">
+      <details>
+        <summary>All evaluations</summary>
+        <div class="scroll"><table id="evaluations"></table></div>
+      </details>
       <details>
         <summary>Historical runs <span id="history-count"></span></summary>
         <div class="scroll"><table id="history"></table></div>
       </details>
+      <nav class="docs" id="documents"></nav>
     </section>
   </main>
   <script src="/app.js"></script>
