@@ -4,39 +4,128 @@
   "updated": "2026-10-01",
   "summary": "Fetch picks a supplied object, carries it through an unseen maze and holds it at the goal. The current best system completes 80% of unseen-maze tasks. Imitation of a planner does the work; the next phase gives SAC/TD3 a job the teacher does badly: carrying without the object slipping.",
   "headline": [
-    {"label": "Best system", "value": "80 / 100", "detail": "Candidate 3 on a fresh 20-maze hold-out · 79 within 15k ticks"},
-    {"label": "Course seed mapping", "value": "83 / 100", "detail": "Estimated course rubric ≈ 97 / 100"},
-    {"label": "Main failure", "value": "Grip slip", "detail": "Object slides out during carry in ~13% of cases"},
-    {"label": "RL contribution", "value": "None yet", "detail": "Imitation-only 205/260 vs SAC fine-tuned 211/260 (noise ±7)"}
+    {
+      "label": "Best system",
+      "value": "80 / 100",
+      "detail": "Candidate 3 on a fresh 20-maze hold-out · 79 within 15k ticks"
+    },
+    {
+      "label": "Course seed mapping",
+      "value": "83 / 100",
+      "detail": "Estimated course rubric ≈ 97 / 100"
+    },
+    {
+      "label": "Main failure",
+      "value": "Grip slip",
+      "detail": "Object slides out during carry in ~13% of cases"
+    },
+    {
+      "label": "RL contribution",
+      "value": "Small at most",
+      "detail": "Imitation-only 362/460 vs SAC fine-tuned 374/460 across dev, hold-out and course"
+    }
   ],
   "arms": [
-    {"name": "Planner only", "description": "Classical: antipodal grasp, IK + collision-checked motion, A* carry, base/torso reach",
-     "runs": {"dev": "reference_dev_s30_h20", "course": "reference_course_s30_h20"}},
-    {"name": "Imitation only", "description": "Grasp and carry cloned from scripted/A* teachers; reach by SAC+HER",
-     "runs": {"dev": "ablation_bc_grasp_carry", "holdout": "holdout_imitation_only", "course": "course_imitation_only"}},
-    {"name": "Imitation + SAC+HER", "description": "Candidate 3: online SAC+HER fine-tuning with demonstration regularization",
-     "runs": {"dev": "split_s30_h20", "holdout": "holdout_candidate03", "course": "course_candidate03"}},
-    {"name": "Imitation + TD3+HER", "description": "Planned once RL has a job that imitation cannot do", "runs": {}}
+    {
+      "name": "Planner only",
+      "description": "Classical: antipodal grasp, IK + collision-checked motion, A* carry, base/torso reach",
+      "runs": {
+        "dev": "reference_dev_s30_h20",
+        "course": "reference_course_s30_h20"
+      }
+    },
+    {
+      "name": "Imitation only",
+      "description": "Grasp and carry cloned from scripted/A* teachers; reach by SAC+HER",
+      "runs": {
+        "dev": "ablation_bc_grasp_carry",
+        "holdout": "holdout_imitation_only",
+        "course": "course_imitation_only"
+      }
+    },
+    {
+      "name": "Imitation + SAC+HER",
+      "description": "Candidate 3: online SAC+HER fine-tuning with demonstration regularization",
+      "runs": {
+        "dev": "split_s30_h20",
+        "holdout": "holdout_candidate03",
+        "course": "course_candidate03"
+      }
+    },
+    {
+      "name": "Imitation + TD3+HER",
+      "description": "Planned once RL has a job that imitation cannot do",
+      "runs": {}
+    }
   ],
   "plan": [
-    {"step": "Clean up repository and build a fast evaluator", "status": "done"},
-    {"step": "Baseline: candidate 3 reaches 80/100 on fresh mazes", "status": "done"},
-    {"step": "Ablation: SAC adds nothing measurable over imitation", "status": "done"},
-    {"step": "Planner-only baseline on course and dev mazes", "status": "active"},
-    {"step": "Step 1: can carry motion (turn limits, slowing on slip) reduce drops?", "status": "active"},
-    {"step": "Step 2: slip-aware reward for carry", "status": "next"},
-    {"step": "Step 3: stronger critic (ensemble + LayerNorm), annealed imitation weight", "status": "next"},
-    {"step": "Step 4: lean trainer with imitation / SAC / TD3 switch; pilot runs", "status": "next"},
-    {"step": "Final study: 3 seeds per arm, modified gripper, report", "status": "later"}
+    {
+      "step": "Clean up repository and build a fast evaluator",
+      "status": "done"
+    },
+    {
+      "step": "Baseline: candidate 3 reaches 80/100 on fresh mazes",
+      "status": "done"
+    },
+    {
+      "step": "Ablation: SAC adds nothing measurable over imitation",
+      "status": "done"
+    },
+    {
+      "step": "Planner-only baseline on course and dev mazes",
+      "status": "done"
+    },
+    {
+      "step": "Step 1: carry-motion rules do not reduce drops (turn limits, slip slowdown)",
+      "status": "done"
+    },
+    {
+      "step": "Grasp vs carry swap: which stage decides drops?",
+      "status": "active"
+    },
+    {
+      "step": "Step 2: slip-aware reward for carry",
+      "status": "next"
+    },
+    {
+      "step": "Step 3: stronger critic (ensemble + LayerNorm), annealed imitation weight",
+      "status": "next"
+    },
+    {
+      "step": "Step 4: lean trainer with imitation / SAC / TD3 switch; pilot runs",
+      "status": "next"
+    },
+    {
+      "step": "Final study: 3 seeds per arm, modified gripper, report",
+      "status": "later"
+    }
   ],
   "documents": [
-    {"label": "Project state", "href": "/reports/project_state.md"},
-    {"label": "Experiment log", "href": "/reports/experiment_log.md"},
-    {"label": "Project spec", "href": "/reports/project_spec.md"},
-    {"label": "Candidate 3 config", "href": "/reports/candidate03.json"}
+    {
+      "label": "Project state",
+      "href": "/reports/project_state.md"
+    },
+    {
+      "label": "Experiment log",
+      "href": "/reports/experiment_log.md"
+    },
+    {
+      "label": "Project spec",
+      "href": "/reports/project_spec.md"
+    },
+    {
+      "label": "Candidate 3 config",
+      "href": "/reports/candidate03.json"
+    }
   ],
   "recordings": [
-    {"run": "reference_demo_visible_seed42", "label": "Classical reference · foam brick · course maze 42 (milestone 1)"},
-    {"run": "phase2_candidate02_recordings01", "label": "Candidate 2 diagnostics · validation maze 0 (older carry policy)"}
+    {
+      "run": "reference_demo_visible_seed42",
+      "label": "Classical reference · foam brick · course maze 42 (milestone 1)"
+    },
+    {
+      "run": "phase2_candidate02_recordings01",
+      "label": "Candidate 2 diagnostics · validation maze 0 (older carry policy)"
+    }
   ]
 }

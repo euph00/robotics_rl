@@ -61,7 +61,8 @@ DEFAULT_EXECUTION = {'grasp_horizon': 600, 'carry_horizon': 1200, 'reach_horizon
                      'grasp_lift_m': .24, 'reach_tolerance_m': .08, 'grasp_proposal_mode': 'clearance-v2',
                      'holding_speed_scale': 0.,  # 0: same as planned_speed_scale
                      'controller': 'learned',  # or 'reference': classical planner end to end
-                     'carry_max_turn_deg': 0., 'carry_slip_drift_mm': 0., 'carry_slip_scale': .5}
+                     'carry_max_turn_deg': 0., 'carry_slip_drift_mm': 0., 'carry_slip_scale': .5,
+                     'grasp_mode': 'learned', 'carry_mode': 'learned'}  # 'planned' swaps in the classical stage
 _POLICIES = None
 
 
@@ -154,6 +155,27 @@ def run_learned(native, execution):
                          'carry': partial(GeneralCarryEnv.bind, delta_scale=execution['delta_scale'])})
     if execution['holding_speed_scale'] > 0:
         system.controller.holding_speed_scale = execution['holding_speed_scale']
+    learned_skill = system._skill
+
+    def skill(name):
+        # Optionally replace one learned stage with the classical controller's version.
+        if execution.get(f'{name}_mode', 'learned') != 'planned':
+            return learned_skill(name)
+        start = system._begin(name, 'planned')
+        if name == 'grasp':
+            ok = system.controller.execute_grasp(system.controller.grasp)
+        elif name == 'carry':
+            try:
+                system.controller.carry()
+            except RuntimeError as exc:
+                raise RuntimeError(f'carry: {exc}') from exc
+            ok = bool(native.contacts()['bilateral_contact']) and native.drop_events == 0
+        else:
+            raise ValueError(f'No planned version of {name}')
+        system._finish(name, start, ok)
+        if not ok:
+            raise RuntimeError(f'{name}: lost_grasp')
+    system._skill = skill
     try:
         return system.run()
     except Exception as exc:

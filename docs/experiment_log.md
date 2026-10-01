@@ -105,6 +105,27 @@ The learned system (candidate 3: 83/100 course, 211/260 dev) wins mainly by
 dropping the object about half as often during carry; A* never fails to reach
 the exit.
 
+Imitation-only arm (`configs/imitation_only.json`) versus candidate 3 on all
+evaluated sets: dev 205 vs 211, hold-out 81 vs 80, course 76 vs 83 — 362 vs 374
+of 460 cases, about one standard error apart. SAC fine-tuning gives at most a
+small gain.
+
+RL plan step 1 — can carry motion reduce drops? Hand-written rules on the
+imitation-only carry policy (`pnr/carry_rules.py`), 260 dev cases:
+
+| Rule | Complete | Carry drops | Wall collisions | Carry timeouts |
+|---|---:|---:|---:|---:|
+| None | 205 | 41 | 0 | 8 |
+| Turn limit 30°/decision | 193 | 38 | 23 | 1 |
+| Turn limit 15°/decision | 80 | 20 | 156 | 0 |
+| Half speed after 2 mm slip | 187 | 40 | 1 | 30 |
+| Turn 15° + slip slowdown | 99 | 31 | 125 | 2 |
+
+Neither smoother turning nor slowing once the object slips reduces drops (the
+lower counts with a 15° limit only reflect episodes ending earlier in wall
+collisions). With the earlier speed sweep, settle hold and tilted-posture
+results, carry motion has little leverage on retention.
+
 Drop analysis (saved traces and repeated runs):
 
 - Lost objects slide down 10–35 mm relative to the base before contact is lost;
