@@ -30,6 +30,8 @@ REPORTS = {
     "experiment_log.md": REPO / "docs/experiment_log.md",
     "phase2_candidate.json": REPO / "configs/phase2_candidate.json",
     "phase2_candidate02.json": REPO / "configs/phase2_candidate02.json",
+    "candidate03.json": REPO / "configs/candidate03.json",
+    "project_spec.md": REPO / "docs/project_spec.md",
 }
 
 MEDIA_EXTENSIONS = {".mp4", ".webm", ".png", ".jpg", ".jpeg", ".gif", ".csv", ".json", ".txt", ".pdf"}
@@ -268,6 +270,142 @@ def get_runs(runs_root):
     return finite_json(runs), events[:12]
 
 
+OVERVIEW = Path(__file__).resolve().parent / "overview.json"
+OBJECT_NAMES = {14: "foam", 5: "banana", 2: "can", 7: "apple", 10: "mug"}
+_EVALUATION_CACHE = {}
+
+
+def _alive(raw):
+    if raw.get("status") != "running" or raw.get("host") != socket.gethostname():
+        return raw.get("status") == "running"
+    try:
+        os.kill(int(raw.get("pid", -1)), 0)
+        return True
+    except (ProcessLookupError, ValueError, TypeError):
+        return False
+    except PermissionError:
+        return True
+
+
+def failure_label(row):
+    error = str(row.get("error") or row.get("failed_stage") or "unknown")
+    stage, _, detail = error.partition(":")
+    detail = detail.strip().lower()
+    if "lost" in detail or "drop" in detail:
+        detail = "object dropped"
+    elif "horizon" in detail:
+        detail = "ran out of decisions"
+    return f"{stage.strip()}: {detail}" if detail else stage.strip()
+
+
+def rubric_points(rows):
+    """Per-trial course rubric estimate (strict reading: sim step = physics tick)."""
+    if not rows:
+        return None
+    items = {"lift_within_3000": 0., "lift_10cm": 0., "hold_50_steps": 0., "pose_close": 0.,
+             "reach_10cm": 0., "reach_within_15000": 0., "carry_stability": 0.}
+    for row in rows:
+        lift, reach, pose = row.get("first_lift_physics_tick"), row.get("first_complete_reach_physics_tick"), row.get("pick_pose_error") or {}
+        error = str(row.get("error") or "").lower()
+        items["lift_within_3000"] += 6 * bool(lift is not None and lift <= 3000)
+        items["lift_10cm"] += 6 * bool(lift is not None)
+        items["hold_50_steps"] += 6 * bool(row.get("pick_hold_ok"))
+        items["pose_close"] += 6 * bool(pose and pose.get("position_m", 1) < .02 and pose.get("orientation_rad", 1) < .1)
+        items["reach_10cm"] += 6 * bool(row.get("success"))
+        items["reach_within_15000"] += 6 * bool(row.get("success") and reach is not None and reach <= 15000)
+        items["carry_stability"] += 4 * bool((row.get("stage_ticks") or {}).get("carry") is not None
+                                            and not (error.startswith("carry") and ("lost" in error or "drop" in error)))
+    items = {key: round(value / len(rows), 2) for key, value in items.items()}
+    if "first_lift_physics_tick" not in rows[0]:
+        return None  # older result files lack the timing fields
+    return {"per_trial": round(sum(items.values()), 1), "items": items}
+
+
+def _model_source(path):
+    parts = Path(str(path)).parts
+    return parts[parts.index("runs") + 1] if "runs" in parts and parts.index("runs") + 1 < len(parts) else str(path)
+
+
+def evaluation_summary(directory):
+    """Summary of one scripts/eval.py run, cached by result-file size and mtime."""
+    config = read_json(directory / "config.json")
+    results = directory / "results.jsonl"
+    if not config or "execution" not in config or "set" not in config or not results.is_file():
+        return None
+    stat = results.stat()
+    status = read_json(directory / "status.json") or {}
+    key = (stat.st_mtime_ns, stat.st_size, status.get("status"))
+    cached = _EVALUATION_CACHE.get(directory.name)
+    if cached and cached[0] == key:
+        return cached[1]
+    rows = read_records(results, limit=5000)
+    by_object, by_set, failures = {}, {}, {}
+    for row in rows:
+        for table, name in ((by_object, OBJECT_NAMES.get(row.get("object_idx"), str(row.get("object_idx")))),
+                            (by_set, row.get("set", "?"))):
+            entry = table.setdefault(name, {"cases": 0, "success": 0, "timed": 0})
+            entry["cases"] += 1
+            entry["success"] += bool(row.get("success"))
+            entry["timed"] += bool(row.get("timed"))
+        if not row.get("success"):
+            label = failure_label(row)
+            failures[label] = failures.get(label, 0) + 1
+    execution = config["execution"]
+    summary = {
+        "id": directory.name, "label": config.get("label") or status.get("name") or directory.name,
+        "set": config["set"], "planned": config.get("cases"), "completed": len(rows),
+        "success": sum(bool(r.get("success")) for r in rows), "timed": sum(bool(r.get("timed")) for r in rows),
+        "by_object": by_object, "by_set": by_set,
+        "failures": dict(sorted(failures.items(), key=lambda item: -item[1])),
+        "rubric": rubric_points(rows), "execution": execution,
+        "controller": execution.get("controller", "learned"),
+        "models": {name: _model_source(path) for name, path in (config.get("checkpoints") or {}).items()},
+        "status": "running" if _alive(status) else status.get("status", "complete"),
+        "started_at": status.get("started_at"), "updated_at": status.get("updated_at") or status.get("finished_at"),
+    }
+    _EVALUATION_CACHE[directory.name] = (key, summary)
+    return summary
+
+
+def get_overview(runs_root):
+    curated = read_json(OVERVIEW) or {}
+    evaluations, active, history = [], [], []
+    directories = [item for item in runs_root.iterdir() if item.is_dir() and not item.is_symlink()
+                   and SAFE_ID.fullmatch(item.name)] if runs_root.is_dir() else []
+    for directory in directories:
+        status = read_json(directory / "status.json") or {}
+        summary = evaluation_summary(directory)
+        if summary:
+            evaluations.append(summary)
+        elif status:
+            history.append(dict({key: status.get(key) for key in ("name", "kind", "status", "summary", "updated_at")}, id=directory.name))
+        if status and _alive(status):
+            if summary:
+                progress, unit = summary["completed"] / max(summary["planned"] or 1, 1), f"{summary['completed']}/{summary['planned']} cases"
+            else:
+                budget = status.get("budget") or 0
+                progress = (status.get("transitions") or 0) / budget if budget else None
+                unit = f"{status.get('transitions') or 0:,}/{budget:,} decisions" if budget else status.get("summary", "")
+            active.append({"id": directory.name, "name": status.get("name") or directory.name, "kind": status.get("kind"),
+                           "progress": progress, "detail": unit, "started_at": status.get("started_at")})
+    evaluations.sort(key=lambda item: item.get("started_at") or "", reverse=True)
+    history.sort(key=lambda item: item.get("updated_at") or "", reverse=True)
+    by_id = {item["id"]: item for item in evaluations}
+    for arm in curated.get("arms", []):
+        arm["results"] = {}
+        for split, run_id in (arm.get("runs") or {}).items():
+            item = by_id.get(run_id)
+            if item:
+                arm["results"][split] = {key: item[key] for key in ("id", "success", "timed", "completed", "planned", "rubric")}
+    for recording in curated.get("recordings", []):
+        raw = read_json(runs_root / str(recording.get("run", "")) / "status.json") or {}
+        recording["media"] = [item for item in raw.get("artifacts", []) if isinstance(item, dict)
+                              and item.get("kind") == "video" and isinstance(item.get("path"), str)
+                              and safe_artifact(runs_root, recording["run"], item["path"]) is not None]
+    return finite_json({"timestamp": utcnow(), "overview": curated, "evaluations": evaluations,
+                        "active": active, "history": history})
+
+
 class Resources:
     def __init__(self, workspace):
         self.workspace = workspace
@@ -331,6 +469,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self, head=False):
         path = unquote(urlsplit(self.path).path)
+        if path == "/api/overview":
+            state = get_overview(self.server.runs_root)
+            state["resources"] = self.server.resources.get()
+            payload = json.dumps(state, allow_nan=False, separators=(",", ":")).encode()
+            headers = {"Vary": "Accept-Encoding"}
+            if "gzip" in [part.strip() for part in self.headers.get("Accept-Encoding", "").split(",")]:
+                payload = gzip.compress(payload, compresslevel=1)
+                headers["Content-Encoding"] = "gzip"
+            self._headers(200, "application/json; charset=utf-8", len(payload), headers)
+            if not head:
+                self.wfile.write(payload)
+            return
         if path == "/api/state":
             project = dict(DEFAULT_PROJECT)
             raw = read_json(self.server.runs_root / "project.json")

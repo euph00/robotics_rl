@@ -3,46 +3,63 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pick · Nav · Reach — Experiments</title>
+  <title>Pick–Nav–Reach · Dashboard</title>
   <link rel="stylesheet" href="/style.css">
-  <script src="/app.js" defer></script>
 </head>
 <body>
+  <header class="top">
+    <div>
+      <h1 id="title">Pick–Nav–Reach</h1>
+      <p class="meta"><span class="pill" id="phase">Loading</span> <span id="updated"></span></p>
+    </div>
+    <div class="resources" id="resources" aria-label="Machine resources"></div>
+  </header>
+
   <main>
-    <header>
-      <div><p class="eyebrow">ROBOTICS / EXPERIMENTS</p><h1>Pick <span>·</span> Nav <span>·</span> Reach</h1></div>
-      <div class="connection"><span id="connection-dot" class="dot"></span><span id="connection">Connecting</span><small id="refreshed">Refreshes every 5 s</small></div>
-    </header>
-    <section class="overview" aria-label="Project progress">
-      <div class="overview-copy"><span class="pill" id="phase">SETUP</span><h2>First learned system</h2><p id="summary">Original Fetch · SAC + HER · Physical pick–carry–reach</p><a class="overview-report" href="/reports/project_state.md">Current project state</a></div>
-      <ol id="milestones" class="milestones" aria-label="Milestones"></ol>
-    </section>
-    <section class="pipeline" aria-label="Physical task sequence">
-      <p class="eyebrow">ONE CONTINUOUS EPISODE</p><div class="stages"><span>Approach table</span><b aria-hidden="true">→</b><span>Grasp &amp; lift</span><b aria-hidden="true">→</b><span>Carry through maze</span><b aria-hidden="true">→</b><span>Reach while holding</span></div><p class="tolerance">Goal error &lt; 10 cm</p>
-    </section>
+    <p class="summary" id="summary"></p>
+    <section class="cards" id="headline" aria-label="Headline results"></section>
+
     <div class="columns">
-      <section class="card chart-card">
-        <div class="card-header"><h2 id="chart-heading">Evaluation progress</h2><label class="sr-only" for="run-select">Select experiment</label><select id="run-select"><option value="">No experiments yet</option></select></div>
-        <div class="chart-caption"><span id="y-caption">Evaluation success</span><span id="chart-scope">No measurements yet</span></div>
-        <div id="chart" class="chart"><p class="empty">Measured success will appear after the first evaluation.</p></div>
-        <div id="axis-caption" class="axis-caption">Environment interactions</div>
-        <div id="selected-run" class="run-progress"></div>
+      <section class="panel wide">
+        <h2>Study arms</h2>
+        <p class="hint">Complete tasks (within 15k ticks in brackets). Dev: 260 cases on 52 mazes · Hold-out: 100 cases on 20 fresh mazes · Course: 100 cases with the unmodified course seed mapping.</p>
+        <div class="scroll"><table id="arms"></table></div>
       </section>
-      <section class="card evaluation-card">
-        <div class="card-header"><h2>Latest evaluation</h2><span id="eval-scope" class="quiet"></span></div>
-        <div id="evaluation"><p class="empty">Awaiting evaluated episodes.</p></div>
-        <p class="eval-note">Full-task success requires pickup, retained transport, and held-object reach.</p>
+      <section class="panel">
+        <h2>Plan</h2>
+        <ol class="plan" id="plan"></ol>
       </section>
     </div>
-    <section class="card runs-card">
-      <div class="card-header"><h2>Experiments <span id="run-count" class="count">0</span></h2><div class="run-controls"><span id="active-runs" class="quiet">None running</span><button id="run-toggle" type="button" aria-expanded="false" aria-controls="run-table" hidden>Show all</button></div></div>
-      <div class="table-scroll"><table><thead><tr><th>Run</th><th>Stage / method</th><th>Status</th><th>Progress</th><th>Updated</th></tr></thead><tbody id="run-table"><tr><td colspan="5" class="empty">No experiments registered.</td></tr></tbody></table></div>
+
+    <section class="panel" id="active-panel" hidden>
+      <h2>Running now</h2>
+      <div id="active"></div>
     </section>
-    <div class="columns lower">
-      <section class="card"><div class="card-header"><h2>Demonstrations</h2><span class="quiet">Recorded rollouts</span></div><div id="artifacts" class="artifacts"><p class="empty">Reference and learned-policy recordings will appear here.</p></div></section>
-      <section class="card"><div class="card-header"><h2>Recent activity</h2></div><ul id="events" class="events"><li class="empty">No recorded events.</li></ul></section>
+
+    <section class="panel">
+      <h2>Evaluations</h2>
+      <p class="hint">Every <code>scripts/eval.py</code> run, newest first. Select a row for per-object results, failures and settings.</p>
+      <div class="scroll"><table id="evaluations"></table></div>
+    </section>
+
+    <div class="columns">
+      <section class="panel wide">
+        <h2>Recordings</h2>
+        <div class="recordings" id="recordings"></div>
+      </section>
+      <section class="panel">
+        <h2>Documents</h2>
+        <ul class="links" id="documents"></ul>
+      </section>
     </div>
-    <footer><div id="resources" class="resources"></div><p>Local, read-only view · Host resource use includes other jobs.</p></footer>
+
+    <section class="panel">
+      <details>
+        <summary>Historical runs <span id="history-count"></span></summary>
+        <div class="scroll"><table id="history"></table></div>
+      </details>
+    </section>
   </main>
+  <script src="/app.js"></script>
 </body>
 </html>

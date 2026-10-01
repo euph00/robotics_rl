@@ -9,7 +9,7 @@ from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from dashboard.server import DashboardServer, get_runs, read_metrics, read_records, safe_artifact, safe_report, report_link, render_report
+from dashboard.server import DashboardServer, get_overview, get_runs, read_metrics, read_records, safe_artifact, safe_report, report_link, render_report
 from pnr.telemetry import RunLogger, update_project
 
 
@@ -117,6 +117,36 @@ class DashboardTests(unittest.TestCase):
             self.assertNotIn('href="../configs/secrets.json"', rendered)
             self.assertIn('&quot;onmouseover=&quot;', rendered)
 
+    def test_overview_summarises_evaluations_and_resolves_arms(self):
+        run = self.root / "eval_fixture"
+        run.mkdir()
+        (run / "config.json").write_text(json.dumps({"set": "dev", "cases": 3, "label": "Fixture",
+            "execution": {"controller": "learned", "planned_speed_scale": 3.0, "delta_scale": .075},
+            "checkpoints": {"carry": "/x/runs/carry_run/checkpoints/model.zip"}}))
+        rows = [
+            {"case_id": "a", "set": "dev", "object_idx": 7, "success": True, "timed": True, "error": None,
+             "stage_ticks": {"carry": 8000}, "first_lift_physics_tick": 1200, "pick_hold_ok": True,
+             "pick_pose_error": {"position_m": .01, "orientation_rad": 0.}, "first_complete_reach_physics_tick": 11000},
+            {"case_id": "b", "set": "dev", "object_idx": 7, "success": False, "timed": False, "error": "carry: lost_grasp",
+             "stage_ticks": {"carry": 3000}, "first_lift_physics_tick": 1200, "pick_hold_ok": True,
+             "pick_pose_error": {"position_m": .01, "orientation_rad": 0.}, "first_complete_reach_physics_tick": None}]
+        (run / "results.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+        RunLogger("eval_fixture", root=self.root, kind="evaluation", resume=True, planned_cases=3)
+        RunLogger("old_training", root=self.root, kind="train", summary="historical").finish("complete")
+        overview = Path(self.temporary.name) / "overview.json"
+        overview.write_text(json.dumps({"arms": [{"name": "Arm", "runs": {"dev": "eval_fixture", "holdout": "missing"}}]}))
+        with patch("dashboard.server.OVERVIEW", overview):
+            state = get_overview(self.root)
+        evaluation = state["evaluations"][0]
+        self.assertEqual((evaluation["success"], evaluation["completed"], evaluation["planned"]), (1, 2, 3))
+        self.assertEqual(evaluation["failures"], {"carry: object dropped": 1})
+        self.assertEqual(evaluation["by_object"]["apple"], {"cases": 2, "success": 1, "timed": 1})
+        self.assertEqual(evaluation["models"], {"carry": "carry_run"})
+        self.assertEqual(evaluation["rubric"]["items"]["carry_stability"], 2.0)
+        self.assertEqual([(job["id"], job["detail"]) for job in state["active"]], [("eval_fixture", "2/3 cases")])
+        self.assertEqual([item["id"] for item in state["history"]], ["old_training"])
+        self.assertEqual(set(state["overview"]["arms"][0]["results"]), {"dev"})
+
     def test_server_api_static_media_ranges_and_traversal(self):
         run = RunLogger("pilot", root=self.root, kind="reference")
         artifacts = run.directory / "artifacts"
@@ -148,7 +178,7 @@ class DashboardTests(unittest.TestCase):
                 decoded = json.loads(gzip.decompress(response.read()))
                 self.assertEqual(decoded["runs"], body["runs"])
             with urlopen(base + "/") as response:
-                self.assertIn(b"Evaluation progress", response.read())
+                self.assertIn(b"Study arms", response.read())
             report = self.root / "report.md"
             report.write_text("# Test result\n\nTarget not met.\n")
             with patch.dict("dashboard.server.REPORTS", {"fixture.md": report}):

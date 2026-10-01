@@ -1,255 +1,251 @@
 'use strict';
+// Read-only dashboard for the current project; all data is inserted as text.
+
 const $ = id => document.getElementById(id);
-const el = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
-const number = value => Number.isFinite(Number(value)) && value !== null && value !== '';
-const count = value => number(value) ? Math.round(Number(value)).toLocaleString() : '—';
-const compact = value => number(value) ? Intl.NumberFormat(undefined, {notation:'compact', maximumFractionDigits:1}).format(value) : '—';
-const percent = value => number(value) ? `${Math.round(100 * value)}%` : '—';
-const scopeLabel = scope => ({fresh_retention_collection:'TRAIN teacher transport · collection', TRAIN_teacher_transport_diagnostic:'TRAIN teacher transport', full_task:'Full task', actor_initialization:'Actor initialization', four_start_grasp_diagnostic:'Grasp · four starts', full_pregrasp_diagnostic:'Grasp · full approach', skill:'Skill only', reference:'Physical reference', reference_carry_handoff:'Reach · reference handover', training_data:'Physical training data', upstream:'Upstream proximity', easy_carry_diagnostic:'Carry · short segment', carry_segment_curriculum:'Carry · curriculum', full_carry:'Carry · full route', easy_manipulation_diagnostic:'Manipulation · local start'}[scope] || (scope ? String(scope).replaceAll('_', ' ') : 'Scope unspecified'));
-const metricScope = row => row?.scope === 'full_task' ? 'full_task' : (row?.evaluation_scope || row?.scope || null);
-const ago = value => { if (!value) return '—'; const seconds = Math.max(0, (Date.now() - Date.parse(value)) / 1000); return seconds < 60 ? `${Math.round(seconds)}s ago` : seconds < 3600 ? `${Math.floor(seconds/60)}m ago` : `${Math.floor(seconds/3600)}h ago`; };
-let state = null, selectedId = new URLSearchParams(location.search).get('run'), artifactKey = null, showAllRuns = false;
+const el = (tag, text, className) => {
+  const node = document.createElement(tag);
+  if (text !== undefined && text !== null) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+};
+const pct = (n, d) => (d ? `${Math.round((100 * n) / d)}%` : '—');
+const when = iso => (iso ? new Date(iso).toLocaleString([], {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : '—');
+const bytes = n => (n ? `${(n / 1024 ** 3).toFixed(0)} GB` : '—');
+const SET_NAMES = {dev: 'Dev (52 mazes)', holdout: 'Hold-out', course: 'Course seeds', validation: 'Validation', test1: 'Test 1', test2: 'Test 2', reserve: 'Reserve'};
+const expanded = new Set();
 
-function renderProject(project) {
-  $('phase').textContent = String(project.phase || 'setup').replaceAll('_', ' ').toUpperCase();
-  $('summary').textContent = project.summary || 'Original Fetch · SAC + HER · Physical pick–carry–reach';
-  $('milestones').replaceChildren(...(project.milestones || []).map((item, i) => {
-    const node = el('li', undefined, ['pending','active','complete','blocked'].includes(item.status) ? item.status : 'pending');
-    node.title = `${item.label}: ${item.status}`;
-    node.append(el('span', item.status === 'complete' ? '✓' : String(i+1), 'marker'), el('span', item.label));
-    return node;
-  }));
-}
-
-const displayName = run => state?.project?.run_labels?.[run.id] || (number(run.metrics?.regularization?.bc_weight) ? `${run.skill || 'Policy'} · regularized SAC (weight ${run.metrics.regularization.bc_weight})` : (run.name || run.id));
-const supervisedUpdates = row => row?.bc_updates ?? row?.updates;
-const runAccounting = run => run?.metrics?.accounting || run?.accounting;
-const plannedCases = (run, row=run?.metrics) => row?.planned_cases ?? run?.planned_cases;
-function retentionCollection(run) {
-  const metrics=run?.metrics;
-  if (metrics?.scope!=='fresh_retention_collection' || !number(metrics.batch_completed) || !number(metrics.batch_planned) || metrics.batch_planned<=0) return null;
-  const previous=Number(metrics.eval_episodes || 0);
-  const round=run.kind==='train' ? Number(metrics.auxiliary_updates_attempted || 0)+1 : Math.floor(previous/metrics.batch_planned)+1;
-  return {completed:Number(metrics.batch_completed),planned:Number(metrics.batch_planned),round,previous};
-}
-const teacherTransport = run => ['fresh_retention_collection','TRAIN_teacher_transport_diagnostic'].includes(run?.metrics?.scope);
-
-
-function chartData(run) {
-  const initialization=run?.kind==='initialization'||run?.metrics?.scope==='actor_initialization';
-  const fullRouteFit=initialization && (run.series||[]).some(row=>row.bc_training_scope==='full_route_only');
-  const trainingFit=fullRouteFit||(run?.series||[]).some(row=>number(row.bc_training_loss));
-  const lossKey=fullRouteFit?'bc_full_route_training_loss':trainingFit?'bc_training_loss':'bc_validation_loss';
-  const losses=initialization ? (run.series||[]).filter(row=>number(row[lossKey]) && row[lossKey]>=0 && number(supervisedUpdates(row))) : [];
-  if (losses.length) return {
-    points:losses.map(row=>({x:Number(supervisedUpdates(row)),y:Number(row[lossKey])})),
-    title:'Actor initialization',ylabel:fullRouteFit?'Full-route training action loss':trainingFit?'Training action loss':'Validation action loss',
-    scope:fullRouteFit?'Training fit · same fixed goal':trainingFit?'Training fit · lower is better':'Demonstration fit · lower is better',
-    xCaption:'Supervised updates',xUnit:'supervised updates',percentage:false,
-  };
-  const rows=(run?.series||[]).filter(row=>number(row.success_rate) && row.success_rate>=0 && row.success_rate<=1);
-  const scope=rows.length ? metricScope(rows[rows.length-1]) : null;
-  const updates=initialization && rows.some(row=>number(supervisedUpdates(row)));
-  const cases=run?.kind==='evaluation' && number(plannedCases(run,rows[rows.length-1]));
-  const value=row=>updates ? supervisedUpdates(row) : cases ? row.eval_episodes ?? row.completed_cases : row.transitions;
-  const points=rows.filter(row=>metricScope(row)===scope && number(value(row)))
-    .map(row=>({x:Number(value(row)),y:Number(row.success_rate)}));
-  const scopeName=run?.kind==='reference' ? 'Physical reference' : scopeLabel(scope);
-  return {points,title:initialization?'Actor initialization':'Evaluation progress',ylabel:cases?'Completion / planned cases':'Evaluation success',
-    scope:points.length ? (cases ? `${scopeName} · fixed ${count(plannedCases(run,rows[rows.length-1]))}-case denominator` : `${scopeName} · ${points.length} measurements`) : 'No measurements yet',
-    xCaption:initialization ? (updates||!points.length?'Supervised updates':'Physical evaluation calls') :
-      cases?'Evaluated cases':run?.kind==='reference'?'Native action calls':run?.kind==='train'?'Online policy decisions · demonstrations excluded':'Environment interactions',
-    xUnit:initialization?(updates?'supervised updates':'evaluation calls'):cases?'evaluated cases':run?.kind==='train'?'online decisions':run?.kind==='reference'?'native calls':'interactions',
-    percentage:true};
-}
-
-function renderChart(run) {
-  const data=chartData(run),points=data.points;
-  $('chart-heading').textContent=data.title;
-  $('y-caption').textContent=data.ylabel;
-  $('axis-caption').textContent=data.xCaption;
-  $('chart-scope').textContent=data.scope;
-  if (!points.length) { $('chart').replaceChildren(el('p',run?.kind==='initialization'?'Supervised progress and physical checks will appear when recorded.':teacherTransport(run)?'TRAIN teacher-transport diagnostic · rollout progress below.':'Measured success will appear after the first evaluation.','empty')); return; }
-  const ns = 'http://www.w3.org/2000/svg';
-  const svgEl = (tag, attributes, text) => { const node = document.createElementNS(ns, tag); for (const [key,value] of Object.entries(attributes)) node.setAttribute(key,value); if (text !== undefined) node.textContent=text; return node; };
-  const svg = svgEl('svg',{viewBox:'0 0 620 220',role:'img','aria-label':`${data.ylabel} versus ${data.xCaption}. ${data.scope}.`});
-  const left=40,right=608,top=18,bottom=190,maxX=Math.max(1,...points.map(p=>p.x));
-  const maxY=data.percentage?1:Math.max(.0001,...points.map(p=>p.y))*1.08;
-  const formatY=value=>data.percentage?percent(value):Number(value.toPrecision(2)).toString();
-  const x = v => left + v/maxX*(right-left), y = v => bottom - v/maxY*(bottom-top);
-  for (const ratio of [0,.5,1]) { const value=ratio*maxY; svg.append(svgEl('line',{x1:left,y1:y(value),x2:right,y2:y(value),class:'grid'}),svgEl('text',{x:left-9,y:y(value)+3,'text-anchor':'end'},formatY(value))); }
-  for (const value of [0,.25,.5,.75,1]) svg.append(svgEl('text',{x:x(value*maxX),y:211,'text-anchor':'middle'},compact(value*maxX)));
-  svg.append(svgEl('polyline',{points:points.map(p=>`${x(p.x)},${y(p.y)}`).join(' '),class:'series'}));
-  for (const row of points) { const circle=svgEl('circle',{cx:x(row.x),cy:y(row.y),r:points.length>50?2:3.5,class:'point'}); circle.append(svgEl('title',{},`${count(row.x)} ${data.xUnit} · ${formatY(row.y)}`)); svg.append(circle); }
-  $('chart').replaceChildren(svg);
-}
-
-function renderEvaluation(run) {
-  const rows = run?.series || [];
-  const measured = [...rows].reverse().find(row => number(row.success_rate) || number(row.full_task_success_rate));
-  const values = measured || run?.metrics || {};
-  const success = values.full_task_success_rate ?? values.success_rate;
-  const scopeName = run?.kind === 'reference' ? 'Physical reference' : scopeLabel(values.full_task_success_rate !== undefined ? 'full_task' : metricScope(values));
-  $('eval-scope').textContent = (number(success) || measured) ? scopeName : '';
-  if (!number(success)) { $('eval-scope').textContent=teacherTransport(run)?scopeLabel(run.metrics.scope):'';$('evaluation').replaceChildren(el('p',teacherTransport(run)?'TRAIN teacher-transport diagnostic; full-task success is not measured here.':'Awaiting evaluated episodes.','empty')); return; }
-  const episodes = values.eval_episodes ?? values.episodes;
-  const planned=plannedCases(run,values),denominator=number(planned)?planned:episodes;
-  const resultLabel=number(planned) ? `${scopeName} completion · ${count(success*planned)} / ${count(planned)} planned cases` : `${scopeName} success${number(episodes) ? ` · ${count(episodes)} episodes` : ''}`;
-  const hero = el('div'); hero.append(el('div',percent(success),'hero-metric'),el('p',resultLabel,'hero-label'));
-  if (measured && run?.kind==='train' && number(measured.transitions)) hero.append(el('p',`Evaluated at ${count(measured.transitions)} online decisions · ${ago(measured.timestamp)}`,'run-summary'));
-  const metrics = el('dl',undefined,'metric-grid');
-  const deadlineCount=value=>number(denominator)?`${count(value*denominator)} / ${count(denominator)}`:percent(value);
-  const candidates = [
-    ['Within 15k · incl. settling',values.success_rate_within_deadline_including_initialization,deadlineCount],
-    ['Within 15k · action only',values.success_rate_within_deadline,deadlineCount],
-    ['Goal error',values.object_goal_distance ?? values.goal_error_m ?? values.mean_goal_distance ?? values.goal_distance,v=>`${(v*100).toFixed(1)} cm`],
-    ['Upstream proximity',values.upstream_success_rate,percent],
-    ['Drops',values.drops ?? values.drop_events,count],
-    [number(values.total_physics_ticks_including_initialization)?'Physics ticks · incl. settling':'Physics ticks',values.total_physics_ticks_including_initialization ?? values.physics_ticks,compact],
-    ['Evaluation episodes',episodes,count],
-    ['Elapsed',values.wall_time_seconds ?? values.wall_seconds,v=>`${Math.round(v/60)} min`],
-  ];
-  for (const [label,value,format] of candidates.filter(item=>number(item[1])).slice(0,4)) { const group=el('div'); group.append(el('dt',label),el('dd',format(Number(value)))); metrics.append(group); }
-  hero.append(metrics); $('evaluation').replaceChildren(hero);
-}
-
-function progressValue(run) {
-  if (run.kind==='initialization'||run.metrics?.scope==='actor_initialization') return {value:supervisedUpdates(run.metrics),unit:'supervised updates',budget:null};
-  const transport=retentionCollection(run);
-  if (run.kind==='evaluation' && number(plannedCases(run))) return {value:transport?transport.previous+transport.completed:run.metrics?.eval_episodes ?? run.metrics?.completed_cases ?? 0,unit:'evaluated cases',budget:plannedCases(run)};
-  const collection=run.metrics?.scope==='training_data' || ['demonstration','correction_collection'].includes(run.metrics?.metric_source);
-  return {value:run.transitions||0,unit:run.kind==='train'?'online decisions':collection?'data collection decisions':'interactions',budget:run.kind==='train'?run.budget:null};
-}
-
-function renderRunProgress(run) {
-  if (!run) { $('selected-run').replaceChildren(el('span','Awaiting experiment registration.')); return; }
-  const node=el('div'),copy=el('div',undefined,'progress-copy');
-  const progress=progressValue(run),initialization=run.kind==='initialization';
-  const progressText=number(progress.value) ? (number(progress.budget) ? `${compact(progress.value)} / ${compact(progress.budget)} ${progress.unit}` : `${count(progress.value)} ${progress.unit}`) : 'Supervised updates pending';
-  copy.append(el('span',`${run.algorithm || run.kind || 'Experiment'}${run.skill ? ' · '+run.skill : ''}`),el('span',progressText));node.append(copy);
-  if (number(progress.budget) && progress.budget>0) { const track=el('div',undefined,'progress-track'),fill=el('div',undefined,'progress-fill'); fill.style.width=`${Math.min(100,100*progress.value/progress.budget)}%`; track.append(fill); node.append(track); }
-  const transport=retentionCollection(run);
-  if (transport) node.append(el('p',`TRAIN teacher transport · ${run.kind==='train'?'round':'batch'} ${count(transport.round)} · ${count(transport.completed)} / ${count(transport.planned)} rollouts${run.kind==='train'?' · online updates paused':''}`,'run-summary'));
-  const accounting=runAccounting(run);
-  const counts=initialization ? [
-    ['new online SAC decisions',accounting?.new_online_transitions],
-    ['physical evaluation calls',accounting?.new_evaluation_source_action_calls ?? run.metrics?.source_action_calls],
-    ['evaluation physics ticks',accounting?.new_evaluation_physics_ticks ?? run.metrics?.physics_ticks],
-  ] : [[run.kind==='train'?'training native calls':'native calls',run.metrics?.source_action_calls ?? (progress.unit==='evaluated cases'?run.transitions:undefined)],['physics ticks',run.metrics?.physics_ticks],['updates',run.metrics?.updates]];
-  const measured=counts.filter(item=>number(item[1]));
-  if (measured.length) node.append(el('p',measured.map(([label,value])=>`${count(value)} ${label}`).join(' · '),'run-summary'));
-  if (run.kind==='train' && number(run.inherited_transitions)) {
-    const inherited=Number(run.inherited_transitions),current=Number(run.transitions||0);
-    node.append(el('p',`${count(inherited)} inherited${current>=inherited ? ` + ${count(current-inherited)} new online decisions` : ' online decisions · preparing continuation'}`,'run-summary'));
+function row(cells, className) {
+  const tr = el('tr', undefined, className);
+  for (const cell of cells) {
+    const td = el('td');
+    if (cell instanceof Node) td.append(cell); else td.textContent = cell ?? '—';
+    tr.append(td);
   }
-  if (accounting) {
-    const detail=[];
-    if (number(accounting.demonstration_transitions_imported) && accounting.demonstration_transitions_imported>0) detail.push(`${count(accounting.demonstration_transitions_imported)} demonstration decisions`);
-    if (number(accounting.total_source_action_calls_known)) detail.push(`${count(accounting.total_source_action_calls_known)} total known native calls`);
-    if (number(accounting.total_physics_ticks_known)) detail.push(`${count(accounting.total_physics_ticks_known)} total known physics ticks`);
-    if (detail.length) node.append(el('p',detail.join(' · '),'run-summary'));
-    const bc=accounting.bc_initialization,costs=bc?.incremental_accounting;
-    if (bc?.included_in_cumulative_evaluation_totals && costs && number(costs.new_setup_source_action_calls) && number(costs.new_evaluation_source_action_calls)) {
-      const bcCalls=Number(costs.new_setup_source_action_calls)+Number(costs.new_evaluation_source_action_calls);
-      node.append(el('p',`BC: ${count(bc.total_bc_updates)} supervised updates · ${count(bcCalls)} setup/evaluation calls already included in totals`,'run-summary'));
-    }
-    if (accounting.complete===false) node.append(el('p','Earlier evaluation or setup costs are incomplete.','run-summary'));
-  }
-  if (run.kind==='train') node.append(el('p','Runs use different starts and training data; curves are development diagnostics.','run-summary'));
-  if (run.summary) node.append(el('p',run.summary,'run-summary'));
-  $('selected-run').replaceChildren(node);
+  return tr;
 }
 
-function visibleRuns(runs, selected=selectedId, expanded=showAllRuns) {
-  return expanded ? runs : runs.filter((run,index)=>index<10 || run.status==='running' || run.id===selected);
+function header(names) {
+  const tr = el('tr');
+  for (const name of names) tr.append(el('th', name));
+  const thead = el('thead');
+  thead.append(tr);
+  return thead;
 }
 
-function renderRuns(runs) {
-  $('run-count').textContent = runs.length;
-  const toggle=$('run-toggle');toggle.hidden=runs.length<=10;
-  toggle.textContent=showAllRuns?'Show recent':`Show all ${runs.length}`;
-  toggle.setAttribute('aria-expanded',String(showAllRuns));
-  const active=runs.filter(run=>run.status==='running').length;
-  $('active-runs').textContent=active ? `${active} running` : 'None running';
-  if (!runs.length) { const row=el('tr'),cell=el('td','No experiments registered.','empty');cell.colSpan=5;row.append(cell);$('run-table').replaceChildren(row);return; }
-  $('run-table').replaceChildren(...visibleRuns(runs).map(run=>{
-    const row=el('tr'),name=el('td'),button=el('button',displayName(run),'run-name');button.addEventListener('click',()=>{selectedId=run.id;renderSelected();});name.append(button);
-    const status=el('td'),badge=el('span',run.status||'pending','status'); if (/^[a-z]+$/.test(run.status||'')) badge.classList.add(run.status);status.append(badge);
-    const progress=progressValue(run);
-    const value=number(progress.value)?`${count(progress.value)}${number(progress.budget)?' / '+compact(progress.budget):''}${run.kind==='initialization'?' BC updates':progress.unit==='data collection decisions'?' collection decisions':progress.unit==='evaluated cases'?' cases':''}`:'—';
-    const cell=el('td',value),transport=retentionCollection(run);
-    if (transport) cell.append(el('p',`${run.kind==='train'?'Round':'Batch'} ${count(transport.round)} · transport ${count(transport.completed)} / ${count(transport.planned)}`,'run-summary'));
-    row.append(name,el('td',[run.skill,run.algorithm||(run.kind||'')].filter(Boolean).join(' · ')),status,cell,el('td',ago(run.updated_at)));return row;
-  }));
+function score(result) {
+  if (!result) return el('span', '—', 'muted');
+  const span = el('span');
+  span.append(el('strong', `${result.success}/${result.completed}`));
+  span.append(el('span', ` (${result.timed})`, 'muted'));
+  if (result.completed < result.planned) span.append(el('span', ' running', 'tag'));
+  return span;
 }
 
-function renderSelected() {
-  const runs=state?.runs||[];
-  const pending=selectedId && !runs.some(run=>run.id===selectedId) && state?.project?.run_labels?.[selectedId];
-  if (!pending && !runs.some(run=>run.id===selectedId)) selectedId=runs.find(run=>run.kind==='train' && run.status==='running')?.id || runs.find(run=>run.status==='running')?.id || runs[0]?.id || null;
-  const options=runs.map(run=>{const option=el('option',displayName(run));option.value=run.id;return option;});
-  if (pending) {const option=el('option',`${pending} · awaiting start`);option.value=selectedId;options.unshift(option);}
-  $('run-select').replaceChildren(...(options.length ? options : [el('option','No experiments yet')]));
-  $('run-select').value=selectedId||'';
-  if (selectedId && new URLSearchParams(location.search).get('run') !== selectedId) {
-    const url=new URL(location.href);url.searchParams.set('run',selectedId);history.replaceState(null,'',url);
-  }
-  const run=runs.find(item=>item.id===selectedId);renderChart(run);renderEvaluation(run);renderRunProgress(run);renderRuns(runs);renderArtifacts(runs);
-}
-
-const artifactUrl = (runId,path) => '/artifacts/'+encodeURIComponent(runId)+'/'+path.split('/').map(encodeURIComponent).join('/');
-const isVideoArtifact = item => item.kind==='video' || (!item.kind && /\.(mp4|webm)$/i.test(item.path));
-function posterPath(run) {
-  const candidates=(run.artifacts||[]).filter(item=>{
-    const name=item.path.split('/').pop();
-    return /\.(png|jpe?g|gif)$/i.test(name) && /(preview|frame|final)/i.test(name)
-      && !/(chart|plot|curve|route|trajectory|segments|loss)/i.test(name);
-  });
-  const rank=item=>/preview/i.test(item.path)?0:/frame/i.test(item.path)?1:2;
-  return candidates.sort((a,b)=>rank(a)-rank(b))[0]?.path;
-}
-
-function renderArtifacts(runs) {
-  const featured=state?.project?.featured_run;
-  const all=runs.filter(run=>run.id===selectedId || run.id===featured || !['stopped','failed','interrupted'].includes(run.status)).flatMap(run=>(run.artifacts||[])
-    .filter(item=>!(/\.mp4$/i.test(item.path) && (run.artifacts||[]).some(candidate=>candidate.path===item.path.replace(/\.mp4$/i,'.webm')))).map(item=>({
-    ...item,run_id:run.id,run_name:displayName(run),poster:posterPath(run),recordingLabel:(run.scope||run.metrics?.scope)==='validation_diagnostics'?'Validation recording':'Historical recording',historical:run.id===featured && run.id!==selectedId,
-    mp4:/\.webm$/i.test(item.path) ? (run.artifacts||[]).find(candidate=>candidate.path===item.path.replace(/\.webm$/i,'.mp4'))?.path : null,
-  })));
-  const priority=item=>item.run_id===selectedId?0:item.run_id===featured?1:2;
-  const rank=item=>isVideoArtifact(item)?priority(item):item.kind==='image'?(item.run_id===selectedId?0:3+priority(item)):6;
-  const items=all.sort((a,b)=>rank(a)-rank(b)).slice(0,6);
-  const key=JSON.stringify(items);if(key===artifactKey)return;artifactKey=key;
-  if(!items.length){$('artifacts').replaceChildren(el('p','Reference and learned-policy recordings will appear here.','empty'));return;}
-  $('artifacts').replaceChildren(...items.map(item=>{
-    const figure=el('figure'),url=artifactUrl(item.run_id,item.path);
-    if(isVideoArtifact(item)){const video=el('video');video.src=url;if(item.poster)video.poster=artifactUrl(item.run_id,item.poster);video.controls=true;video.preload='metadata';video.playsInline=true;figure.append(video);}
-    else if(item.kind==='image'||/\.(png|jpe?g|gif)$/i.test(item.path)){const image=el('img');image.src=url;image.alt=item.label||'Experiment visualization';image.loading='lazy';figure.append(image);}
-    const caption=el('figcaption'),link=el('a',item.label||item.path);link.href=url;link.target='_blank';link.rel='noopener';caption.append(link);
-    if(isVideoArtifact(item) && item.mp4){const download=el('a','MP4 download');download.href=artifactUrl(item.run_id,item.mp4);download.download=item.mp4.split('/').pop();caption.append(document.createTextNode(' · '),download);}
-    caption.append(el('br'),document.createTextNode(`${isVideoArtifact(item) && item.historical?item.recordingLabel+' · ':''}${item.run_name}`));figure.append(caption);return figure;
-  }));
-}
-
-function renderEvents(events) {
-  if(!events.length){$('events').replaceChildren(el('li','No recorded events.','empty'));return;}
-  $('events').replaceChildren(...events.map(event=>{const item=el('li'),date=new Date(event.timestamp),time=el('time',Number.isNaN(date.valueOf())?'—':date.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}));time.title=event.timestamp||'';const message=el('div',event.message||'',event.level==='error'?'error':'');message.append(el('span',event.run_id,'event-run'));item.append(time,message);return item;}));
+function bar(value, total, className) {
+  const outer = el('div', undefined, 'bar ' + (className || ''));
+  const inner = el('div');
+  inner.style.width = `${total ? Math.round((100 * value) / total) : 0}%`;
+  outer.append(inner);
+  return outer;
 }
 
 function renderResources(resources) {
-  const parts=[];const add=(label,value)=>{const node=el('span');node.append(el('strong',label+' '),document.createTextNode(value));parts.push(node);};
-  if(resources.gpus?.length){const gpu=resources.gpus[0];add(gpu.name.replace('NVIDIA ',''),`${Math.round(gpu.memory_used_mib/1024)}/${Math.round(gpu.memory_total_mib/1024)} GiB · ${Math.round(gpu.utilization)}%`);}
-  if(number(resources.load_1m))add('CPU load',`${resources.load_1m} / ${resources.logical_cpus}`);
-  if(number(resources.memory_available_bytes))add('RAM free',`${Math.round(resources.memory_available_bytes/2**30)} GiB`);
-  if(number(resources.disk_free_bytes))add('Disk free',`${Math.round(resources.disk_free_bytes/2**30)} GiB`);
-  $('resources').replaceChildren(...parts);
+  const target = $('resources');
+  target.replaceChildren();
+  if (!resources) return;
+  const parts = [`CPU load ${resources.load_1m ?? '—'} / ${resources.logical_cpus ?? '—'}`,
+    `RAM free ${bytes(resources.memory_available_bytes)}`, `Disk free ${bytes(resources.disk_free_bytes)}`];
+  for (const gpu of resources.gpus || []) parts.push(`GPU ${Math.round(gpu.utilization)}% · ${(gpu.memory_used_mib / 1024).toFixed(1)} GB`);
+  for (const part of parts) target.append(el('span', part));
 }
 
-async function poll() {
-  try { const response=await fetch('/api/state',{cache:'no-store',signal:AbortSignal.timeout(30000)});if(!response.ok)throw new Error('HTTP '+response.status);state=await response.json();renderProject(state.project);renderSelected();renderArtifacts(state.runs);renderEvents(state.events);renderResources(state.resources);$('connection').textContent='Live';$('connection-dot').className='dot live';$('refreshed').textContent='Updated '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
-  catch(error){$('connection').textContent='Disconnected';$('connection-dot').className='dot offline';$('refreshed').textContent=state?'Showing last received data':'Waiting for dashboard server';}
-  finally{setTimeout(poll,5000);}
+function renderOverview(overview, timestamp) {
+  $('title').textContent = overview.title || 'Pick–Nav–Reach';
+  $('phase').textContent = overview.phase || '';
+  $('updated').textContent = `Updated ${when(timestamp)}`;
+  $('summary').textContent = overview.summary || '';
+  const cards = $('headline');
+  cards.replaceChildren();
+  for (const card of overview.headline || []) {
+    const box = el('div', undefined, 'card');
+    box.append(el('div', card.label, 'card-label'), el('div', card.value, 'card-value'), el('div', card.detail, 'card-detail'));
+    cards.append(box);
+  }
+  const arms = $('arms');
+  arms.replaceChildren(header(['Arm', 'Dev', 'Hold-out', 'Course', 'Rubric / trial']));
+  const body = el('tbody');
+  for (const arm of overview.arms || []) {
+    const name = el('div');
+    name.append(el('strong', arm.name), el('div', arm.description, 'muted small'));
+    const results = arm.results || {};
+    const rubric = Object.values(results).map(r => r.rubric).find(Boolean);
+    body.append(row([name, score(results.dev), score(results.holdout), score(results.course),
+      rubric ? `${rubric.per_trial} / 40` : '—']));
+  }
+  arms.append(body);
+  const plan = $('plan');
+  plan.replaceChildren();
+  for (const item of overview.plan || []) {
+    const li = el('li', undefined, `plan-${item.status}`);
+    li.append(el('span', item.status, 'tag'), el('span', ` ${item.step}`));
+    plan.append(li);
+  }
+  const docs = $('documents');
+  docs.replaceChildren();
+  for (const doc of overview.documents || []) {
+    const a = el('a', doc.label);
+    a.href = doc.href;
+    const li = el('li');
+    li.append(a);
+    docs.append(li);
+  }
+  renderRecordings(overview.recordings || []);
 }
-$('run-toggle').addEventListener('click',()=>{showAllRuns=!showAllRuns;renderRuns(state?.runs||[]);});
-$('run-select').addEventListener('change',event=>{selectedId=event.target.value;renderSelected();});
+
+let recordingSignature = '';
+function renderRecordings(list) {
+  // Only rebuild when the list changes, so polling never interrupts playback.
+  const signature = JSON.stringify(list.map(r => [r.run, (r.media || []).map(m => m.path)]));
+  if (signature === recordingSignature) return;
+  recordingSignature = signature;
+  const recordings = $('recordings');
+  recordings.replaceChildren();
+  for (const recording of list) {
+    const group = el('div', undefined, 'recording-group');
+    group.append(el('h3', recording.label));
+    const strip = el('div', undefined, 'videos');
+    for (const media of recording.media || []) {
+      const figure = el('figure');
+      const video = el('video');
+      video.controls = true;
+      video.preload = 'none';
+      video.src = `/artifacts/${encodeURIComponent(recording.run)}/${media.path.split('/').map(encodeURIComponent).join('/')}`;
+      figure.append(video, el('figcaption', media.label));
+      strip.append(figure);
+    }
+    if (!(recording.media || []).length) strip.append(el('p', 'No video artifacts found.', 'muted'));
+    group.append(strip);
+    recordings.append(group);
+  }
+}
+
+function renderActive(active) {
+  $('active-panel').hidden = !active.length;
+  const target = $('active');
+  target.replaceChildren();
+  for (const job of active) {
+    const line = el('div', undefined, 'job');
+    const label = el('div');
+    label.append(el('strong', job.name), el('span', ` · ${job.kind || 'run'} · started ${when(job.started_at)}`, 'muted'));
+    line.append(label);
+    if (job.progress !== null && job.progress !== undefined) line.append(bar(job.progress, 1, 'progress'));
+    line.append(el('div', job.detail, 'muted small'));
+    target.append(line);
+  }
+}
+
+function settingsText(evaluation) {
+  const ex = evaluation.execution || {};
+  const parts = [`controller ${evaluation.controller}`, `planned speed ${ex.planned_speed_scale}`];
+  if (ex.holding_speed_scale) parts.push(`holding speed ${ex.holding_speed_scale}`);
+  if (evaluation.controller !== 'reference') parts.push(`carry step ${ex.delta_scale} m`);
+  if (ex.carry_max_turn_deg) parts.push(`turn limit ${ex.carry_max_turn_deg}°`);
+  if (ex.carry_slip_drift_mm) parts.push(`slow ×${ex.carry_slip_scale} after ${ex.carry_slip_drift_mm} mm slip`);
+  return parts.join(' · ');
+}
+
+function detail(evaluation) {
+  const box = el('div', undefined, 'detail');
+  const objects = el('div');
+  objects.append(el('h4', 'By object'));
+  for (const [name, entry] of Object.entries(evaluation.by_object)) {
+    const line = el('div', undefined, 'object-line');
+    line.append(el('span', name), bar(entry.success, entry.cases), el('span', `${entry.success}/${entry.cases}`, 'muted'));
+    objects.append(line);
+  }
+  const sets = el('div');
+  sets.append(el('h4', 'By set'));
+  for (const [name, entry] of Object.entries(evaluation.by_set)) {
+    sets.append(el('div', `${SET_NAMES[name] || name}: ${entry.success}/${entry.cases} complete, ${entry.timed} timed`));
+  }
+  const failures = el('div');
+  failures.append(el('h4', 'Failures'));
+  const failureList = Object.entries(evaluation.failures);
+  if (!failureList.length) failures.append(el('div', 'None', 'muted'));
+  for (const [label, count] of failureList) failures.append(el('div', `${count} × ${label}`));
+  const settings = el('div');
+  settings.append(el('h4', 'Settings'), el('div', settingsText(evaluation)));
+  for (const [skill, source] of Object.entries(evaluation.models || {})) settings.append(el('div', `${skill}: ${source}`, 'muted small'));
+  if (evaluation.rubric) {
+    settings.append(el('h4', 'Rubric estimate (per trial)'));
+    for (const [item, points] of Object.entries(evaluation.rubric.items)) settings.append(el('div', `${item.replaceAll('_', ' ')}: ${points}`, 'small'));
+  }
+  box.append(objects, sets, failures, settings);
+  return box;
+}
+
+function renderEvaluations(evaluations) {
+  const table = $('evaluations');
+  table.replaceChildren(header(['Run', 'Set', 'Complete', 'Within 15k', 'Main failure', 'Rubric', 'Started']));
+  const body = el('tbody');
+  for (const evaluation of evaluations) {
+    const name = el('div');
+    name.append(el('strong', evaluation.label), el('div', evaluation.id, 'muted small'));
+    if (evaluation.status === 'running') name.append(el('span', 'running', 'tag'));
+    const main = Object.entries(evaluation.failures)[0];
+    const complete = el('div');
+    complete.append(el('span', `${evaluation.success}/${evaluation.completed} · ${pct(evaluation.success, evaluation.completed)}`),
+      bar(evaluation.success, evaluation.completed));
+    const tr = row([name, SET_NAMES[evaluation.set] || evaluation.set, complete,
+      `${evaluation.timed} · ${pct(evaluation.timed, evaluation.completed)}`,
+      main ? `${main[1]} × ${main[0]}` : '—',
+      evaluation.rubric ? `${evaluation.rubric.per_trial}/40` : '—', when(evaluation.started_at)], 'clickable');
+    tr.addEventListener('click', () => {
+      if (expanded.has(evaluation.id)) expanded.delete(evaluation.id); else expanded.add(evaluation.id);
+      renderEvaluations(evaluations);
+    });
+    body.append(tr);
+    if (expanded.has(evaluation.id)) {
+      const td = el('td');
+      td.colSpan = 7;
+      td.append(detail(evaluation));
+      const extra = el('tr', undefined, 'detail-row');
+      extra.append(td);
+      body.append(extra);
+    }
+  }
+  table.append(body);
+}
+
+function renderHistory(history) {
+  $('history-count').textContent = `(${history.length})`;
+  const table = $('history');
+  table.replaceChildren(header(['Run', 'Kind', 'Status', 'Summary', 'Updated']));
+  const body = el('tbody');
+  for (const item of history) {
+    body.append(row([item.name && item.name !== item.id ? `${item.name} · ${item.id}` : item.id, item.kind,
+      item.status, (item.summary || '').slice(0, 160), when(item.updated_at)]));
+  }
+  table.append(body);
+}
+
+let lastHistoryLength = -1;
+async function poll() {
+  try {
+    const response = await fetch('/api/overview', {cache: 'no-store'});
+    const state = await response.json();
+    renderOverview(state.overview || {}, state.timestamp);
+    renderResources(state.resources);
+    renderActive(state.active || []);
+    renderEvaluations(state.evaluations || []);
+    if ((state.history || []).length !== lastHistoryLength) {
+      renderHistory(state.history || []);
+      lastHistoryLength = (state.history || []).length;
+    }
+  } catch (error) {
+    $('updated').textContent = `Connection problem: ${error.message}`;
+  }
+  setTimeout(poll, 10000);
+}
+
 poll();
