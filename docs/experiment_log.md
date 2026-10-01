@@ -152,6 +152,13 @@ Drop analysis (saved traces and repeated runs):
 - Slip measured during the planned retreat weakly flags later drops (12/24 drops
   vs 17/69 successes at −1 mm), too weak for a useful re-grasp rule.
 
+## 2026-10-01: dexterous-hand feasibility spike
+
+Allegro hand vs Fetch gripper on a gantry that reproduces the carry motion
+([hand_feasibility.md](hand_feasibility.md)). Scripted Allegro power grasps retain
+20/50 vs Fetch 40/50 over 10 recorded routes; after a 5,400-trial robustness search,
+14/25 vs 18/25 on unseen routes. No-go: the hand does not hold better in PyBullet.
+
 ## Main conclusions carried forward
 
 1. Navigation generalises to unseen mazes: only 3–6% of unseen cases time out.
