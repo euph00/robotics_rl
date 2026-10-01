@@ -103,7 +103,7 @@ class GeneralCarryEnv(CarrySkillEnv):
 
     def _build_physical_bank(self):
         path = maze_astar(self.native.cube_positions, self.controller.base_position(),
-                          self.native.goal_pos[:2], table_bounds=self.native.p.getAABB(self.native.table_id))
+                          self.native.goal_pos[:2], table_bounds=self.native.table_aabb())
         points = [self.controller.base_position().copy()]
         arcs = [0.]
         obs = self._observation()

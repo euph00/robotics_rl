@@ -33,7 +33,7 @@ def test_prepare_moves_physically_without_changing_goal_or_restoring_after_start
         def __init__(self):
             self.xy=np.array([1.5,1.5]);self.goal=np.array([17.5,4.5])/20
             self.native=SimpleNamespace(step_count=0,physics_steps=0,cube_positions=[],table_id=1,
-                contacts=lambda:{'bilateral_contact':True},p=SimpleNamespace(getAABB=lambda _:None))
+                contacts=lambda:{'bilateral_contact':True},p=SimpleNamespace(getAABB=lambda _:None),table_aabb=lambda:None)
             self.controller=SimpleNamespace(base_position=lambda:self.xy.copy())
             self.resets=0;self._episode_steps=0
         def obs(self):return {'achieved_goal':self.xy.astype(np.float32)/20,'desired_goal':self.goal.copy()}

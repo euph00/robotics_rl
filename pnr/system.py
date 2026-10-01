@@ -83,12 +83,8 @@ class LearnedSystem:
         def observed(action):
             observation,info = original_step(action)
             self.calls_by_source[self.control_source]+=1
-            p=self.native.p
-            wall_contacts=(p.getContactPoints(self.native.robot_id,self.native.maze_id)
-                           +p.getContactPoints(self.native.object_id,self.native.maze_id))
-            self.wall_contact_calls+=int(any(c[9]>0 for c in wall_contacts))
-            self.robot_table_contact_calls+=int(any(c[9]>0 for c in
-                p.getContactPoints(self.native.robot_id,self.native.table_id)))
+            self.wall_contact_calls+=int(self.native.touching('robot','maze') or self.native.touching('object','maze'))
+            self.robot_table_contact_calls+=int(self.native.touching('robot','table'))
             self.max_contact_force=max(self.max_contact_force,float(info.get('normal_force',0.)))
             if info.get('lifted') and self.first_lift_action is None:
                 self.first_lift_action=self.native.step_count

@@ -13,7 +13,7 @@ from scipy.spatial.transform import Rotation
 
 class LocalCartesianIK:
     def __init__(self, env, max_iterations=16, damping=.015, max_joint_change=.35):
-        self.env, self.p = env, env.p
+        self.env = env
         self.active = np.array([env.joint_name_to_slot['torso_lift_joint'], *env.arm_slots])
         self.max_iterations = int(max_iterations)
         self.damping = float(damping)
@@ -24,25 +24,15 @@ class LocalCartesianIK:
         self.last_ik_error = float('inf')
 
     def _put(self, q):
-        for joint, value in zip(self.env.joint_indices, q):
-            self.p.resetJointState(self.env.robot_id, joint, float(value), targetVelocity=0.)
+        self.env.set_joint_positions(q)
 
     def _pose(self):
-        state = self.p.getLinkState(self.env.robot_id, self.env.ee_link, computeForwardKinematics=True)
-        return np.array(state[4]), Rotation.from_quat(state[5])
+        position, quaternion = self.env.ee_pose()
+        return position, Rotation.from_quat(quaternion)
 
     def jacobian(self, q):
-        """Spatial Jacobian of the gripper URDF frame in world coordinates.
-
-        PyBullet 3.2.7's calculateJacobian localPosition=[0,0,0] is the URDF
-        link origin, despite this gripper having a nonzero inertial origin.
-        A finite-difference integration test checks both position and rotation;
-        adding or subtracting its COM offset gives the wrong derivative.
-        """
-        zeros = [0.] * self.env.action_size
-        linear, angular = self.p.calculateJacobian(self.env.robot_id, self.env.ee_link,
-            [0., 0., 0.], np.asarray(q, dtype=float).tolist(), zeros, zeros)
-        return np.vstack((linear, angular))
+        """Spatial Jacobian of the gripper frame origin in world coordinates (6x15)."""
+        return self.env.ee_jacobian(q)
 
     def ik(self, position, quaternion, seed=None, tolerance=.0015, orientation_tolerance=.02):
         """Return 15 targets near `seed`, or reject an unreachable local target.
@@ -65,8 +55,7 @@ class LocalCartesianIK:
         upper = np.minimum(self.env.joint_upper[self.active], initial[self.active]+neighborhood)
         q = initial.copy()
         q[self.active] = np.clip(q[self.active], lower, upper)
-        saved = self.p.saveState()
-        try:
+        with self.env.query():
             for iteration in range(self.max_iterations + 1):
                 self._put(q)
                 current_position, current_rotation = self._pose()
@@ -88,6 +77,3 @@ class LocalCartesianIK:
                 q[self.active] = np.clip(q[self.active]+step, lower, upper)
             raise ValueError(f'Local IK rejected: position error {self.last_position_error:.4f} m, '
                              f'orientation error {self.last_orientation_error:.4f} rad')
-        finally:
-            self.p.restoreState(saved)
-            self.p.removeState(saved)

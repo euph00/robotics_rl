@@ -341,6 +341,63 @@ class PickNavReachEnv:
         self.p.removeState(state.state_id)
         del self._saved_states[state.state_id]
 
+    # ---- Simulator-neutral query interface (also implemented by the MuJoCo backend) ----
+    # Planner, IK and skill code use only these methods, never the PyBullet client.
+    # Kinematic setters are meant for use inside `query()`, which restores the scene.
+
+    @contextmanager
+    def query(self):
+        state = self.p.saveState()
+        try:
+            yield
+        finally:
+            self.p.restoreState(state)
+            self.p.removeState(state)
+
+    def set_joint_positions(self, q):
+        for joint, value in zip(self.joint_indices, q):
+            self.p.resetJointState(self.robot_id, joint, float(value), targetVelocity=0.)
+
+    def ee_pose(self):
+        state = self.p.getLinkState(self.robot_id, self.ee_link, computeForwardKinematics=True)
+        return np.array(state[4]), np.array(state[5])
+
+    def ee_jacobian(self, q):
+        """6x15 world-frame Jacobian of the gripper frame origin (linear; angular)."""
+        zeros = [0.] * self.action_size
+        linear, angular = self.p.calculateJacobian(self.robot_id, self.ee_link,
+            [0., 0., 0.], np.asarray(q, dtype=float).tolist(), zeros, zeros)
+        return np.vstack((linear, angular))
+
+    def object_pose(self):
+        pos, quat = self.p.getBasePositionAndOrientation(self.object_id)
+        return np.array(pos), np.array(quat)
+
+    def set_object_pose(self, position, quaternion):
+        self.p.resetBasePositionAndOrientation(self.object_id, position, quaternion)
+
+    def object_velocity(self):
+        return np.concatenate(self.p.getBaseVelocity(self.object_id))
+
+    def table_aabb(self):
+        return self.p.getAABB(self.table_id)
+
+    def robot_link_aabbs(self):
+        return [self.p.getAABB(self.robot_id, link) for link in range(-1, self.p.getNumJoints(self.robot_id))
+                if self.p.getCollisionShapeData(self.robot_id, link)]
+
+    def _body(self, name):
+        return {"robot": self.robot_id, "object": self.object_id, "table": self.table_id, "maze": self.maze_id}[name]
+
+    def touching(self, a, b):
+        """True if bodies a and b have a contact with positive normal force (last physics step)."""
+        return any(c[9] > 0 for c in self.p.getContactPoints(self._body(a), self._body(b)))
+
+    def any_within(self, pairs, margin):
+        """True if any (a, b) pair is closer than `margin` (negative = penetrating) at current poses."""
+        self.p.performCollisionDetection()
+        return any(self.p.getClosestPoints(self._body(a), self._body(b), distance=margin) for a, b in pairs)
+
     def scene_manifest(self):
         return {"upstream_commit": UPSTREAM_COMMIT, "environment_version": "course-adapter-v1",
             "seed": self.seed, "seed_mode": self.seed_mode, "maze_seed": self.maze_seed,

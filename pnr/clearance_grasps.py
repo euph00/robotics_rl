@@ -85,10 +85,7 @@ def checked_carry_envelope(controller, grasp, q_pre):
     envelope = []
     with planner.query():
         planner._put(carry)
-        for link in range(-1,native.p.getNumJoints(native.robot_id)):
-            if not native.p.getCollisionShapeData(native.robot_id,link):
-                continue
-            lower,upper = native.p.getAABB(native.robot_id,link)
+        for link, (lower, upper) in enumerate(native.robot_link_aabbs()):
             lo=np.asarray(lower[:2])-carry_base;hi=np.asarray(upper[:2])-carry_base
             extent=float(max(np.max(np.abs(lo)),np.max(np.abs(hi))))
             envelope.append({'body':'robot','link':link,'max_axis_extent_m':extent})

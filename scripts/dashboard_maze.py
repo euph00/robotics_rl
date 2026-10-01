@@ -41,7 +41,7 @@ def main():
         root_xy = np.asarray(env.root_position[:2])
         success_xy, success_slip, _ = carry_trace(SUCCESS, root_xy)
         drop_xy, drop_slip, drop_contact = carry_trace(DROP, root_xy)
-        lower, upper = env.p.getAABB(env.table_id)
+        lower, upper = env.table_aabb()
         astar = maze_astar(env.cube_positions, np.asarray(success_xy[0]), env.goal_pos[:2],
                            footprint_radius=.36, table_bounds=(lower, upper))
         data = {

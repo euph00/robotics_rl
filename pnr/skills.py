@@ -93,7 +93,7 @@ class ManipulationSkillEnv(gym.Env):
         ee,orn=self.controller.planner.ee_pose()
         obj=np.array(obs['object_pos']); local_ee=ee.copy()
         obj[:2]-=self.base_xy; local_ee[:2]-=self.base_xy
-        velocity=np.concatenate(self.native.p.getBaseVelocity(self.native.object_id))
+        velocity=self.native.object_velocity()
         contacts=np.asarray(self.native.contacts()['finger_contacts'],dtype=float)
         features=np.concatenate([obs['qpos'][2:],obs['qvel'],local_ee,orn,
             obj,obs['object_xyzw'],velocity,contacts]).astype(np.float32)

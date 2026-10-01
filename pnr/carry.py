@@ -100,7 +100,7 @@ class CarrySkillEnv(gym.Env):
         try:
             self.map_features = np.concatenate([
                 wall_occupancy(self.native.cube_positions).ravel(),
-                table_occupancy(self.native.p.getAABB(self.native.table_id)).ravel()])
+                table_occupancy(self.native.table_aabb()).ravel()])
             if build_starts:
                 self._build_starts()
                 self.setup_action_calls = self.native.step_count
@@ -200,7 +200,7 @@ class CarrySkillEnv(gym.Env):
         local_ee[:2] -= base
         local_object = np.asarray(obs['object_pos'], dtype=float).copy()
         local_object[:2] -= base
-        velocity = np.concatenate(self.native.p.getBaseVelocity(self.native.object_id))
+        velocity = self.native.object_velocity()
         contacts = np.asarray(self.native.contacts()['finger_contacts'], dtype=float)
         features = np.concatenate([self.map_features, base / self.goal_scale,
             obs['qpos'][2:], obs['qvel'], local_ee, orientation, local_object,
@@ -269,13 +269,8 @@ class CarrySkillEnv(gym.Env):
             'full_carry_min_decisions': self.full_carry_min_decisions,'episode_horizon':self._episode_horizon}
 
     def _collision(self):
-        p = self.native.p
-        return any(contact[9] > 0 for first, second in (
-            (self.native.robot_id, self.native.maze_id),
-            (self.native.object_id, self.native.maze_id),
-            (self.native.robot_id, self.native.table_id),
-            (self.native.object_id, self.native.table_id))
-            for contact in p.getContactPoints(first, second))
+        return any(self.native.touching(a, b) for a, b in
+                   (('robot', 'maze'), ('object', 'maze'), ('robot', 'table'), ('object', 'table')))
 
     def step(self, action):
         action = np.asarray(action, dtype=float)

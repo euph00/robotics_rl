@@ -81,7 +81,7 @@ class AnalyticalCarryTestPolicy:
         base=observation['achieved_goal']*20
         if self.route is None:
             self.route=maze_astar(self.native.cube_positions,base,self.native.goal_pos[:2],
-                footprint_radius=.36,table_bounds=self.native.p.getAABB(self.native.table_id))
+                footprint_radius=.36,table_bounds=self.native.table_aabb())
         while self.index<len(self.route)-1 and np.linalg.norm(base-self.route[self.index])<.012:
             self.index+=1
         action=(self.route[self.index]-base)/.045

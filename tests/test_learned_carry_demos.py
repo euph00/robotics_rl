@@ -36,7 +36,7 @@ def test_preparation_failure_remains_in_case_and_cost_denominators():
 def test_shared_teacher_records_executed_noise_and_true_failure(monkeypatch,tmp_path):
     monkeypatch.setattr(teacher,'maze_astar',lambda *a,**kw:np.array([[0.,0.],[3.,0.]]))
     native=SimpleNamespace(step_count=80,physics_steps=400,cube_positions=[],table_id=0,
-                           p=SimpleNamespace(getAABB=lambda _:None))
+                           p=SimpleNamespace(getAABB=lambda _:None),table_aabb=lambda:None)
     env=SimpleNamespace(native=native,controller=SimpleNamespace(base_position=lambda:np.zeros(2)),
                         _episode_horizon=3,goal_scale=20.,delta_scale=.075)
     observation={'observation':np.zeros(580,dtype=np.float32),'achieved_goal':np.zeros(2,dtype=np.float32),

@@ -46,11 +46,8 @@ class ReferenceController:
         self.max_object_height = max(self.max_object_height,float(obs['object_pos'][2]))
         if info.get('lifted') and self.first_lift_action is None:
             self.first_lift_action = self.env.step_count
-        p=self.env.p
-        wall_points=(p.getContactPoints(self.env.robot_id,self.env.maze_id)
-                     +p.getContactPoints(self.env.object_id,self.env.maze_id))
-        self.wall_contact_steps += int(any(c[9]>0 for c in wall_points))
-        self.table_contact_steps += int(any(c[9]>0 for c in p.getContactPoints(self.env.robot_id,self.env.table_id)))
+        self.wall_contact_steps += int(self.env.touching('robot','maze') or self.env.touching('object','maze'))
+        self.table_contact_steps += int(self.env.touching('robot','table'))
         if self.on_step:
             self.on_step(self,obs,info)
         return obs,info
@@ -194,7 +191,7 @@ class ReferenceController:
     def carry(self,goal_xy=None):
         if goal_xy is None:
             goal_xy = self.env.goal_pos[:2].copy()
-        table_bounds = self.env.p.getAABB(self.env.table_id)
+        table_bounds = self.env.table_aabb()
         self.path = maze_astar(self.env.cube_positions,self.base_position(),goal_xy,
                                footprint_radius=.36,table_bounds=table_bounds)
         self.stage_results['navigation'] = {'path':[v.tolist() for v in self.path]}

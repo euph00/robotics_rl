@@ -105,7 +105,7 @@ def prepare_recovery(env,target,summary,stop_path,max_decisions=250):
     observation,reset_info=env.reset(options={'full':True})
     original_goal=observation['desired_goal'].copy()
     path=maze_astar(env.native.cube_positions,env.controller.base_position(),target,
-                   table_bounds=env.native.p.getAABB(env.native.table_id))
+                   table_bounds=env.native.table_aabb())
     trace=[(observation['achieved_goal']*env.goal_scale).tolist()]
     for decision in range(max_decisions):
         if stop_path.exists():raise InterruptedError('Collection stop requested')
@@ -137,7 +137,7 @@ def prepare_recovery(env,target,summary,stop_path,max_decisions=250):
 def collect_episode(env,obs,rng,noise_scale,summary,stop_path):
     goal=obs['desired_goal']*env.goal_scale
     path=maze_astar(env.native.cube_positions,env.controller.base_position(),goal,
-                   table_bounds=env.native.p.getAABB(env.native.table_id))
+                   table_bounds=env.native.table_aabb())
     rows=[];succeeded=False;terminated=False;info={};stopped=False
     for step in range(env._episode_horizon):
         if stop_path.exists():
@@ -177,7 +177,7 @@ def collect_on_policy_episode(env,obs,policy,summary,stop_path,*,learner_budget=
         before=time.monotonic()
         try:
             path=np.asarray(maze_astar(env.native.cube_positions,position,world_goal,
-                table_bounds=env.native.p.getAABB(env.native.table_id)))
+                table_bounds=env.native.table_aabb()))
             remaining=float(np.linalg.norm(np.diff(path,axis=0),axis=1).sum())
             teacher=route_action(path,position,world_goal,env.delta_scale)
         except ValueError as error:

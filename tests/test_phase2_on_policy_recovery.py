@@ -13,7 +13,7 @@ class FakeEnv:
         self.xy=np.array(xy,dtype=float);self.goal=np.array(goal,dtype=np.float32)/20
         self.steps=0;self.failure_step=failure_step;self.executed=[]
         self.native=SimpleNamespace(step_count=0,physics_steps=0,cube_positions=[],table_id=1,
-                                    p=SimpleNamespace(getAABB=lambda _:None))
+                                    p=SimpleNamespace(getAABB=lambda _:None),table_aabb=lambda:None)
     def obs(self):
         return {'achieved_goal':self.xy.astype(np.float32)/20,'desired_goal':self.goal.copy()}
     def reset(self,*args,**kwargs):

@@ -1,11 +1,10 @@
 """Small, explicit geometric algorithms required by the course specification.
 
-Planning queries temporarily evaluate kinematics inside a Bullet save/restore
-transaction. They never advance physics or alter the scored execution state.
+Planning queries evaluate kinematics inside the environment's `query()` transaction
+(simulator-neutral). They never advance physics or alter the scored execution state.
 """
 from __future__ import annotations
 
-from contextlib import contextmanager
 from dataclasses import dataclass
 import heapq
 import math
@@ -105,8 +104,7 @@ def antipodal_grasps(points, normals, aperture=0.098, limit=24, table_height=Non
 class JointPlanner:
     """Verified link indexing, fixed-base IK, checked interpolation and RRT."""
     def __init__(self, env, seed=0):
-        self.env, self.p = env, env.p
-        self.robot = env.robot_id
+        self.env = env
         self.rng = np.random.default_rng(seed)
         self.ee_link = env.ee_link
         self.active = [env.joint_name_to_slot['torso_lift_joint']] + list(env.arm_slots)
@@ -117,35 +115,26 @@ class JointPlanner:
         self.rrt_calls = 0
         self.payload = None
 
-    @contextmanager
     def query(self):
-        state = self.p.saveState()
-        try:
-            yield
-        finally:
-            self.p.restoreState(state)
-            self.p.removeState(state)
+        return self.env.query()
 
     def set_payload(self):
         """Record the measured grasp transform for collision queries only."""
         pos, quat = self.ee_pose()
-        obj_pos, obj_quat = self.p.getBasePositionAndOrientation(self.env.object_id)
+        obj_pos, obj_quat = self.env.object_pose()
         rotation = Rotation.from_quat(quat)
         self.payload = (rotation.inv().apply(np.asarray(obj_pos)-pos),
                         rotation.inv()*Rotation.from_quat(obj_quat))
 
     def _put(self, q):
-        for j, v in zip(self.env.joint_indices, q):
-            self.p.resetJointState(self.robot, j, float(v), targetVelocity=0.)
+        self.env.set_joint_positions(q)
         if self.payload is not None:
             pos, quat = self.ee_pose()
             rotation = Rotation.from_quat(quat)
-            self.p.resetBasePositionAndOrientation(self.env.object_id,
-                pos+rotation.apply(self.payload[0]), (rotation*self.payload[1]).as_quat())
+            self.env.set_object_pose(pos+rotation.apply(self.payload[0]), (rotation*self.payload[1]).as_quat())
 
     def ee_pose(self):
-        state = self.p.getLinkState(self.robot, self.ee_link, computeForwardKinematics=True)
-        return np.array(state[4]), np.array(state[5])
+        return self.env.ee_pose()
 
     def ik(self, position, quaternion, seed=None, tolerance=.012):
         seed = self.env.agent_qpos.copy() if seed is None else np.asarray(seed).copy()
@@ -194,17 +183,12 @@ class JointPlanner:
     def _collision_free(self, q, include_object=False, margin=.001):
         self.collision_checks += 1
         self._put(q)
-        self.p.performCollisionDetection()
-        bodies = [self.env.table_id, self.env.maze_id]
-        if include_object:
-            bodies.append(self.env.object_id)
-        for body in bodies:
-            if self.p.getClosestPoints(self.robot, body, distance=margin):
-                return False
-            if self.payload is not None and body != self.env.object_id:
-                if self.p.getClosestPoints(self.env.object_id, body, distance=margin):
-                    return False
-        return True
+        pairs = []
+        for body in ['table', 'maze'] + (['object'] if include_object else []):
+            pairs.append(('robot', body))
+            if self.payload is not None and body != 'object':
+                pairs.append(('object', body))
+        return not self.env.any_within(pairs, margin)
 
     def collision_free(self, q, include_object=False, margin=.001):
         with self.query():
