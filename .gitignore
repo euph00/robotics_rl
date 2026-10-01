@@ -29,3 +29,4 @@ __pycache__/
 
 # Local dashboard process state.
 /dashboard/.runtime/
+/MUJOCO_LOG.TXT
