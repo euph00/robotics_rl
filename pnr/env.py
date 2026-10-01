@@ -35,12 +35,9 @@ import random
 import threading
 import xml.etree.ElementTree as ET
 
-# Headless GPU rendering: the NVIDIA EGL device (the default device probe picks one that fails here).
-os.environ.setdefault('MUJOCO_GL', 'egl')
-os.environ.setdefault('MUJOCO_EGL_DEVICE_ID', '0')
-import mujoco  # noqa: E402
-import numpy as np  # noqa: E402
-import trimesh  # noqa: E402
+import mujoco   # rendering defaults (headless EGL) are set in pnr/__init__.py
+import numpy as np
+import trimesh
 
 ROOT = Path(__file__).resolve().parents[1]
 UPSTREAM = ROOT / 'upstream' / 'Pick-Nav-Reach-Default-Project'
