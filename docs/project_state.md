@@ -1,6 +1,6 @@
 # Project state
 
-Updated 2026-09-29. Goal for this phase: a strong SAC+HER baseline on the
+Updated 2026-10-01. Goal for this phase: a strong SAC+HER baseline on the
 original gripper that completes the full task on unseen mazes. Earlier history
 and every experiment of this phase: [experiment_log.md](experiment_log.md).
 
@@ -93,7 +93,35 @@ An Allegro hand (16 joints) was tested against Fetch's gripper on a rig reproduc
 the carry motion ([hand_feasibility.md](hand_feasibility.md)). It retained fewer
 objects (20/50 vs 40/50; 14/25 vs 18/25 on unseen routes after a robustness search
 of scripted grasps). Many-contact grasps in PyBullet are not more reliable, so the
-project does not pursue dexterous hands. Kept as a reported negative result.
+project does not pursue dexterous hands in PyBullet. Kept as a reported negative
+result; the hand question is being re-run in MuJoCo (below).
+
+## MuJoCo port (2026-10-01)
+
+`pnr/mj_env.py` is a second backend with the same interface; `eval.py --backend mujoco`.
+Same course robot, objects, mazes, point clouds, joint limits, kinematics and
+Jacobians (checked against PyBullet). The course's position motors are applied as
+computed torque, so each joint closes the same fraction of its error per tick as in
+PyBullet (base: 4.50/3.15/2.21 mm vs 4.47/3.17/2.22 mm). Grip force matches (~450 N
+on the can) and so does grip friction capacity (both slip at ~110 N = μN).
+
+| Planner-only pipeline, same settings | PyBullet | MuJoCo |
+|---|---:|---:|
+| Course seeds 1000–1019 (100 cases) | 76 | **96** |
+| Development set (260 cases) | 190 | **250** |
+| Rubric estimate, per trial (of 40) | 36.2 | **39.2** |
+| Median ticks of successful cases (course) | 12,235 | 12,252 |
+
+The difference is almost entirely carry drops (21 → 2 on the course seeds). With
+equal grip force, friction and capacity, PyBullet's drops come from its contact
+dynamics during carry, not from the task. Getting there needed three MuJoCo-specific
+fixes: explicit motor torques (stiff implicit servos make contacts unable to stop
+the fingers), elliptic friction cones with impratio 10 and noslip (default soft
+friction creeps: 4/20), and an explicit object inertial origin.
+
+Consequence: on MuJoCo the classical pipeline nearly saturates the course task with
+the parallel gripper, so carry drops no longer leave room for learning. The learned
+skills and demonstrations are PyBullet-trained and have not been ported yet.
 
 ## Agreed study design (2026-10-01)
 

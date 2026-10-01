@@ -390,5 +390,38 @@
       }
     ],
     "verdict": "No-go: in PyBullet the 16-joint hand holds objects no better than the two-finger gripper; outcomes flip with millimetre placement changes."
+  },
+  "backends": {
+    "pairs": [
+      {
+        "title": "Course seeds · 100 cases",
+        "pybullet": "reference_course_s30_h20",
+        "mujoco": "mj_reference_course_s30_h20"
+      },
+      {
+        "title": "Development set · 260 cases",
+        "pybullet": "reference_dev_s30_h20",
+        "mujoco": "mj_reference_dev_s30_h20"
+      }
+    ],
+    "checks": [
+      [
+        "Scene, mazes, point clouds, kinematics",
+        "identical"
+      ],
+      [
+        "Motor law (base, first 3 ticks)",
+        "4.50/3.15/2.21 mm vs 4.47/3.17/2.22"
+      ],
+      [
+        "Grip force on the can",
+        "450 N vs 432 N"
+      ],
+      [
+        "Grip slips under external load",
+        "110 N in both (≈ μN)"
+      ]
+    ],
+    "verdict": "Same task, same planner: MuJoCo removes most carry drops (PyBullet contact artifacts). The planner alone nearly saturates the course task there."
   }
 }

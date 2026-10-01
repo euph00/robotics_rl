@@ -159,6 +159,23 @@ Allegro hand vs Fetch gripper on a gantry that reproduces the carry motion
 20/50 vs Fetch 40/50 over 10 recorded routes; after a 5,400-trial robustness search,
 14/25 vs 18/25 on unseen routes. No-go: the hand does not hold better in PyBullet.
 
+## 2026-10-01: MuJoCo backend and planner-only replication
+
+`pnr/mj_env.py`, same interface as the PyBullet environment. Steps that mattered:
+- Base servo saturating at a force cap overshot (14 mm in one tick vs 4.5 mm);
+  uncapped stiff velocity servos then hit MuJoCo's instability reset on the light
+  upper-arm roll joint (scene silently reset to its spawn state).
+- Inertia-scaled implicit velocity servos tracked perfectly in free motion but the
+  constraint solver ignores implicit damping: fingers closed through the objects
+  (contact forces 10–100 kN). Explicit computed torque, τ = M(v_cmd − v)/dt + bias,
+  fixed it; finger armature 4.09 calibrates the blocked grip to PyBullet's.
+- The object's MjSpec inertial origin defaults to unset (NaN) and compiled 1 m
+  above the mesh; the banana rolled off the table during the first motions.
+- Friction: default pyramidal soft friction 4/20 planner-only cases; noslip 14/20;
+  elliptic + impratio 10 17/20; both 19/20 (PyBullet 15/20 on the same cases).
+- Full sets: course 96/100 (PyBullet 76), dev 250/260 (190); rubric 39.2/40 (36.2).
+  Grip slips at the same external load in both engines (~110 N ≈ μN).
+
 ## Main conclusions carried forward
 
 1. Navigation generalises to unseen mazes: only 3–6% of unseen cases time out.

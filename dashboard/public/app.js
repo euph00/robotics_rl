@@ -428,6 +428,42 @@ function renderHandSpike(spike) {
   target.append(el('p', spike.verdict, 'verdict'));
 }
 
+function renderBackends(spec) {
+  const target = $('backends');
+  target.replaceChildren();
+  if (!spec) return;
+  const MJ = '#d6772b';
+  const checks = el('div');
+  for (const [label, value] of spec.checks) {
+    const row = el('div', undefined, 'check');
+    row.append(el('span', '✓ ', 'ok'), el('span', label + ': '), el('strong', value));
+    checks.append(row);
+  }
+  target.append(figure('Replication checks', 'MuJoCo vs PyBullet', checks));
+  for (const pair of spec.pairs) {
+    const pb = run(pair.pybullet), mj = run(pair.mujoco);
+    if (!pb || !mj) continue;
+    const rows = [...OBJECTS, 'total', 'dropped'];
+    const width = 320, rowH = 26, height = 10 + rows.length * rowH;
+    const s = frame(width, height);
+    rows.forEach((name, i) => {
+      const y = 6 + i * rowH;
+      const pick = e => name === 'total' ? [e.success, e.completed] : name === 'dropped' ? [e.drops, e.completed]
+        : [e.by_object[name]?.success ?? 0, e.by_object[name]?.cases ?? 0];
+      s.append(svg('text', {x: 52, y: y + 15, class: 'label', 'text-anchor': 'end'}, name));
+      [pb, mj].forEach((e, k) => {
+        const [v, of] = pick(e);
+        const w = (v / Math.max(of, 1)) * (width - 120);
+        s.append(svg('rect', {x: 58, y: y + k * 10, width: Math.max(1, w), height: 9, rx: 2,
+          fill: name === 'dropped' ? (k ? '#e79a9a' : '#d64545') : (k ? MJ : COLORS.planned)}));
+        s.append(svg('text', {x: 62 + w, y: y + k * 10 + 8, class: 'axis'}, `${v}/${of}`));
+      });
+    });
+    target.append(figure(pair.title, 'Complete per object', s, legend([['PyBullet', COLORS.planned], ['MuJoCo', MJ]])));
+  }
+  target.append(el('p', spec.verdict, 'verdict'));
+}
+
 function renderRubric(overview) {
   const rows = (overview.figures?.rubric || []).map(([label, id]) => [label, run(id)]).filter(([, e]) => e && e.rubric);
   const target = $('rubric');
@@ -542,6 +578,7 @@ async function poll() {
       renderFindings(STATE.overview);
       renderRubric(STATE.overview);
       renderHandSpike(STATE.overview.hand_spike);
+      renderBackends(STATE.overview.backends);
       renderTables(state.evaluations || [], state.history || []);
       const docs = $('documents');
       docs.replaceChildren();
