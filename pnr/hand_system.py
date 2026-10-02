@@ -120,6 +120,23 @@ class HandPlannerSystem(ReferenceController):
         self.stage_results['carry_posture_levelled'] = True
         return super().prepare_carry()
 
+    def reach(self):
+        """The planner's base and torso reach, then the arm takes up what is left: the hand carries the
+        object higher than the gripper, beyond what lowering the torso can correct."""
+        info = super().reach()
+        error = self.env.goal_pos - self.env.observe()['object_pos']
+        if np.linalg.norm(error) > .025:
+            self.planner.set_payload()
+            ee, orientation = self.planner.ee_pose()
+            try:
+                self.move_ee(ee + error, orientation, 'reach', step_size=.006)
+                self.stage_results['arm_reach'] = {'correction_m': error.tolist()}
+            except ValueError as exc:
+                self.stage_results['arm_reach'] = {'correction_m': error.tolist(), 'error': str(exc)}
+            self.hold(60, 'reach')
+            info = self.env.evaluate()
+        return info
+
     def run(self, stop_after='reach'):
         result = {'status': 'running', 'success': False, 'effector': 'allegro'}
         try:
