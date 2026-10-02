@@ -125,6 +125,17 @@ class HandGraspEnv(gym.Env):
         self.observation_space = spaces.Box(-np.inf, np.inf, shape=(self._observation_size(),), dtype=np.float32)
         self.rig = None
 
+    def set_curriculum(self, objects=None, near_start=None):
+        """Change the training distribution between episodes (active objects, near-grasp start share)."""
+        if objects is not None:
+            missing = set(objects) - set(self.rigs)
+            if missing:
+                raise ValueError(f'Objects {sorted(missing)} were not built into this environment')
+            self.objects = list(objects)
+        if near_start is not None:
+            self.near_start = float(near_start)
+        return self.objects, self.near_start
+
     @staticmethod
     def _observation_size():
         return 3 + 6 + 6 + 3 * POINTS + 16 + 16 + 16 + 3 + 12 + 5 + 1 + 1 + 22 + 4

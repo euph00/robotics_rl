@@ -52,6 +52,14 @@ def evaluate(model, env, args, rng_seed, normalize=lambda o: o):
     return rows
 
 
+# Stages: active training objects, near-grasp start share, and when to advance (evaluation success on the
+# stage's objects, or a step budget). Evaluation always covers every object from normal starts.
+CURRICULA = {'easy-first': [
+    {'objects': [14, 5], 'near_start': .5, 'advance_at': .5, 'max_steps': 12_000_000},
+    {'objects': [14, 5, 2, 7, 10], 'near_start': .5, 'advance_at': .4, 'max_steps': 15_000_000},
+    {'objects': [14, 5, 2, 7, 10], 'near_start': .2, 'advance_at': None, 'max_steps': None}]}
+
+
 def warm_start(model, venv, source):
     """Copy a PPO checkpoint's weights and normalisation; new trailing inputs start at zero weight."""
     import pickle
@@ -97,6 +105,7 @@ def main():
     parser.add_argument('--carry', action='store_true', help='Carry phase after a held lift')
     parser.add_argument('--carry-calls', type=int, default=200)
     parser.add_argument('--init-from', help='run/step of a PPO checkpoint to warm-start from (extra inputs zero-initialised)')
+    parser.add_argument('--curriculum', choices=('easy-first',), help='Staged training distribution (see CURRICULA)')
     parser.add_argument('--gradient-steps', type=int, default=8, help='Updates per vectorised step')
     parser.add_argument('--batch-size', type=int, default=512)
     parser.add_argument('--learning-rate', type=float, default=3e-4)
@@ -135,10 +144,20 @@ def main():
                     learning_starts=20_000, gamma=.99, tau=.005, train_freq=1, gradient_steps=args.gradient_steps,
                     policy_kwargs=dict(net_arch=[512, 512, 256]), seed=args.seed, device=args.device, verbose=0)
 
+    stages = CURRICULA.get(args.curriculum)
+
+    def apply_stage(index):
+        stage = stages[index]
+        venv.env_method('set_curriculum', objects=stage['objects'], near_start=stage['near_start'])
+        logger.event(f'Curriculum stage {index}: objects {stage["objects"]}, near-grasp starts {stage["near_start"]}')
+
     class Progress(BaseCallback):
         def __init__(self):
             super().__init__()
             self.next_eval, self.started, self.recent = args.eval_every, time.monotonic(), []
+            self.stage, self.stage_start = 0, 0
+            if stages:
+                apply_stage(0)
 
         def _on_step(self):
             for info in self.locals['infos']:
@@ -158,6 +177,16 @@ def main():
                                carry_success_rate=float(np.mean([r['carried'] for r in rows])),
                                train_success_rate=float(np.mean(self.recent[-200:])) if self.recent else 0.,
                                steps_per_second=self.num_timesteps / (time.monotonic() - self.started))
+                if stages:
+                    stage = stages[self.stage]
+                    stage_success = float(np.mean([r['success'] for r in rows if r['object_idx'] in stage['objects']]))
+                    metrics.update(curriculum_stage=self.stage, stage_success_rate=stage_success)
+                    elapsed = self.num_timesteps - self.stage_start
+                    if self.stage + 1 < len(stages) and (
+                            (stage['advance_at'] is not None and stage_success >= stage['advance_at'])
+                            or (stage['max_steps'] is not None and elapsed >= stage['max_steps'])):
+                        self.stage, self.stage_start = self.stage + 1, self.num_timesteps
+                        apply_stage(self.stage)
                 logger.metric(transitions=self.num_timesteps, **metrics)
                 print(json.dumps(dict(steps=self.num_timesteps, **metrics)), flush=True)
                 self.model.save(out / 'checkpoints' / f'step_{self.num_timesteps:08d}')
