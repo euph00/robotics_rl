@@ -1,7 +1,7 @@
 {
   "title": "Pick–Nav–Reach",
   "phase": "Realistic physics · dexterous hand",
-  "updated": "2026-10-01",
+  "updated": "2026-10-02",
   "summary": "Pick a supplied object, carry it through an unseen maze, hold it at the goal · MuJoCo, realistic physics.",
   "headline": [
     {
@@ -334,6 +334,10 @@
     }
   ],
   "recordings": [
+    {
+      "run": "hand_recordings01",
+      "label": "Allegro hand · imitation + RL (hand_r_bc03, 6M steps) · grasp, lift 15 cm, realistic base carry"
+    },
     {
       "run": "mj_recordings_learned01",
       "label": "Imitation + SAC · validation maze 8 · banana delivered, can slips out"

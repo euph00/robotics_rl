@@ -53,7 +53,7 @@ time out (0.035 / 0.05 m per decision: 7 / 93 complete); hand-written turn limit
 collisions (30°: 164; 15°: 77). The course-physics results (planner 97–99%, learned 92–94%,
 drops the main failure) are in the experiment log.
 
-## Dexterous hand (in progress)
+## Dexterous hand (feasible; extending)
 
 Test rig (`pnr/hand.py`): Menagerie Allegro (16 joints) on a six-axis wrist with arm-like
 limits over the course table, same physics settings. Task (`pnr/hand_env.py`): grasp from a
@@ -69,12 +69,17 @@ carry while the policy keeps controlling the fingers.
   lifted 15 cm (24M steps; peak lift rising from 1 to 7.6 cm). Under the course physics the
   same set-up lifted the foam brick and banana by 5–8M steps, by pressing the palm down with
   the unlimited wrist — a strategy realistic effort caps remove (that policy lifts 0/8 under
-  realistic physics).
-- **Imitation as a warm start** (running): the scripted teacher lifts 80% and carries 72% of
-  can/apple/mug episodes at a 200-decision horizon; behaviour cloning on 254 successful demos
-  reaches 15%. PPO fine-tuning from that imitation policy (`hand_r_bc01`) and a curriculum run
-  warm-started from the realistic RL policy (`hand_r_cur_c`) are training; the dashboard
-  tracks both.
+  realistic physics). A curriculum without a teacher (easy objects first, near-grasp starts)
+  stayed at 0% after 10M steps.
+- **Imitation + RL works** (`hand_r_bc03`): the scripted teacher's 254 successful demos →
+  behaviour cloning (14% lift and carry) → PPO. 86% at 4M steps, **97% at 6M** (can 92%,
+  apple 100%, mug 100%; 36 episodes), above the teacher's 72%. Two things mattered: fixing a
+  reward exploit (the policy hovered just under the 15 cm success height because hovering paid
+  more than the carry phase) and letting PPO move away from the imitator (keeping it close
+  with interleaved cloning and a KL limit held it at 14–33%). Videos are on the dashboard.
+- **Next:** all five objects (`hand_r_all5_01`, warm-started from bc03, PPO only for the foam
+  brick and banana), then the objects the gripper fails, then the hand on the Fetch for the
+  full task and a harder task where the two end effectors differ.
 
 ## How we evaluate
 

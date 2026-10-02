@@ -1,0 +1,33 @@
+{
+  "candidate_id": "imitation_sac",
+  "simulator": "mujoco",
+  "physics": "realistic",
+  "description": "Behaviour-cloned grasp and carry actors fine-tuned with demonstration-regularized SAC+HER (grasp: best online checkpoint; carry: final 40k-decision checkpoint), SAC+HER reach. Planned approach and carry posture.",
+  "checkpoints": {
+    "grasp": {
+      "frozen_path": "runs/mjr_grasp01/candidate/grasp.zip",
+      "sha256": "957cbe0519e7ee6a0d35cdf8f08c7eb3bc15662796ad75e48419c7ff8ac1dae4"
+    },
+    "carry": {
+      "frozen_path": "runs/mjr_carry_sac02/checkpoints/step_000040000_1790904812191356610/model.zip",
+      "sha256": "08870c5e255afd5d3c499036ed298226d36d91e9a96d477b964024eb0f85a05d"
+    },
+    "reach": {
+      "frozen_path": "runs/mjr_reach01/checkpoints/best/model.zip",
+      "sha256": "320e99108a925c07c7557b84322faef4f36260f05aabc608d431a7939693a446"
+    }
+  },
+  "execution": {
+    "grasp_horizon": 600,
+    "carry_horizon": 1200,
+    "reach_horizon": 150,
+    "delta_scale": 0.075,
+    "planned_speed_scale": 3.0,
+    "holding_speed_scale": 2.0,
+    "deadline_physics_ticks": 15000,
+    "grasp_lift_m": 0.24,
+    "reach_tolerance_m": 0.08,
+    "grasp_proposal_mode": "clearance-v2",
+    "physics": "realistic"
+  }
+}

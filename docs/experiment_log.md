@@ -182,3 +182,24 @@ Later on 2026-10-02:
   0% after 10M steps; stopped.
 - A stateless version of the teacher (for DAgger relabelling) reaches can 17/20, mug 9/20,
   apple 2/20 carried, below the stateful teacher (16, 15, 12 of 20); DAgger deferred.
+
+## 2026-10-02: hand feasibility under realistic physics — imitation + RL works
+
+- **Reward exploit.** In `hand_r_bc01`/`bc02` the success rate rose and then collapsed after
+  ~4M steps while peak lifts settled at 14.2–15.0 cm: the carry phase paid ~1.5 per decision,
+  holding a lift just under the 15 cm success height paid up to ~7.5, so PPO learned to hover
+  below the threshold. The carry phase now adds its bonus on top of the grasp-phase reward
+  (`f9977b7`).
+- **`hand_r_bc03`** (teacher demos → behaviour cloning → 1M-step value warm-up → PPO, lr 3e-4,
+  fixed reward; can, apple, mug; 36 deterministic evaluation episodes per point):
+
+  | Steps | 0 (cloned) | 2M | 4M | 6M | 7M | 8M |
+  |---|---:|---:|---:|---:|---:|---:|
+  | Lift + carry | 14% | 53% | 86% | **97%** | 94% | 89% |
+
+  At 6M: can 92%, apple 100%, mug 100%, above the scripted teacher (72%) it learned from.
+  Recorded episodes (`scripts/record_hand.py`, `runs/hand_recordings01`): all three carried.
+- **`hand_r_bc04`** (same, lr 1e-4 + interleaved behaviour cloning + target KL 0.02): 14–33%
+  through 9M; keeping the policy near a 14% imitator holds it back. Stopped.
+- Next: `hand_r_all5_01` adds the foam brick and banana (no teacher for these; warm start from
+  bc03 at 6M, PPO only).
