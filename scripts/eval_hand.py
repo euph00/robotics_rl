@@ -2,7 +2,7 @@
 """Full-task evaluation of the Allegro on the Fetch (pnr/hand_system.py) on eval.py's case sets.
 
 Same cases, physics, planned motion speeds and success/deadline accounting as
-`scripts/eval.py --controller reference` (the planner with the parallel gripper), so the two
+`scripts/evaluate_mujoco.sh`'s planner runs (the parallel gripper, planned speed 3, holding 2), so the two
 compare case by case: complete = native complete_task_success; timed = complete within
 15,000 physics ticks including the scene's settling ticks.
 
@@ -35,7 +35,7 @@ def initialize_worker(policy, step):
     _POLICY = TeacherPolicy() if policy == 'teacher' else HandPolicy(ROOT / 'runs' / policy, step)
 
 
-def evaluate_case(case, speed_scale, horizon):
+def evaluate_case(case, speed_scale, holding_speed_scale, horizon):
     started, env, first = time.monotonic(), None, {'reach': None}
 
     def on_step(controller, observation, info):
@@ -43,7 +43,8 @@ def evaluate_case(case, speed_scale, horizon):
             first['reach'] = env.physics_steps
     try:
         env = PickNavReachEnv(**case['env_kwargs'], physics='realistic', effector='allegro')
-        system = HandPlannerSystem(env, _POLICY, horizon=horizon, on_step=on_step, seed=env.seed, speed_scale=speed_scale)
+        system = HandPlannerSystem(env, _POLICY, horizon=horizon, on_step=on_step, seed=env.seed, speed_scale=speed_scale,
+                                   holding_speed_scale=holding_speed_scale)
         result = system.run()
     except Exception as exc:  # construction or unexpected errors count as failures
         result = {'success': False, 'failed_stage': 'environment_setup' if env is None else 'unexpected',
@@ -86,14 +87,17 @@ def main():
     parser.add_argument('--set', choices=sorted(E.SETS), default='course')
     parser.add_argument('--objects', type=int, nargs='+', default=[2, 7, 10])
     parser.add_argument('--layout-limit', type=int)
-    parser.add_argument('--speed-scale', type=float, default=1., help='Planned motion speed (eval.py default 1)')
+    parser.add_argument('--random-object-pose', action='store_true', help='Seeded object start offset and yaw per case')
+    parser.add_argument('--speed-scale', type=float, default=3., help='Planned motion speed (as evaluate_mujoco.sh)')
+    parser.add_argument('--holding-speed-scale', type=float, default=2., help='Planned motion speed while holding')
     parser.add_argument('--horizon', type=int, default=300, help='Hand-policy decisions for the grasp')
     parser.add_argument('--workers', type=int, default=8)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     if args.output.exists():
         parser.error(f'{args.output} exists')
-    cases = E.select_cases(args.set, objects=args.objects, layout_limit=args.layout_limit)
+    cases = E.select_cases(args.set, objects=args.objects, layout_limit=args.layout_limit,
+                           random_object_pose=args.random_object_pose)
     args.output.mkdir(parents=True)
     source = 'scripted teacher' if args.policy == 'teacher' else f'{args.policy}/{args.step}'
     logger = RunLogger(args.output.name, root=args.output.parent, kind='evaluation',
@@ -101,7 +105,7 @@ def main():
     rows = []
     with ProcessPoolExecutor(max_workers=min(args.workers, len(cases)), mp_context=mp.get_context('spawn'),
                              initializer=initialize_worker, initargs=(args.policy, args.step)) as pool:
-        futures = [pool.submit(evaluate_case, case, args.speed_scale, args.horizon) for case in cases]
+        futures = [pool.submit(evaluate_case, case, args.speed_scale, args.holding_speed_scale, args.horizon) for case in cases]
         with (args.output / 'cases.jsonl').open('w') as stream:
             for future in as_completed(futures):
                 row = future.result()

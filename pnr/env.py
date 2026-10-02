@@ -215,12 +215,15 @@ class PickNavReachEnv:
     position_gains = GAINS
 
     def __init__(self, seed=0, object_idx=5, gui=False, settle_steps=480, real_time=False,
-                 maze_seed=None, seed_mode=None, physics=None, effector='gripper'):
+                 maze_seed=None, seed_mode=None, physics=None, effector='gripper', object_pose_seed=None):
         if gui or real_time:
             raise ValueError('The environment is headless; use render_rgb')
         if effector not in ('gripper', 'allegro'):
             raise ValueError(f'Unknown end effector: {effector}')
         self.effector = effector
+        # None: the course's object start (dropped at the table centre, canonical yaw). An integer: the
+        # object drops at a seeded offset (x +-8 cm, y +-12 cm) and yaw, then settles the same way.
+        self.object_pose_seed = None if object_pose_seed is None else int(object_pose_seed)
         self.physics = physics or PHYSICS
         if self.physics not in ('course', 'realistic'):
             raise ValueError(f'Unknown physics settings: {self.physics}')
@@ -311,6 +314,11 @@ class PickNavReachEnv:
 
         parts, mass, inertia = _object_parts(object_dir)
         body = world.add_body(name='object', pos=[0, 0, 1.0])
+        if self.object_pose_seed is not None:
+            rng = np.random.default_rng(self.object_pose_seed)
+            yaw = rng.uniform(-np.pi, np.pi)
+            body.pos = [rng.uniform(-.08, .08), rng.uniform(-.12, .12), 1.0]
+            body.quat = [np.cos(yaw / 2), 0., 0., np.sin(yaw / 2)]
         body.add_freejoint(name='object_free')
         # URDF inertial origin is the mesh origin; MjSpec's unset ipos (NaN) must be given explicitly.
         body.mass, body.fullinertia, body.explicitinertial = mass, inertia, True
