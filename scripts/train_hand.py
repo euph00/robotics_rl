@@ -86,6 +86,34 @@ def behaviour_clone(model, venv, demos, updates, log_std, device):
     return {'examples': len(obs), 'updates': updates, 'final_loss': float(np.mean(losses[-200:]))}
 
 
+class DemoRegulariser:
+    """Interleaved behaviour cloning (DAPG-style): a decaying number of actor updates toward the teacher."""
+
+    def __init__(self, model, venv, demos, updates, decay):
+        import torch
+        data = np.load(demos)
+        self.observations, self.actions = data['observations'], data['actions']
+        self.model, self.venv, self.updates, self.decay = model, venv, float(updates), decay
+        policy = model.policy
+        params = list(policy.mlp_extractor.policy_net.parameters()) + list(policy.action_net.parameters())
+        self.optimizer = torch.optim.Adam(params, lr=1e-4)
+        self.rng = np.random.default_rng(1)
+
+    def step(self):
+        import torch
+        count = int(round(self.updates))
+        self.updates *= self.decay
+        policy, device = self.model.policy, self.model.device
+        for _ in range(count):
+            batch = self.rng.integers(0, len(self.observations), 512)
+            obs = torch.as_tensor(self.venv.normalize_obs(self.observations[batch]), dtype=torch.float32, device=device)
+            target = torch.as_tensor(self.actions[batch], dtype=torch.float32, device=device)
+            mean = policy.action_net(policy.mlp_extractor.forward_actor(policy.extract_features(obs, policy.pi_features_extractor)))
+            loss = ((mean - target) ** 2).mean()
+            self.optimizer.zero_grad(); loss.backward(); self.optimizer.step()
+        return count
+
+
 def set_actor_trainable(model, trainable):
     policy = model.policy
     for module in (policy.mlp_extractor.policy_net, policy.action_net):
@@ -144,6 +172,9 @@ def main():
     parser.add_argument('--bc-updates', type=int, default=20000)
     parser.add_argument('--bc-log-std', type=float, default=-1.2, help='Exploration log-std after cloning')
     parser.add_argument('--critic-warmup', type=int, default=0, help='Environment steps with the actor frozen (value warm-up)')
+    parser.add_argument('--bc-interleave', type=int, default=0,
+                        help='Behaviour-cloning updates on the demonstrations after every PPO rollout (keeps RL near the teacher)')
+    parser.add_argument('--bc-interleave-decay', type=float, default=.9995, help='Per-rollout decay of the interleaved updates')
     parser.add_argument('--gradient-steps', type=int, default=8, help='Updates per vectorised step')
     parser.add_argument('--batch-size', type=int, default=512)
     parser.add_argument('--learning-rate', type=float, default=3e-4)
@@ -188,6 +219,8 @@ def main():
                     learning_starts=20_000, gamma=.99, tau=.005, train_freq=1, gradient_steps=args.gradient_steps,
                     policy_kwargs=dict(net_arch=[512, 512, 256]), seed=args.seed, device=args.device, verbose=0)
 
+    regulariser = DemoRegulariser(model, venv, args.bc_demos, args.bc_interleave, args.bc_interleave_decay) \
+        if args.bc_interleave and args.bc_demos else None
     stages = CURRICULA.get(args.curriculum)
 
     def apply_stage(index):
@@ -232,6 +265,10 @@ def main():
             self.model.save(out / 'checkpoints' / f'step_{self.num_timesteps:08d}')
             if isinstance(venv, VecNormalize):
                 venv.save(str(out / 'checkpoints' / f'step_{self.num_timesteps:08d}_vecnormalize.pkl'))
+
+        def _on_rollout_end(self):
+            if regulariser is not None and getattr(self, 'unfrozen', not args.critic_warmup):
+                regulariser.step()
 
         def _on_training_start(self):
             if args.bc_demos:        # the imitation-only policy, before any RL update

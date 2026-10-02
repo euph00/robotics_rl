@@ -204,3 +204,56 @@ class SideGraspTeacher(PowerGraspTeacher):
 
 
 TEACHERS = {'power': PowerGraspTeacher, 'side': SideGraspTeacher}
+
+
+def teacher_label(env, clearance=.008, lift=.2):
+    """Power-grasp teacher action from the current state alone (for DAgger relabelling).
+
+    Fingers open: align above the object, descend, then start closing; once closing has begun it
+    commits (the closing fingers nudge the object, which must not trigger a realignment).
+    Fingers closed: lift to `lift` above the resting height, then hold. Reopen (and realign) when the
+    wrist has risen 4 cm without the object or a lifted object has lost its grasp. Carry: keep the grasp.
+    """
+    rig = env.rig
+    closed = np.clip(CLOSED, rig.finger_low, rig.finger_high)
+    open_hand = rig.finger_open.copy()
+    open_hand[12] = 1.0
+    wrist, fingers = rig.wrist_target, env.finger_target
+    contact, palm, table, _ = rig.contacts()
+    grasped = bool(contact[3] and contact[:3].any())
+    closure = float(np.mean((fingers - open_hand)[[1, 2, 3, 5, 6, 7, 9, 10, 11]] /
+                            (closed - open_hand)[[1, 2, 3, 5, 6, 7, 9, 10, 11]]))
+    centre = rig.object_pose()[0]
+    lifted = centre[2] - rig.rest_height
+    goal, finger_goal = wrist.copy(), closed
+    points = rig.object_points_world()
+    yaw = narrow_axis_yaw(points, rig.wrist()[3])
+    above = (points[:, 2].max() + .011 + clearance - .05) - centre[2]
+    descend = pregrasp_wrist(rig, yaw, height=above)
+    missed = closure > .9 and lifted < .01 and rig.wrist()[2] > descend[2] + .04 and getattr(env, 'phase', 'grasp') != 'carry'
+    if getattr(env, 'phase', 'grasp') == 'carry' or (closure > .9 and not missed):
+        if lifted < lift:                                # closed: lift (the grasp is judged by the object rising)
+            goal[2] = wrist[2] + WRIST_STEP[2]
+    elif missed or (lifted > .03 and not grasped):
+        finger_goal = open_hand                          # wrist rose without the object, or lost it: reopen
+    elif closure > .15 and rig.wrist()[2] < descend[2] + .03:
+        pass                                             # closing at the grasp height: commit, hold the wrist
+    elif closure > .15:
+        finger_goal = open_hand                          # partly closed but high (a miss): open before realigning
+    else:
+        align = pregrasp_wrist(rig, yaw, height=above + .06)
+        align[4:] = descend[4:] = 0.
+        # Position and yaw only: contact with the table can tilt the capped wrist without misaligning the grasp.
+        aligned = np.abs(np.r_[align[:2] - rig.wrist()[:2], (align[3] - rig.wrist()[3]) / 10]).max() < .01
+        touching = bool(contact.any() or palm)                     # on the object (table contact is not a cue)
+        blocked = wrist[2] - rig.wrist()[2] < -.015                 # target well below the wrist: it cannot descend
+        low = rig.wrist()[2] < align[2] - .03
+        if not aligned and not low:
+            goal, finger_goal = align, open_hand
+        else:
+            goal = descend
+            finger_goal = closed if abs(descend[2] - rig.wrist()[2]) < .004 or touching or blocked else open_hand
+    action = np.zeros(22)
+    action[:6] = np.clip((goal - wrist) / WRIST_STEP, -1, 1)
+    action[6:] = np.clip((finger_goal - fingers) / FINGER_STEP, -1, 1)
+    return action.astype(np.float32)
