@@ -101,7 +101,7 @@ class HandGraspEnv(gym.Env):
 
     def __init__(self, objects=(14, 5, 2, 7, 10), horizon=120, seed=0, friction=None, finger_kp=None,
                  finger_actions='delta', near_start=0., wrist_lag=.02, carry=False, carry_calls=200,
-                 physics=None, render_mode=None, side_objects=SIDE_GRASP_OBJECTS, robot='rig'):
+                 physics=None, render_mode=None, side_objects=SIDE_GRASP_OBJECTS, robot='rig', wrist_box=None):
         if finger_actions not in ('delta', 'absolute'):
             raise ValueError('finger_actions must be delta or absolute')
         self.finger_actions = finger_actions
@@ -109,6 +109,9 @@ class HandGraspEnv(gym.Env):
         # and the fingers part-closed, so holding and lifting are experienced early. Evaluate with 0.
         self.near_start = float(near_start)
         self.side_objects = set(side_objects)
+        # Optional workspace around the pregrasp, (xy m, pitch/roll rad): keeps the grasp near where the
+        # planner put the hand and the palm near its pregrasp tilt, so a planned carry posture follows.
+        self.wrist_box = None if wrist_box is None else tuple(float(v) for v in wrist_box)
         self.carry, self.carry_calls = bool(carry), int(carry_calls)
         self.wrist_lag = np.array([wrist_lag] * 3 + [.1] * 3)
         self.objects = list(objects)
@@ -218,9 +221,12 @@ class HandGraspEnv(gym.Env):
         action = np.clip(np.asarray(action, dtype=np.float64), -1, 1)
         current = rig.wrist()
         target = np.clip(rig.wrist_target + action[:6] * WRIST_STEP, current - self.wrist_lag, current + self.wrist_lag)
-        target[:2] = np.clip(target[:2], self.wrist_home[:2] - .25, self.wrist_home[:2] + .25)
+        reach, tilt = self.wrist_box or (.25, None)
+        target[:2] = np.clip(target[:2], self.wrist_home[:2] - reach, self.wrist_home[:2] + reach)
         target[2] = np.clip(target[2], TABLE_TOP + .02, TABLE_TOP + .6)
         target[4:] = np.clip(target[4:], -WRIST_ANGLE_LIMIT, WRIST_ANGLE_LIMIT)
+        if tilt is not None:
+            target[4:] = np.clip(target[4:], self.wrist_home[4:] - tilt, self.wrist_home[4:] + tilt)
         if self.phase == 'carry':
             dx, dy = self.carry_path[min(self.carry_step, len(self.carry_path) - 1)]
             target = self.carry_origin + [dx, dy, 0., 0., 0., 0.]

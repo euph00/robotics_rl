@@ -29,7 +29,7 @@ def make_env(rank, args, evaluation=False):
                             friction=args.friction, finger_kp=args.finger_kp, finger_actions=args.finger_actions,
                             near_start=0. if evaluation else args.near_start, wrist_lag=args.wrist_lag,
                             carry=args.carry, carry_calls=args.carry_calls, physics=args.physics,
-                            robot=args.robot)
+                            robot=args.robot, wrist_box=args.wrist_box)
     return thunk
 
 
@@ -165,6 +165,8 @@ def main():
     parser.add_argument('--near-start', type=float, default=0., help='Fraction of curriculum starts near a grasp')
     parser.add_argument('--wrist-lag', type=float, default=.02, help='Max wrist target lead (m)')
     parser.add_argument('--physics', choices=('realistic', 'course'), help='Default: PNR_PHYSICS or realistic')
+    parser.add_argument('--wrist-box', type=float, nargs=2, metavar=('XY', 'TILT'),
+                        help='Keep the wrist within XY m of the pregrasp and its pitch/roll within TILT rad')
     parser.add_argument('--robot', choices=('rig', 'fetch'), default='rig',
                         help='rig: the hand on an idealised six-axis wrist; fetch: on the Fetch arm and base (pnr/fetch_hand.py)')
     parser.add_argument('--carry', action='store_true', help='Carry phase after a held lift')

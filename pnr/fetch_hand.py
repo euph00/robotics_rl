@@ -24,10 +24,22 @@ IK_DAMPING = .05
 
 
 def wrist_angles(rotation, near):
-    """Rig wrist yaw, pitch, roll of a palm rotation (palm_rotation's convention), unwrapped to `near`."""
-    r = rotation @ MOUNT.T
-    angles = np.array([np.arctan2(r[1, 0], r[0, 0]), -np.arcsin(np.clip(r[2, 0], -1, 1)), np.arctan2(r[2, 1], r[2, 2])])
-    return angles + 2 * np.pi * np.round((near - angles) / (2 * np.pi))
+    """Rig wrist yaw, pitch, roll of a palm rotation (palm_rotation's convention), nearest to `near`.
+
+    Damped least squares from `near` on the rotation error: continuous through pitch = +-90 degrees,
+    where yaw and roll share an axis and the closed-form extraction jumps between equivalent pairs."""
+    angles = np.asarray(near, dtype=float).copy()
+    for _ in range(12):
+        current = palm_rotation(*angles)
+        error = Rotation.from_matrix(rotation @ current.T).as_rotvec()           # world frame
+        if np.linalg.norm(error) < 1e-7:
+            break
+        yaw, pitch = angles[0], angles[1]
+        rz = np.array([[np.cos(yaw), -np.sin(yaw), 0], [np.sin(yaw), np.cos(yaw), 0], [0, 0, 1]])
+        ry = np.array([[np.cos(pitch), 0, np.sin(pitch)], [0, 1, 0], [-np.sin(pitch), 0, np.cos(pitch)]])
+        axes = np.column_stack([[0, 0, 1], rz @ [0, 1, 0], rz @ ry @ [1, 0, 0]])   # world rate axes
+        angles += axes.T @ np.linalg.solve(axes @ axes.T + 1e-6 * np.eye(3), error)
+    return angles
 
 
 class FetchHandRig:

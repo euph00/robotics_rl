@@ -57,11 +57,12 @@ class TeacherPolicy:
 
 
 class HandPlannerSystem(ReferenceController):
-    def __init__(self, env, policy, horizon=300, clearance=.045, **kwargs):
+    def __init__(self, env, policy, horizon=300, clearance=.045, wrist_box=(.08, .5), **kwargs):
         if getattr(env, 'effector', 'gripper') != 'allegro':
             raise ValueError('HandPlannerSystem needs an environment with effector="allegro"')
         super().__init__(env, **kwargs)
         self.policy, self.horizon, self.clearance = policy, int(horizon), float(clearance)
+        self.wrist_box = wrist_box
         self.rig = None
 
     def hand_pregrasp(self):
@@ -83,13 +84,14 @@ class HandPlannerSystem(ReferenceController):
         self.move_ee([base[0] + .35, base[1], 1.1], TOPDOWN, 'fold')
         self.move_base([-.78, 0.], stage='approach')
         self.rig = FetchHandRig(env=self.env, stepper=lambda action: self.tick(action, 'grasp'))
-        wrist = self.hand_pregrasp()
+        wrist = self.pregrasp = self.hand_pregrasp()
         self.move_joint(self.rig.wrist_to_joints(wrist), stage='pregrasp', include_object=True)
         self.stage_results['hand_pregrasp'] = {'wrist': wrist.tolist(), 'reached': self.rig.wrist().tolist()}
         return wrist
 
     def execute_hand_grasp(self):
-        task = HandGraspEnv(objects=[], physics=self.env.physics, horizon=self.horizon, carry=True)
+        task = HandGraspEnv(objects=[], physics=self.env.physics, horizon=self.horizon, carry=True,
+                            wrist_box=self.wrist_box)
         observation = task.attach(self.rig)
         if hasattr(self.policy, 'bind'):
             self.policy.bind(task)
@@ -103,6 +105,20 @@ class HandPlannerSystem(ReferenceController):
                                             'lift_m': info.get('lift'), 'contacts': info.get('contacts'),
                                             'palm_contact': info.get('palm_contact')}
         return held
+
+    def prepare_carry(self):
+        """The planner's retreat and carry posture; if the grasp ended at a tilt the tucked posture cannot
+        take, level the palm back to the pregrasp's pitch and roll (keeping its yaw) and try again."""
+        try:
+            return super().prepare_carry()
+        except ValueError:
+            pass
+        wrist = self.rig.wrist()
+        wrist[4:] = self.pregrasp[4:]
+        position, rotation = self.rig._flange_target(wrist)
+        self.move_ee(position, Rotation.from_matrix(rotation).as_quat(), 'carry_posture', step_size=.006)
+        self.stage_results['carry_posture_levelled'] = True
+        return super().prepare_carry()
 
     def run(self, stop_after='reach'):
         result = {'status': 'running', 'success': False, 'effector': 'allegro'}
