@@ -92,3 +92,4 @@ for name, paths in skills.items():
     Path(directory, f'{name}.json').write_text(json.dumps(config, indent=2) + '\n')
 print('wrote', directory)
 PYEOF
+echo "Training done; candidate manifests in $CONFIGS"

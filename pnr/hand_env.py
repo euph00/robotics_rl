@@ -191,11 +191,16 @@ class HandGraspEnv(gym.Env):
             self.finger_target = np.clip(self.finger_target + action[6:] * FINGER_STEP, rig.finger_low, rig.finger_high)
         else:
             self.finger_target = rig.finger_low + (action[6:] + 1) / 2 * (rig.finger_high - rig.finger_low)
+        unstable = rig.data.warning[mujoco.mjtWarning.mjWARN_BADQACC].number
         rig.step(target, self.finger_target)
+        # MuJoCo resets the state after a numerical blow-up; never learn from that transition.
+        unstable = rig.data.warning[mujoco.mjtWarning.mjWARN_BADQACC].number > unstable
         self.steps += 1
         self.previous_action = action
         reward, info = self._reward()
         terminated = info['fell']
+        if unstable:
+            reward, terminated, info['unstable'] = 0., True, True
         if self.phase == 'carry':
             lift, hold = info['lift'], info['contacts'] + info['palm_contact'] >= 2
             kept = lift >= CARRY_LIFT and hold
