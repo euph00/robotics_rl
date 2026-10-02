@@ -6,8 +6,9 @@ grasps and lifts through FetchHandRig on this task environment, until it has hel
 with thumb and finger for HOLD_TO_CARRY decisions. From there the hand's servo targets stay
 fixed while the planner's carry posture, A* maze carry, reach and final hold run unchanged.
 Every hand decision goes through the controller's tick, so contact counters, lift timing and
-recordings see it. After the grasp the hand policy keeps controlling the fingers (its wrist actions
-ignored) while the planner moves the arm and base, as in the carry phase it was trained on.
+recordings see it. After the grasp the finger servo targets stay fixed by default; with
+fingers_after_grasp='policy' the hand policy keeps setting them (wrist actions ignored), as in its
+carry-phase training, but that dropped 10 of 60 objects in the planner's carry (frozen: none).
 """
 from __future__ import annotations
 
@@ -58,13 +59,14 @@ class TeacherPolicy:
 
 
 class HandPlannerSystem(ReferenceController):
-    def __init__(self, env, policy, horizon=300, clearance=.045, wrist_box=(.08, .5), **kwargs):
+    def __init__(self, env, policy, horizon=300, clearance=.045, wrist_box=(.08, .5), fingers_after_grasp='frozen', **kwargs):
         if getattr(env, 'effector', 'gripper') != 'allegro':
             raise ValueError('HandPlannerSystem needs an environment with effector="allegro"')
         super().__init__(env, **kwargs)
         self.policy, self.horizon, self.clearance = policy, int(horizon), float(clearance)
         self._holding = None          # the grasp's HandGraspEnv once it holds the object
         self.wrist_box = wrist_box
+        self.fingers_after_grasp = fingers_after_grasp     # 'policy' or 'frozen' (servo targets fixed)
         self.rig = None
 
     def hand_pregrasp(self):
@@ -106,7 +108,7 @@ class HandPlannerSystem(ReferenceController):
             if task.phase == 'carry' or terminated:
                 break
         held = task.phase == 'carry'
-        if held:
+        if held and self.fingers_after_grasp == 'policy':
             self._holding = task
         self.stage_results['hand_grasp'] = {'policy': self.policy.source, 'decisions': decisions, 'held': held,
                                             'lift_m': info.get('lift'), 'contacts': info.get('contacts'),

@@ -97,8 +97,12 @@ carry while the policy keeps controlling the fingers.
   pregrasp, then the hand policy grasps and lifts inside a box around the pregrasp, then the
   planner's carry posture, A* carry and reach (the arm corrects the last height error) with the
   grip frozen. Course seeds × soup can/apple/mug with randomised object starts (60 cases):
-  planner + gripper 57 delivered (1 within 15k ticks), planner + scripted hand 40 (27), planner +
-  RL hand 31 (17). The hand is faster; its grasp is not yet as reliable on the real arm.
+  planner + gripper 57 delivered (1 within 15k ticks, median 17.9k), planner + scripted hand 40
+  (27), planner + RL hand (`hand_f_02` 4M) 49 (28, median 14.6k). The hand is faster; the gripper
+  still delivers more.
+- **Chef can:** RL side grasp 92% in the hand task on the Fetch; the full task does not work yet
+  (a side-held object sticks out in front of the robot in the maze carry); the gripper delivers
+  14/20, slowly.
 - **Next:** more Fetch training for the hand (soup can/apple/mug and the chef can), then the
   harder task where the two end effectors differ (wide and heavy objects, randomised starts).
 

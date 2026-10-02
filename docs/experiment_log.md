@@ -253,3 +253,26 @@ Later on 2026-10-02:
 - Chef can specialist (`hand_r_chefcan01`): 88% carried on the rig at 9M (teacher 50%, gripper
   2/6); 2/8 unchanged on the Fetch, 46% after 1M steps of Fetch fine-tuning (`hand_f_chefcan01`).
 
+## 2026-10-03: RL hand in the full task; the chef can on the Fetch
+
+- Same 60 randomised course cases (soup can/apple/mug), planner speeds 3/2:
+
+  | System | Delivered /60 | Within 15k ticks | Median ticks |
+  |---|---:|---:|---:|
+  | Planner + gripper | **57** | 1 | 17.9k |
+  | Planner + scripted Allegro grasp | 40 | 27 | 14.5k |
+  | Planner + RL Allegro grasp (`hand_f_02` 4M), policy keeps the fingers in the carry | 38 | 21 | 14.7k |
+  | Planner + RL Allegro grasp (`hand_f_02` 4M), grip frozen after the grasp | 49 | **28** | 14.6k |
+
+  The policy's finger control was trained on the rig's synthetic carry; in the planner's carry it
+  dropped 10 objects (frozen grip: none). Frozen is now the default. The RL hand beats the
+  scripted hand on delivery (49 vs 40) and the gripper on time (28 vs 1 within the deadline);
+  the gripper still delivers more (57). Remaining hand losses: 10 grasp failures.
+- Chef can on the Fetch: `hand_f_chefcan01` (from the rig specialist) 92% carried at 4M steps in the
+  hand task. In the full task the gripper planner delivers 14/20 (none in time, median 37k ticks);
+  the hand does not yet: the side pregrasp's forearm met the table (collision-free IK seeds and a
+  10 cm minimum grip height fix it), the planner's tuck swung the can loose (raise-only posture
+  fixes that), but the extended side-held can then meets maze walls or drops in the carry. A side
+  grasp with the back-of-palm mount holds the object well in front of the robot. Retraining the
+  chef can on the corrected geometry: `hand_f_chefcan02`.
+
