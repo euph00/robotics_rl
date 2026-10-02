@@ -478,7 +478,8 @@ class PickNavReachEnv:
     def command(self, action):
         """Set the joint (and hand servo) targets that the following physics ticks track."""
         targets = np.asarray(action, dtype=np.float64)
-        if targets.shape != (self.action_size,) or not np.isfinite(targets).all():
+        sizes = (self.action_size, len(self.joint_names))     # hand targets optional: omitted keeps the hand's
+        if targets.shape not in [(n,) for n in sizes] or not np.isfinite(targets).all():
             raise ValueError(f'Expected {self.action_size} finite absolute joint targets')
         targets, hand = targets[:len(self.joint_names)].copy(), targets[len(self.joint_names):]
         if len(hand):

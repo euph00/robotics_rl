@@ -31,11 +31,17 @@ def wrist_angles(rotation, near):
 
 
 class FetchHandRig:
-    """One course scene (Fetch with the Allegro, table, one object) at the table approach position."""
+    """The Fetch with the Allegro at the course table. By default it builds its own scene (training);
+    given `env` (a PickNavReachEnv with effector='allegro', e.g. mid-task) it wraps that one as it is,
+    and steps through env.step so the task's lift, hold and drop bookkeeping stays exact."""
 
-    def __init__(self, object_idx=14, physics=None, seed=0, settle_ticks=240):
-        self.env = env = PickNavReachEnv(seed=seed, object_idx=object_idx, physics=physics, effector='allegro')
-        self.physics, self.object_idx, self.object_name = env.physics, int(object_idx), env.object_name
+    def __init__(self, object_idx=14, physics=None, seed=0, settle_ticks=240, env=None, stepper=None):
+        self.bookkeeping = env is not None
+        self.stepper = stepper or (env.step if env is not None else None)   # e.g. a controller's tick
+        if env is None:
+            env = PickNavReachEnv(seed=seed, object_idx=object_idx, physics=physics, effector='allegro')
+        self.env = env
+        self.physics, self.object_idx, self.object_name = env.physics, int(env.object_idx), env.object_name
         self.model, self.data = env.model, env.data
         self.planner = JointPlanner(env, seed=seed)
         mesh = trimesh.load(str(object_dirs()[self.object_idx] / 'textured.obj'), force='mesh')
@@ -44,6 +50,11 @@ class FetchHandRig:
         self.object_extents = np.asarray(mesh.extents, dtype=np.float64)
         self._index()
         self.carrying = False
+        if self.bookkeeping:
+            self.rest_height = float(env.initial_object_pos[2])
+            self.wrist_target = np.zeros(6)
+            self.wrist_target = self.wrist()
+            return
 
         q = env.agent_qpos.astype(np.float64)
         q[:2] = BASE_XY - env.root_position[:2]
@@ -58,6 +69,16 @@ class FetchHandRig:
         mujoco.mj_forward(self.model, self.data)
         self.rest_height = self.object_pose()[0][2]
         self.settled = self.snapshot()
+
+    def wrist_to_joints(self, wrist):
+        """Arm joint targets (full Fetch vector) that put the palm at rig wrist pose `wrist`: planner IK
+        (torso included), refined by damped least squares. Raises ValueError if unreachable."""
+        position, rotation = self._flange_target(np.asarray(wrist, dtype=float))
+        q = self.planner.ik(position, Rotation.from_matrix(rotation).as_quat(), tolerance=.03)
+        with self.env.query():
+            self.env.set_joint_positions(q)
+            q[self._arm] = self._arm_step(np.asarray(wrist, dtype=float), iterations=30, start=q)
+        return q
 
     def _index(self):
         m, env = self.model, self.env
@@ -94,12 +115,13 @@ class FetchHandRig:
         self.wrist_target = np.asarray(wrist, dtype=float).copy()
         self.carrying = False
 
-    def _arm_step(self, wrist, iterations=3):
-        """Arm joint targets that put the palm at `wrist`: damped least squares from the measured arm."""
+    def _arm_step(self, wrist, iterations=3, start=None):
+        """Arm joint targets that put the palm at `wrist`: damped least squares from the measured arm
+        (or from `start`)."""
         position, rotation = self._flange_target(wrist)
         env = self.env
         with env.query():
-            q = env.agent_qpos.astype(np.float64)
+            q = (env.agent_qpos if start is None else start).astype(np.float64).copy()
             for _ in range(iterations):
                 env.set_joint_positions(q)
                 pos, quat = env.ee_pose()
@@ -129,8 +151,12 @@ class FetchHandRig:
             target[:2] += self.wrist_target[:2] - self._carry_wrist[:2]
         else:
             target[self._arm] = self._arm_step(self.wrist_target)
-        # Targets and ticks only: HandGraspEnv measures contacts, lift and reward itself.
-        self.env.command(np.r_[target, np.clip(finger_target, self.finger_low, self.finger_high)])
+        action = np.r_[target, np.clip(finger_target, self.finger_low, self.finger_high)]
+        if self.bookkeeping:          # inside the task: the env's own step keeps its counters
+            self.stepper(action)
+            return
+        # Training: targets and ticks only; HandGraspEnv measures contacts, lift and reward itself.
+        self.env.command(action)
         for _ in range(self.env.substeps):
             self.env._physics_tick()
 

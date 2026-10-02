@@ -201,6 +201,18 @@ class HandGraspEnv(gym.Env):
         self.phase, self.held, self.carry_step, self.carried = 'grasp', 0, 0, False
         return self._observation(), {'object_idx': idx}
 
+    def attach(self, rig):
+        """Begin an episode on `rig` as it is (no reset randomisation): e.g. a FetchHandRig wrapping a
+        task environment whose arm a planner has brought to the pregrasp."""
+        self.rig = rig
+        rig.wrist_target = rig.wrist()
+        self.wrist_home = rig.wrist_target.copy()
+        self.finger_target = np.clip(rig.data.ctrl.copy(), rig.finger_low, rig.finger_high)
+        self.steps, self.previous_action = 0, np.zeros(22)
+        self.ever_success = False
+        self.phase, self.held, self.carry_step, self.carried = 'grasp', 0, 0, False
+        return self._observation()
+
     def step(self, action):
         rig = self.rig
         action = np.clip(np.asarray(action, dtype=np.float64), -1, 1)

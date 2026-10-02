@@ -90,3 +90,13 @@ def test_fetch_rig_places_and_moves_the_palm_like_the_hand_rig():
     for _ in range(24):      # per-joint rate limits: a 1 cm move settles in ~0.4 s (rig wrist: ~3 ticks)
         rig.step(target, rig.finger_open)
     np.testing.assert_allclose(rig.wrist(), target, atol=2e-3)
+
+
+def test_hand_planner_system_picks_the_mug_with_the_scripted_hand():
+    from pnr.env import PickNavReachEnv
+    from pnr.hand_system import HandPlannerSystem, TeacherPolicy
+    env = PickNavReachEnv(seed=0, object_idx=10, physics='realistic', effector='allegro')
+    result = HandPlannerSystem(env, TeacherPolicy(), seed=0, speed_scale=3., holding_speed_scale=2.).run(stop_after='pick')
+    assert result['status'] == 'pick_complete', result.get('error')
+    assert result['stages']['hand_grasp']['held'] and env.ever_lifted and env.contacts()['bilateral_contact']
+    assert env.drop_events == 0
