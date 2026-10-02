@@ -117,6 +117,7 @@ class HandGraspEnv(gym.Env):
         self.objects = list(objects)
         self.horizon = int(horizon)
         self.render_mode = render_mode
+        self.robot = robot
         if robot == 'fetch':        # the hand on the Fetch's arm at the course table (pnr/fetch_hand.py)
             from .fetch_hand import FetchHandRig
             self.rigs = {idx: FetchHandRig(idx, physics=physics) for idx in self.objects}
@@ -177,8 +178,9 @@ class HandGraspEnv(gym.Env):
         clearance = rng.uniform(.03, .06)    # palm surface above the object's top
         height = (top + .011 + clearance - .05) - centre[2]
         if idx in self.side_objects:
-            # Palm vertical, facing the object from a random side, 4-8 cm out at about mid-height.
-            yaw = rng.uniform(-np.pi, np.pi)
+            # Palm vertical, facing the object from a random side, 4-8 cm out at about mid-height. On the
+            # Fetch only from the robot's half (palm facing +x within 45 deg): the arm cannot reach round.
+            yaw = rng.uniform(-np.pi, np.pi) if self.robot == 'rig' else -np.pi / 2 + rng.uniform(-np.pi / 4, np.pi / 4)
             grip, depth, _ = side_grasp_geometry(rig, yaw)
             offset = [depth + rng.uniform(.04, .08), rng.uniform(-.01, .01), .03 + rng.uniform(-.01, .01)]
             wrist = wrist_for(grip + [0., 0., rng.uniform(-.01, .01)], np.array(offset), yaw, 0., np.pi / 2)
