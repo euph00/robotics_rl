@@ -10,7 +10,8 @@ the thumb and another finger touch it.
 With `carry=True`, once the object has been held (success) for 10 decisions the wrist follows
 a synthetic base carry for `carry_calls` decisions while the policy keeps controlling the
 fingers (its wrist actions are ignored): +1 per decision while the object stays >= 10 cm up and
-touches the hand twice, -20 and termination if it drops, +10 for finishing the carry. Carry
+touches the hand twice, on top of the grasp-phase reward (so the carry is always worth
+entering), -20 and termination if it drops, +10 for finishing the carry. Carry
 motions reproduce the course base controller: commanded targets advancing 18 mm per call with
 pauses at waypoints (A*), or jumping 7.5 cm every five calls (learned carry), along
 axis-aligned corridors, executed by the course motor law on the wrist.
@@ -215,7 +216,9 @@ class HandGraspEnv(gym.Env):
         if self.phase == 'carry':
             lift, hold = info['lift'], info['contacts'] + info['palm_contact'] >= 2
             kept = lift >= CARRY_LIFT and hold
-            reward = 1. * kept + .5 * info['success']
+            # Keep paying the grasp-phase reward (lift, grasp, success) and add the carry bonus: a lower
+            # carry reward made hovering just under the success height (never triggering the carry) optimal.
+            reward = reward + 1. * kept
             if lift < .05:
                 reward, terminated, info['dropped_in_carry'] = -20., True, True
             elif self.carry_step >= self.carry_calls:

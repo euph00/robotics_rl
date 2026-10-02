@@ -175,6 +175,7 @@ def main():
     parser.add_argument('--bc-interleave', type=int, default=0,
                         help='Behaviour-cloning updates on the demonstrations after every PPO rollout (keeps RL near the teacher)')
     parser.add_argument('--bc-interleave-decay', type=float, default=.9995, help='Per-rollout decay of the interleaved updates')
+    parser.add_argument('--target-kl', type=float, help='PPO: stop an update early beyond this KL (guards against collapse)')
     parser.add_argument('--gradient-steps', type=int, default=8, help='Updates per vectorised step')
     parser.add_argument('--batch-size', type=int, default=512)
     parser.add_argument('--learning-rate', type=float, default=3e-4)
@@ -203,7 +204,7 @@ def main():
         venv = VecNormalize(venv, norm_obs=True, norm_reward=True, clip_obs=10., gamma=.99)
         normalize = lambda o: venv.normalize_obs(o)
         model = PPO('MlpPolicy', venv, learning_rate=args.learning_rate, n_steps=256, batch_size=4096, n_epochs=5,
-                    gamma=.99, gae_lambda=.95, clip_range=.2, ent_coef=0., vf_coef=.5, max_grad_norm=1.,
+                    gamma=.99, gae_lambda=.95, clip_range=.2, ent_coef=0., vf_coef=.5, max_grad_norm=1., target_kl=args.target_kl,
                     policy_kwargs=dict(net_arch=dict(pi=[512, 512, 256], vf=[512, 512, 256]), log_std_init=-.5),
                     seed=args.seed, device=args.device, verbose=0)
         if args.init_from:
