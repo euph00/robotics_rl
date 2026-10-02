@@ -2,13 +2,15 @@
 
 Same physics as the task environment (pnr/env.py): 1/240 s ticks, five ticks per
 decision, elliptic cones with impratio 10 and noslip, 2 dt contact time constant, the
-course table and YCB collision parts. The hand's geoms get the Fetch fingers' friction
-(0.25 against objects), so neither effector has a friction advantage.
+course table and YCB collision parts, and the same `physics` settings. The hand's geoms get
+the Fetch gripping surfaces' friction (realistic 1.0, course 0.25), so neither effector has a
+friction advantage.
 
-The wrist (x, y, z slides; yaw, pitch, roll hinges) follows the course motor law used for
-the Fetch arm: computed torque that closes 30% of the target error per tick. The fingers
-keep Menagerie's position actuators (kp = 1 N m/rad), i.e. a realistically weak hand.
-At zero wrist angles the palm faces down and the fingers point along +x.
+The wrist (x, y, z slides; yaw, pitch, roll hinges) stands in for the Fetch arm and follows
+its law: computed torque toward the target (course: 30% of the error per tick, unlimited;
+realistic: rate-limited reference and effort caps like an arm, WRIST_LIMITS). The fingers keep
+Menagerie's position actuators (kp = 1 N m/rad); realistic physics caps them at the Allegro's
+rated 0.7 N m. At zero wrist angles the palm faces down and the fingers point along +x.
 """
 from __future__ import annotations
 
@@ -18,11 +20,18 @@ import mujoco
 import numpy as np
 import trimesh
 
-from .env import (BITS, CONTACT_SOLIMP, CONTACT_SOLREF, COLORS, FRICTION, FRICTION_CONE, IMPRATIO,
-                  NOSLIP_ITERATIONS, ROOT, UPSTREAM, _object_parts)
+from . import env as task_env
+from .env import (BITS, CONTACT_SOLIMP, CONTACT_SOLREF, COLORS, FRICTION, FRICTION_CONE, GRIP_FRICTION, IMPRATIO,
+                  NOSLIP_ITERATIONS, ROOT, UPSTREAM, _object_parts, limited_velocity)
 
 ALLEGRO = ROOT / 'assets/hands/wonik_allegro/right_hand.xml'
 WRIST_GAIN = 0.3
+# Realistic wrist (x, y, z, yaw, pitch, roll): velocity, acceleration, effort. Fetch: 1.0 m/s maximum
+# end-effector speed, arm joints 1-2.5 rad/s^2 over ~1 m reach, 6 kg payload; wrist joints 2.26 rad/s,
+# 2.5 rad/s^2, 25.7 / 7.36 N m.
+WRIST_LIMITS = np.array([[1., 1., 1., 2.26, 2.26, 2.26], [1.5, 1.5, 1.5, 2.5, 2.5, 2.5],
+                         [100., 100., 100., 25.7, 25.7, 7.36]])
+ALLEGRO_TORQUE = .7      # N m per joint (Allegro hand v4 specification)
 TICKS = 5
 TABLE_TOP = .625
 FINGERS = ('ff', 'mf', 'rf', 'th')
@@ -38,7 +47,10 @@ def object_dirs():
 class HandRig:
     """One compiled scene: table, one object, wrist-mounted hand."""
 
-    def __init__(self, object_idx=14, settle_ticks=480):
+    def __init__(self, object_idx=14, settle_ticks=480, physics=None):
+        self.physics = physics or task_env.PHYSICS
+        if self.physics not in ('course', 'realistic'):
+            raise ValueError(f'Unknown physics settings: {self.physics}')
         self.object_idx = int(object_idx)
         object_dir = object_dirs()[self.object_idx]
         self.object_name = object_dir.name
@@ -98,10 +110,14 @@ class HandRig:
                 continue
             if g.contype or g.conaffinity:          # hand collision geoms; visual meshes stay non-colliding
                 g.contype, g.conaffinity, g.condim = HAND_BITS[0], HAND_BITS[1], 3
-                g.friction = [FRICTION['robot'], .005, .0001]
+                g.friction = [GRIP_FRICTION[self.physics], .005, .0001]
                 g.solref, g.solimp = list(CONTACT_SOLREF), list(CONTACT_SOLIMP)
         self.model = spec.compile()
+        if self.physics == 'realistic':
+            self.model.actuator_forcelimited[:] = 1
+            self.model.actuator_forcerange[:] = [-ALLEGRO_TORQUE, ALLEGRO_TORQUE]
         self.data = mujoco.MjData(self.model)
+        self._reference = np.zeros(6)
         self._index()
         self._mass = np.zeros((self.model.nv, self.model.nv))
 
@@ -145,15 +161,23 @@ class HandRig:
         self.data.qpos[self._wq] = q
         self.data.qvel[self._wd] = 0
         self.wrist_target = np.asarray(q, dtype=float).copy()
+        self._reference = np.zeros(6)
         mujoco.mj_kinematics(self.model, self.data)
 
     def tick(self):
         m, d, dt = self.model, self.data, self.model.opt.timestep
         mujoco.mj_step1(m, d)
-        command = WRIST_GAIN * (self.wrist_target - d.qpos[self._wq]) / dt
+        error = self.wrist_target - d.qpos[self._wq]
+        command = WRIST_GAIN * error / dt
+        if self.physics == 'realistic':
+            limits = getattr(self, 'wrist_limits', WRIST_LIMITS)
+            command = self._reference = limited_velocity(command, error, self._reference, limits[0], limits[1], dt)
         mujoco.mj_fullM(m, d, self._mass)
         mass = self._mass[np.ix_(self._wd, self._wd)]
-        d.qfrc_applied[self._wd] = mass @ (command - d.qvel[self._wd]) / dt + d.qfrc_bias[self._wd]
+        torque = mass @ (command - d.qvel[self._wd]) / dt + d.qfrc_bias[self._wd]
+        if self.physics == 'realistic':
+            torque = np.clip(torque, -limits[2], limits[2])
+        d.qfrc_applied[self._wd] = torque
         mujoco.mj_step2(m, d)
 
     def step(self, wrist_target, finger_target):
@@ -166,12 +190,12 @@ class HandRig:
     def snapshot(self):
         copy = mujoco.MjData(self.model)
         mujoco.mj_copyData(copy, self.model, self.data)
-        return copy, self.wrist_target.copy()
+        return copy, self.wrist_target.copy(), self._reference.copy()
 
     def restore(self, snapshot):
-        data, target = snapshot
+        data, target, reference = snapshot
         mujoco.mj_copyData(self.data, self.model, data)
-        self.wrist_target = target.copy()
+        self.wrist_target, self._reference = target.copy(), reference.copy()
 
     def object_pose(self):
         q = self.data.qpos[self._obj_q:self._obj_q + 7]

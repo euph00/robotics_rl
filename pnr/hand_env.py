@@ -37,8 +37,33 @@ POINTS = 32
 WRIST_STEP = np.array([.01, .01, .01, .05, .05, .05])
 WRIST_ANGLE_LIMIT = 1.6
 FINGER_STEP = .08
+TICKS_PER_CALL = 5
 HOLD_TO_CARRY = 10
 CARRY_LIFT = .10
+
+
+def synthetic_carry_realistic(rng, calls, acceleration=.75, tick=1 / 240):
+    """Base xy positions (relative to the start) per native call under realistic base limits.
+
+    Axis-aligned corridor segments; on each, the velocity reference rises to a cruise speed
+    (0.5-0.86 m/s) and brakes to a corner speed (0-0.15 m/s) by the segment end, then turns
+    90 degrees. The velocity vector is rate-limited per axis, so turns are short curves.
+    """
+    cruise = rng.uniform(.5, .86)
+    heading = rng.integers(4) * np.pi / 2
+    position, velocity, path = np.zeros(2), np.zeros(2), []
+    while len(path) < calls:
+        direction = np.array([np.cos(heading), np.sin(heading)])
+        start, length, corner = position.copy(), rng.uniform(.5, 2.5), rng.uniform(0., .15)
+        while np.dot(position - start, direction) < length and len(path) < calls:
+            for _ in range(TICKS_PER_CALL):
+                remaining = max(length - np.dot(position - start, direction), 0.)
+                speed = min(cruise, np.sqrt(corner ** 2 + 2 * acceleration * remaining))
+                velocity = velocity + np.clip(direction * speed - velocity, -acceleration * tick, acceleration * tick)
+                position = position + velocity * tick
+            path.append(position.copy())
+        heading += rng.choice((-1, 1)) * np.pi / 2
+    return np.array(path[:calls])
 
 
 def synthetic_carry(rng, calls):
@@ -73,7 +98,7 @@ class HandGraspEnv(gym.Env):
 
     def __init__(self, objects=(14, 5, 2, 7, 10), horizon=120, seed=0, friction=None, finger_kp=None,
                  finger_actions='delta', near_start=0., wrist_lag=.02, carry=False, carry_calls=200,
-                 render_mode=None):
+                 physics=None, render_mode=None):
         if finger_actions not in ('delta', 'absolute'):
             raise ValueError('finger_actions must be delta or absolute')
         self.finger_actions = finger_actions
@@ -85,7 +110,7 @@ class HandGraspEnv(gym.Env):
         self.objects = list(objects)
         self.horizon = int(horizon)
         self.render_mode = render_mode
-        self.rigs = {idx: HandRig(idx) for idx in self.objects}
+        self.rigs = {idx: HandRig(idx, physics=physics) for idx in self.objects}
         for rig in self.rigs.values():
             m = rig.model
             if finger_kp is not None:
@@ -184,7 +209,8 @@ class HandGraspEnv(gym.Env):
             self.held = self.held + 1 if info['success'] else 0
             if self.held >= HOLD_TO_CARRY:
                 self.phase, self.carry_step = 'carry', 0
-                self.carry_path = synthetic_carry(self.np_random, self.carry_calls)
+                generate = synthetic_carry_realistic if rig.physics == 'realistic' else synthetic_carry
+                self.carry_path = generate(self.np_random, self.carry_calls)
                 self.carry_origin = rig.wrist_target.copy()
         info.update(phase=self.phase, carried=self.carried)
         done_carry = self.phase == 'carry' and self.carry_step >= self.carry_calls

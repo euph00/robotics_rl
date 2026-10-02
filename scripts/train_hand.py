@@ -28,7 +28,7 @@ def make_env(rank, args, evaluation=False):
         return HandGraspEnv(objects=args.objects, horizon=args.horizon, seed=args.seed * 1000 + rank,
                             friction=args.friction, finger_kp=args.finger_kp, finger_actions=args.finger_actions,
                             near_start=0. if evaluation else args.near_start, wrist_lag=args.wrist_lag,
-                            carry=args.carry, carry_calls=args.carry_calls)
+                            carry=args.carry, carry_calls=args.carry_calls, physics=args.physics)
     return thunk
 
 
@@ -93,6 +93,7 @@ def main():
     parser.add_argument('--finger-actions', choices=('delta', 'absolute'), default='delta')
     parser.add_argument('--near-start', type=float, default=0., help='Fraction of curriculum starts near a grasp')
     parser.add_argument('--wrist-lag', type=float, default=.02, help='Max wrist target lead (m)')
+    parser.add_argument('--physics', choices=('realistic', 'course'), help='Default: PNR_PHYSICS or realistic')
     parser.add_argument('--carry', action='store_true', help='Carry phase after a held lift')
     parser.add_argument('--carry-calls', type=int, default=200)
     parser.add_argument('--init-from', help='run/step of a PPO checkpoint to warm-start from (extra inputs zero-initialised)')
