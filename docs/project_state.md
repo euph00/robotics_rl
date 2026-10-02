@@ -1,113 +1,100 @@
 # Project state
 
-Updated 2026-10-01. Simulator: MuJoCo 3.14 (`pnr/env.py`), with the course task's
-robot, objects, mazes, seeds, motor law, friction coefficients and success criterion.
-Every result below was trained and evaluated in MuJoCo; the PyBullet era is archived in
-[archive/pybullet/](archive/pybullet/). Experiments: [experiment_log.md](experiment_log.md).
+Updated 2026-10-02. Simulator: MuJoCo 3.14 (`pnr/env.py`) with the course task's robot,
+objects, mazes, seeds, position-target interface and success criterion. Since 2026-10-02 the
+default physics is **realistic**: both end effectors get the same believable physics instead
+of the course's PyBullet-era settings. Experiments: [experiment_log.md](experiment_log.md);
+PyBullet era: [archive/pybullet/](archive/pybullet/).
 
-## Systems and results
+## Physics settings
+
+| | Course (`physics='course'`, before 2026-10-02) | Realistic (default) |
+|---|---|---|
+| Joint motion | every joint closes 30% of its error per tick, unlimited force (base velocity jumps ~1 m/s per command) | same targets, but each joint's reference velocity is limited by its stopping distance, velocity and acceleration limits, and its torque by its effort limit |
+| Base | — | 1.0 m/s, 0.75 m/s² (Fetch spec, base-controller defaults) |
+| Arm, torso | — | fetch_moveit_config velocity/acceleration limits, URDF efforts |
+| Gripping surfaces | μ 0.25 | rubber, μ 1.0 (Fetch fingers and palm; every Allegro surface) |
+| Fetch jaws | ~220 N squeeze, fast | ≤ 5 cm/s, up to 245 N (Fetch spec) |
+| Allegro joints | Menagerie kp 1, uncapped | ≤ 0.7 N m (Allegro v4 spec) |
+
+Rate-limited motion needed three controller adaptations: the planner waits for each motion
+to settle; the learned carry's action is a velocity (target held at the braking distance);
+the A* carry teacher slows for corners.
+
+## Two-finger gripper systems (realistic physics)
 
 | Complete (within 15k ticks) | Dev /260 | Hold-out /100 | Course /100 | Rubric / trial (course) |
 |---|---:|---:|---:|---:|
-| Planner only | **252** (243) | **98** (93) | **97** (97) | **39.4** / 40 |
-| Imitation | 235 (212) | 92 (83) | 94 (92) | 38.2 / 40 |
-| Imitation + SAC | 238 (215) | 92 (83) | 93 (89) | 38.1 / 40 |
+| Planner only | **250** (21) | **99** (12) | **95** (10) | 28.5 / 40 |
+| Imitation | 175 (69) | 77 (32) | 84 (49) | 36.1 / 40 |
+| Imitation + SAC | 178 (73) | 77 (27) | 81 (56) | **36.5** / 40 |
 
-- **Planner only:** antipodal grasp proposal, IK and collision-checked motion, planned
-  descent/close/lift, A* carry, base/torso reach; 3× planned speed empty-handed, 2× holding.
-- **Imitation** ([configs/imitation_only.json](../configs/imitation_only.json)): behaviour-cloned
-  grasp and carry actors, SAC+HER reach (reach has no teacher).
-- **Imitation + SAC** ([configs/imitation_sac.json](../configs/imitation_sac.json), the headline
-  system): the same actors fine-tuned online with demonstration-regularized SAC+HER.
+The realistic task is no longer saturated, and it splits two ways:
 
-Learned systems keep the planned approach and carry posture and use the same speeds.
-Hold-out: 20 fresh mazes × 5 objects, built before any MuJoCo training. Course: the
-course's seed mapping (seeds 1000–1019). One standard deviation on dev is about ±7 cases.
+- **The planner is reliable but slow.** It plans and stops at every waypoint and waits for
+  each motion; median 17.4k ticks against the 15k deadline. Its pick is often too slow for
+  the rubric's "lift within 3000 steps".
+- **The learned systems are faster but crash.** Median ~15k ticks and 2–5× more timed
+  successes, but their carry fails by wall collisions (50–56 of 260 on dev) and timeouts
+  (24–28). There are no drops: with rubber grips and realistic motion nothing slips.
+- **SAC still adds nothing over imitation** (dev 178 vs 175; SAC on one skill only:
+  180 and 174 — all within ±7).
 
-**SAC adds nothing measurable over imitation** (421 vs 423 of 460 cases across all sets).
-Per skill, on dev:
+Stage swaps on dev (imitation policies vs planner stages):
 
-| Complete /260 (timed) | SAC carry | Imitation carry |
+| Complete (timed) | Learned carry | A* carry |
 |---|---:|---:|
-| SAC grasp | 238 (215) | 235 (213) |
-| Imitation grasp | 239 (215) | 235 (212) |
+| Learned grasp | 175 (69) | 248 (94) |
+| Planned grasp | 175 (8) | 250 (21) |
 
-**The planner is the strongest system.** Swapping single stages on dev (imitation policies
-vs the planner's stages):
+The learned grasp is fast and reliable; the learned carry is the weak stage. Other levers:
+faster planned motion raises the timed share (13% at 1×, 30% at 3×); slower carry commands
+time out (0.035 / 0.05 m per decision: 7 / 93 complete); hand-written turn limits add
+collisions (30°: 164; 15°: 77). The course-physics results (planner 97–99%, learned 92–94%,
+drops the main failure) are in the experiment log.
 
-| Complete (carry drops) | Learned carry | A* carry |
-|---|---:|---:|
-| Learned grasp | 235 (7) | 243 (8) |
-| Planned grasp | 243 (5) | 252 (4) |
+## Dexterous hand (in progress)
 
-Drops are rare for every pairing (≤3%). The learned carry loses more cases than A* to
-running out of decisions (8–9) and wall collisions; the learned grasp loses 5 cases to
-its decision horizon. (The planned grasp is slower: with the learned carry only 187/260
-finish within 15k ticks.)
+Test rig (`pnr/hand.py`): Menagerie Allegro (16 joints) on a six-axis wrist with arm-like
+limits over the course table, same physics settings. Task (`pnr/hand_env.py`): grasp from a
+pregrasp, lift 15 cm with thumb and a finger in contact, then hold through a realistic base
+carry while the policy keeps controlling the fingers.
 
-## What limits the learned systems
-
-Imitation + SAC on dev fails 22 of 260: carry wall collisions 5, carry grasp loss 5 (all
-the can), carry decision horizon 5, grasp decision horizon 5, reach horizon 2. Per object,
-the can is weakest (79% dev) and the foam brick and apple strongest (98%). The planner's
-8 dev failures are 4 drops, 3 reach misses and 1 blocked motion.
-
-Execution levers (imitation + SAC unless noted, dev):
-
-| Setting | Complete | Timed | Carry drops |
-|---|---:|---:|---:|
-| Planned speed 1× / 1.5× / 2× / 2.5× / 3× (holding = planned) | 242 / 237 / 240 / 239 / 235 | 179 / 210 / 218 / 216 / 212 | 5 / 7 / 5 / 5 / 9 |
-| Carry 0.035 / 0.05 / 0.075 m per decision (1× planned) | 154 / 209 / 242 | 0 / 0 / 179 | 0 / 2 / 5 |
-| Imitation carry + turn limit 30° / 15° per decision | 213 / 55 | 193 / 52 | 3 / 1 (35 / 196 wall hits) |
-| Imitation carry + half speed after 2 mm slip / both | 222 / 82 | 133 / 35 | 1 / 0 |
-
-Faster planned motion buys deadline margin; slower or rule-constrained carrying trades
-the few drops for timeouts and wall collisions.
+- **Which objects can each end effector pick?** (realistic, 6 trials each, `scripts/object_survey.py`)
+  The planner + gripper picks 10 of 15 course objects; it fails the bleach bottle, bowl, plate
+  and large marker (0/6) and mostly the master chef can (2/6, at its 10 cm aperture). A
+  scripted Allegro power grasp (`pnr/hand_teacher.py`) picks the soup can, apple (4/6) and
+  mug (2/6) and nothing else; it is too large for low objects in a top-down claw.
+- **RL from scratch** (PPO): learns approach and wrap, but under realistic physics has not yet
+  lifted 15 cm (24M steps; peak lift rising from 1 to 7.6 cm). Under the course physics the
+  same set-up lifted the foam brick and banana by 5–8M steps, by pressing the palm down with
+  the unlimited wrist — a strategy realistic effort caps remove (that policy lifts 0/8 under
+  realistic physics).
+- **Imitation as a warm start** (running): the scripted teacher lifts 80% and carries 72% of
+  can/apple/mug episodes at a 200-decision horizon; behaviour cloning on 254 successful demos
+  reaches 15%. PPO fine-tuning from that imitation policy (`hand_r_bc01`) and a curriculum run
+  warm-started from the realistic RL policy (`hand_r_cur_c`) are training; the dashboard
+  tracks both.
 
 ## How we evaluate
 
-`scripts/eval.py` runs full original-start episodes in parallel; `scripts/evaluate_mujoco.sh`
-reruns every number above (about 2 hours on 44 workers). Two numbers per run: **complete**
-(retained object within 10 cm of the goal after the final hold) and **timed** (complete
-within 15,000 physics ticks including settling). `scripts/rubric.py` estimates the course
-rubric's per-trial points (the 60 points for implemented functions are not per trial).
+`scripts/eval.py --physics {realistic,course}` runs full original-start episodes in parallel;
+`scripts/evaluate_mujoco.sh` reruns every number above (PNR_PHYSICS selects the settings).
+Complete: object within 10 cm of the goal after the final hold. Timed: complete within
+15,000 physics ticks including settling. `scripts/rubric.py` estimates per-trial rubric points.
+Episodes are deterministic for a given process set-up but borderline cases are chaotic; treat
+each case as a draw (±7 on dev). Sets: dev 260, hold-out 100, course 100, reserve 100 (sealed).
 
-Episodes are deterministic for a given process setup, but borderline cases are chaotic:
-floating-point differences as small as library load order flip some outcomes (the can on
-validation maze 8 is dropped under the evaluator and delivered when recorded with a
-different import order). Treat each case as a draw; compare systems with the ±7 noise in mind.
-`scripts/record.py` imports the evaluator first so recordings reproduce its outcomes.
+## Training
 
-| Set | Cases | Role |
-|---|---:|---|
-| `dev` | 260 | 12 validation + 20 first-test + 20 confirmation mazes × 5 objects |
-| `holdout` | 100 | 20 fresh mazes (`configs/holdout_bank_20260929.json`) |
-| `course` | 100 | Course seed mapping, seeds 1000–1019 |
-| `reserve` | 100 | Sealed for the final SAC/TD3 study |
-
-Objects: foam brick 14, banana 5, tomato can 2, apple 7, mug 10.
-
-## Training (scripts/train_mujoco.sh, ~2 hours)
-
-| Skill | Data | Learning |
-|---|---|---|
-| Grasp | 240 scripted contact-grasp episodes (24k steps), 240/240 lifted | BC 24k updates; SAC+HER 12k decisions, β=200 demo loss |
-| Carry | 1,799 teacher episodes (509k steps) on 192 TRAIN mazes: A* look-ahead follower, noise recoveries, and 78 carries after learned-grasp handovers (five objects) | BC 32k updates (CNN map encoder); SAC+HER 40k decisions, β=100 demo loss, object-balanced replay |
-| Reach | — | SAC+HER from reward, 20k steps |
-
-Validation during training stayed at 100% for grasp (10 episodes per check) and carry
-(12 full-goal episodes per check), before and after SAC.
-
-## Agreed study design
-
-Imitation-only is a baseline arm of its own. Per gripper, compare **BC only**,
-**BC + SAC+HER**, **BC + TD3+HER**, with matched data and budgets. In MuJoCo the
-two-finger gripper and planner nearly saturate the task, so the next step needs a
-direction decision: make dexterous grasping the job learning must do (the planner has no
-answer for a multi-finger hand), make the task harder in a principled way, or both.
+`scripts/train_mujoco.sh` (PNR_PHYSICS=realistic, run prefix `mjr_`; ~70 minutes): grasp
+(240 scripted demos, 219 lifted under realistic physics → BC → SAC), carry (1,801 teacher
+episodes on 192 TRAIN mazes → BC → SAC), reach (SAC+HER). Validation: grasp and reach 100%,
+carry 75% (BC) and 75–92% (SAC). Hand: `scripts/train_hand.py`, `scripts/hand_teacher_demos.py`.
 
 ## Operations
 
-- Dashboard: `python dashboard/server.py --port 8766` → http://127.0.0.1:8766.
-- `runs/archive_pybullet/` holds every PyBullet-era run (17 GB), out of the dashboard's view.
-- The Codex agent that built most of this repository is paused.
+- Dashboard: `python dashboard/server.py --port 8766` → http://127.0.0.1:8766 (hand training
+  curves update live).
+- `runs/archive_pybullet/` holds every PyBullet-era run. The Codex agent that built most of
+  this repository is paused.

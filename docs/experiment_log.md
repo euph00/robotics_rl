@@ -114,3 +114,56 @@ Throughput is ~1,400 decisions/s per run on 40 CPU workers: contact-heavy steps 
 The binding constraints are physical. The course gripper survives the carry because of
 its 450 N squeeze (~110 N of friction at μ 0.25); a hand of realistic strength exerts
 15–40 N, and the course motor law gives the carried hand ~25–30 m/s² acceleration pulses.
+
+## 2026-10-02: realistic physics for both end effectors
+
+Decision (user): same believable physics for the two-finger gripper and the Allegro instead
+of the course settings. Parameters and sources are in `pnr/env.py` (REALISTIC) and
+docs/project_state.md. Corrections found on the way: the course gripper's "450 N" was the
+sum over both jaws; its squeeze (~220 N) is close to the Fetch's rated 245 N. What was
+unrealistic was μ 0.25 and the unlimited motors (base jumps ~1 m/s per command; the
+high-friction hand run had 118 numerical blow-ups from unbounded wrist torques).
+
+Implementation notes:
+- Rate-limiting the reference velocity (not the measured one): a blocked joint keeps its
+  reference and pushes up to its effort limit; limiting from the measured velocity left the
+  jaws at ~20 N.
+- The planner commanded each motion for a fixed number of calls; with rate-limited joints it
+  planned grasps before the base had arrived. It now waits for settling.
+- Carry action = velocity. Targets 7.5 cm ahead of the measured base capped the speed at
+  ~0.3 m/s (the teacher exceeded its horizon); an integrated reference overshot corners.
+  The A* teacher now brakes for turns (sqrt(v_c² + 2 a d)).
+- The regression suite pins course physics (tests/conftest.py); tests/test_physics.py covers
+  the realistic law.
+
+Results (24 evaluations, `PNR_PHYSICS=realistic bash scripts/evaluate_mujoco.sh`):
+
+| Run (dev /260) | Complete | Timed | Main failures |
+|---|---:|---:|---|
+| Planner only | 250 | 21 | 3 grasp validation, 3 reach |
+| Imitation | 175 | 69 | 56 carry collisions, 24 carry timeouts |
+| Imitation + SAC | 178 | 73 | 50 collisions, 28 timeouts |
+| SAC grasp + imitation carry / imitation grasp + SAC carry | 180 / 174 | 71 / 78 | collisions |
+| Learned grasp + A* carry / planned grasp + learned carry | 248 / 175 | 94 / 8 | — / collisions |
+| Turn limit 30° / 15° | 164 / 77 | 66 / 32 | 82 / 175 collisions |
+| Planned speed 1, 1.5, 2, 2.5, 3 | 173, 172, 180, 176, 182 | 34, 59, 76, 77, 78 | collisions |
+| Carry 0.035 / 0.05 m per decision | 7 / 93 | 0 / 0 | timeouts |
+
+Hold-out: planner 99 (12 timed), imitation 77 (32), imitation + SAC 77 (27). Course seeds:
+95 (10), 84 (49), 81 (56); rubric 28.5, 36.1, 36.5 per trial.
+
+## 2026-10-02: dexterous hand under realistic physics
+
+- RL from scratch (PPO, grasp + carry phases): no 15 cm lift by 24M steps; peak lift 1 → 7.6 cm.
+- The course-physics policy that lifted the foam brick and banana lifts 0/8 under realistic
+  physics: it pressed the palm onto the object with the unlimited wrist and scooped.
+- Object survey (`scripts/object_survey.py`, 6 trials each): planner + gripper picks 10/15
+  objects (0/6: bleach bottle, bowl, plate, large marker; 2/6 master chef can); the scripted
+  Allegro power grasp picks soup can 4/6, apple 4/6, mug 2/6, nothing else (a top-down claw
+  of this size cannot wrap low objects: fingertips reach ~9 cm below the palm).
+- Teacher at a 200-decision horizon (120 was too short for it): can/apple/mug lifted 48/60,
+  carried 43/60. Behaviour cloning on 254 successful noisy demos: 15% (compounding errors).
+- Running: PPO from the cloned policy (value warm-up 1M steps), and a curriculum run
+  (easy-first: foam and banana, then all five; near-grasp starts) warm-started from the
+  realistic RL policy, both with a 200-decision horizon; a 160k-decision carry SAC run for the
+  gripper's collisions.
