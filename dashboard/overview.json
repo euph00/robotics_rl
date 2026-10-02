@@ -1,28 +1,28 @@
 {
   "title": "Pick–Nav–Reach",
-  "phase": "MuJoCo baseline",
+  "phase": "Realistic physics · dexterous hand",
   "updated": "2026-10-01",
-  "summary": "Pick a supplied object, carry it through an unseen maze, hold it at the goal · MuJoCo.",
+  "summary": "Pick a supplied object, carry it through an unseen maze, hold it at the goal · MuJoCo, realistic physics.",
   "headline": [
     {
-      "label": "Imitation + SAC · fresh mazes",
-      "value": "92%",
-      "detail": "92/100 complete · 83 within deadline · course seeds 93/100"
+      "label": "Planner only · fresh mazes",
+      "value": "99%",
+      "detail": "Reliable but slow: 12/100 within the 15k-tick deadline"
     },
     {
-      "label": "Planner only · fresh mazes",
-      "value": "98%",
-      "detail": "Strongest system in MuJoCo · course rubric ≈ 39.4/40 per trial"
+      "label": "Imitation + SAC · course seeds",
+      "value": "81%",
+      "detail": "56/100 within deadline · rubric ≈ 36.5/40 vs planner 28.5"
     },
     {
       "label": "Learned systems lose in",
       "value": "Carry",
-      "detail": "Timeouts, wall hits, the can slipping · ~6% of dev cases"
+      "detail": "Wall collisions under realistic momentum · ~20% of dev cases"
     },
     {
-      "label": "RL fine-tuning gain",
-      "value": "≈ 0",
-      "detail": "Imitation 421/460 vs + SAC 423/460"
+      "label": "Dexterous hand",
+      "value": "Training",
+      "detail": "Curriculum + warm start, see below"
     }
   ],
   "phases": [
@@ -101,9 +101,9 @@
         "hold"
       ],
       "runs": {
-        "dev": "mj_planner_dev",
-        "holdout": "mj_planner_holdout",
-        "course": "mj_planner_course"
+        "dev": "mjr_planner_dev",
+        "holdout": "mjr_planner_holdout",
+        "course": "mjr_planner_course"
       }
     },
     {
@@ -118,9 +118,9 @@
         "hold"
       ],
       "runs": {
-        "dev": "mj_imitation_dev",
-        "holdout": "mj_imitation_holdout",
-        "course": "mj_imitation_course"
+        "dev": "mjr_imitation_dev",
+        "holdout": "mjr_imitation_holdout",
+        "course": "mjr_imitation_course"
       }
     },
     {
@@ -135,9 +135,9 @@
         "hold"
       ],
       "runs": {
-        "dev": "mj_imitation_sac_dev",
-        "holdout": "mj_imitation_sac_holdout",
-        "course": "mj_imitation_sac_course"
+        "dev": "mjr_imitation_sac_dev",
+        "holdout": "mjr_imitation_sac_holdout",
+        "course": "mjr_imitation_sac_course"
       },
       "best": true
     },
@@ -191,47 +191,47 @@
     "timeline": [
       [
         "Imitation + SAC",
-        "mj_imitation_sac_dev"
+        "mjr_imitation_sac_dev"
       ],
       [
         "Planner only",
-        "mj_planner_dev"
+        "mjr_planner_dev"
       ]
     ],
     "planned_speed": [
       [
         1.0,
-        "mj_planspeed_10"
+        "mjr_planspeed_10"
       ],
       [
         1.5,
-        "mj_planspeed_15"
+        "mjr_planspeed_15"
       ],
       [
         2.0,
-        "mj_planspeed_20"
+        "mjr_planspeed_20"
       ],
       [
         2.5,
-        "mj_planspeed_25"
+        "mjr_planspeed_25"
       ],
       [
         3.0,
-        "mj_planspeed_30"
+        "mjr_planspeed_30"
       ]
     ],
     "carry_speed": [
       [
         0.035,
-        "mj_carryspeed_0035"
+        "mjr_carryspeed_0035"
       ],
       [
         0.05,
-        "mj_carryspeed_005"
+        "mjr_carryspeed_005"
       ],
       [
         0.075,
-        "mj_planspeed_10"
+        "mjr_planspeed_10"
       ]
     ],
     "sac_ablation": {
@@ -245,12 +245,12 @@
       ],
       "runs": [
         [
-          "mj_imitation_sac_dev",
-          "mj_ablation_sac_grasp_bc_carry"
+          "mjr_imitation_sac_dev",
+          "mjr_ablation_sac_grasp_bc_carry"
         ],
         [
-          "mj_ablation_bc_grasp_sac_carry",
-          "mj_imitation_dev"
+          "mjr_ablation_bc_grasp_sac_carry",
+          "mjr_imitation_dev"
         ]
       ]
     },
@@ -265,49 +265,49 @@
       ],
       "runs": [
         [
-          "mj_imitation_dev",
-          "mj_swap_planned_carry"
+          "mjr_imitation_dev",
+          "mjr_swap_planned_carry"
         ],
         [
-          "mj_swap_planned_grasp",
-          "mj_planner_dev"
+          "mjr_swap_planned_grasp",
+          "mjr_planner_dev"
         ]
       ]
     },
     "carry_rules": [
       [
         "No rule",
-        "mj_imitation_dev"
+        "mjr_imitation_dev"
       ],
       [
         "Turn ≤ 30°",
-        "mj_rules_turn30"
+        "mjr_rules_turn30"
       ],
       [
         "Turn ≤ 15°",
-        "mj_rules_turn15"
+        "mjr_rules_turn15"
       ],
       [
         "Slow on slip",
-        "mj_rules_slip2mm"
+        "mjr_rules_slip2mm"
       ],
       [
         "Both",
-        "mj_rules_turn15_slip2mm"
+        "mjr_rules_turn15_slip2mm"
       ]
     ],
     "rubric": [
       [
         "Planner only",
-        "mj_planner_course"
+        "mjr_planner_course"
       ],
       [
         "Imitation",
-        "mj_imitation_course"
+        "mjr_imitation_course"
       ],
       [
         "Imitation + SAC",
-        "mj_imitation_sac_course"
+        "mjr_imitation_sac_course"
       ]
     ]
   },

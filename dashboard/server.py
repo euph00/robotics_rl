@@ -418,7 +418,47 @@ def get_overview(runs_root):
             recording["media"].append(dict(item, poster=poster))
     maze = read_json(OVERVIEW.with_name("maze_example.json"))
     return finite_json({"timestamp": utcnow(), "overview": curated, "maze": maze, "evaluations": evaluations,
-                        "active": active, "history": history})
+                        "active": active, "history": history, "training": training_curves(runs_root, curated, directories)})
+
+
+TRAINING_SKILLS = {"hand_grasp"}
+
+
+def training_curves(runs_root, curated, directories, limit=4):
+    """Evaluation curves of training runs: curated ids first, then every hand-training run, newest first."""
+    chosen = [str(run_id) for run_id in curated.get("training", [])]
+    found = []
+    for directory in directories:
+        status = read_json(directory / "status.json") or {}
+        if status.get("skill") in TRAINING_SKILLS and directory.name not in chosen:
+            found.append((status.get("started_at") or "", directory.name))
+    chosen += [name for _, name in sorted(found, reverse=True)]
+    curves = []
+    for run_id in chosen[:limit]:
+        if not SAFE_ID.fullmatch(run_id):
+            continue
+        directory = runs_root / run_id
+        status = read_json(directory / "status.json") or {}
+        config = read_json(directory / "config.json") or {}
+        points, stages = [], []
+        for row in read_records(directory / "metrics.jsonl", limit=2000):
+            if row.get("metric_source") != "evaluation":
+                continue
+            points.append({key: row.get(key) for key in ("transitions", "success_rate", "carry_success_rate", "peak_lift",
+                                                         "per_object", "curriculum_stage", "train_success_rate",
+                                                         "steps_per_second")})
+        for event in read_records(directory / "events.jsonl", limit=200):
+            message = str(event.get("message", ""))
+            if message.startswith("Curriculum stage"):
+                stages.append({"timestamp": event.get("timestamp"), "message": message})
+        state = "running" if _alive(status) else ("stopped" if status.get("status") == "running" else status.get("status"))
+        curves.append({"id": run_id, "name": status.get("name") or run_id, "status": state,
+                       "transitions": status.get("transitions"), "budget": status.get("budget"),
+                       "started_at": status.get("started_at"), "updated_at": status.get("updated_at"),
+                       "physics": config.get("physics"), "init_from": config.get("init_from"),
+                       "curriculum": config.get("curriculum"), "carry": config.get("carry"), "points": points,
+                       "stages": stages})
+    return curves
 
 
 class Resources:

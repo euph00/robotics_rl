@@ -1,10 +1,12 @@
 :root {
   --bg: #f5f6f8; --panel: #ffffff; --text: #1d2330; --muted: #6a7386; --line: #e3e6ec; --track: #eef0f4;
   --planned: #3b6fd8; --imitation: #27a06b; --rl: #e5891b; --hold: #9aa3b2; --drop: #d64545;
+  --series-lift: #e5891b; --series-carry: #3b6fd8;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #11141a; --panel: #191d25; --text: #e4e7ee; --muted: #959db0; --line: #2b313c; --track: #262b35; }
+  :root { --bg: #11141a; --panel: #191d25; --text: #e4e7ee; --muted: #959db0; --line: #2b313c; --track: #262b35;
+          --series-lift: #d4780f; --series-carry: #4a7fe0; }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.4; }
@@ -116,3 +118,32 @@ details summary { cursor: pointer; font-weight: 600; }
 .report { max-width: 860px; margin: 0 auto; padding: 24px; }
 .report table { margin: 10px 0; }
 .table-scroll { overflow-x: auto; }
+
+/* ---------- hand training ---------- */
+.train-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 18px; }
+@media (max-width: 520px) { .train-grid { grid-template-columns: 1fr; } }
+.train-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; min-width: 0; }
+.train-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 2px; }
+.train-card .chart { width: 100%; height: auto; margin-top: 8px; }
+.pill.state-running { background: var(--imitation); }
+.pill.state-stopped, .pill.state-failed { background: var(--hold); }
+.small { font-size: 12px; }
+svg .train-line { fill: none; stroke-width: 2; stroke-linejoin: round; }
+svg .train-lift { stroke: var(--series-lift); fill: var(--series-lift); }
+svg .train-carry { stroke: var(--series-carry); fill: var(--series-carry); }
+svg polyline.train-lift, svg polyline.train-carry { fill: none; }
+svg .train-dot { stroke: var(--panel); stroke-width: 2; }
+svg .stage-line { stroke: var(--muted); stroke-dasharray: 3 3; stroke-width: 1; }
+svg .crosshair { stroke: var(--muted); stroke-width: 1; }
+.swatch-lift { background: var(--series-lift); }
+.swatch-carry { background: var(--series-carry); }
+.train-tip { position: absolute; z-index: 10; background: var(--panel); color: var(--text); border: 1px solid var(--line);
+             border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.15); pointer-events: none; max-width: 280px; }
+.obj-title { margin-top: 8px; }
+.obj-bars { display: grid; gap: 3px; margin-top: 4px; }
+.obj-bar { display: grid; grid-template-columns: 52px 1fr 38px; align-items: center; gap: 8px; font-size: 12px; }
+.obj-track { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
+.obj-fill { display: block; height: 100%; background: var(--series-lift); border-radius: 4px; }
+.obj-value { text-align: right; color: var(--muted); }
+svg .peak-line { stroke: var(--text); opacity: .7; }
+svg .peak-dot { fill: var(--text); }

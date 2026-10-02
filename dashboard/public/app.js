@@ -395,11 +395,11 @@ function renderFindings(overview) {
   $('findings').replaceChildren(
     figure('Faster planned motion', 'Approach and posture run faster → more runs meet the deadline',
       planned, legend([['complete', COLORS.imitation], ['within deadline', COLORS.planned, 'swatch-dash']])),
-    figure('Carry speed', 'Slower carry drops less (5 → 0) but runs out of time',
+    figure('Carry speed', 'Slower carry runs out of time; realistic physics leaves no drops to save',
       carry, legend([['complete', COLORS.imitation], ['dropped in carry', '#d64545']])),
     figure('Does SAC fine-tuning help?', 'Complete · dev · all within noise (±3%)', sacFig || el('p', '—')),
-    figure('Which stage causes drops?', 'Drop rate · dev · rare with every grasp × carry pairing (≤ 3%)', swapFig || el('p', '—')),
-    figure('Hand-written carry rules', 'Drops (red) vs wall hits (purple) · dev · fewer drops, many more wall hits', rulesFig));
+    figure('Which stage causes drops?', 'Drop rate · dev · none with realistic physics: the learned carry fails by wall collisions instead', swapFig || el('p', '—')),
+    figure('Hand-written carry rules', 'Drops (red) vs wall hits (purple) · dev · turn limits only add wall hits', rulesFig));
 }
 
 function renderRubric(overview) {
@@ -495,6 +495,142 @@ function renderRecordings(list) {
   }
 }
 
+
+/* ---------- training curves (dexterous hand) ---------- */
+const OBJECT_IDS = {'14': 'foam', '5': 'banana', '2': 'can', '7': 'apple', '10': 'mug'};
+let trainingSignature = '';
+
+function trainingTooltip() {
+  let tip = $('train-tip');
+  if (!tip) { tip = el('div', undefined, 'train-tip'); tip.id = 'train-tip'; tip.hidden = true; document.body.append(tip); }
+  return tip;
+}
+
+function trainingChart(run) {
+  const width = 460, height = 210, left = 40, right = 92, top = 14, bottom = 34;
+  const points = run.points.filter(p => Number.isFinite(p.transitions));
+  const xMax = Math.max(run.budget || 0, ...points.map(p => p.transitions), 1);
+  const x = v => left + (v / xMax) * (width - left - right);
+  const y = v => top + (1 - v) * (height - top - bottom);
+  const s = frame(width, height);
+  for (const tick of [0, .5, 1]) {
+    s.append(svg('line', {x1: left, x2: width - right, y1: y(tick), y2: y(tick), class: 'grid'}));
+    s.append(svg('text', {x: left - 6, y: y(tick) + 4, class: 'axis', 'text-anchor': 'end'}, `${tick * 100}%`));
+  }
+  const step = xMax > 30e6 ? 20e6 : xMax > 10e6 ? 10e6 : 2e6;
+  for (let v = 0; v <= xMax + 1; v += step) {
+    s.append(svg('text', {x: x(v), y: height - bottom + 16, class: 'axis', 'text-anchor': 'middle'}, `${v / 1e6}M`));
+  }
+  s.append(svg('text', {x: (left + width - right) / 2, y: height - 4, class: 'axis', 'text-anchor': 'middle'}, 'environment steps'));
+  // Curriculum stage changes.
+  points.forEach((p, i) => {
+    if (i && p.curriculum_stage !== points[i - 1].curriculum_stage && p.curriculum_stage !== null && p.curriculum_stage !== undefined) {
+      s.append(svg('line', {x1: x(p.transitions), x2: x(p.transitions), y1: top, y2: height - bottom, class: 'stage-line'}));
+      s.append(svg('text', {x: x(p.transitions) + 3, y: top + 9, class: 'axis'}, `stage ${p.curriculum_stage + 1}`));
+    }
+  });
+  const series = [['success_rate', 'train-lift', 'Lift']];
+  if (run.carry) series.push(['carry_success_rate', 'train-carry', 'Carry']);
+  const labels = [];
+  for (const [key, cls, name] of series) {
+    const valid = points.filter(p => Number.isFinite(p[key]));
+    if (!valid.length) continue;
+    s.append(svg('polyline', {points: valid.map(p => `${x(p.transitions)},${y(p[key])}`).join(' '), class: `train-line ${cls}`}));
+    const last = valid[valid.length - 1];
+    s.append(svg('circle', {cx: x(last.transitions), cy: y(last[key]), r: 4, class: `train-dot ${cls}`}));
+    labels.push({y: y(last[key]), text: `${name} ${Math.round(last[key] * 100)}%`, x: x(last.transitions)});
+  }
+  // Direct labels at the line ends, nudged apart.
+  labels.sort((a, b) => b.y - a.y);          // stack upward from the lowest so labels stay above the axis
+  for (let i = 1; i < labels.length; i++) labels[i].y = Math.min(labels[i].y, labels[i - 1].y - 14);
+  for (const label of labels) s.append(svg('text', {x: label.x + 8, y: label.y + 4, class: 'label'}, label.text));
+  // Hover: crosshair and tooltip at the nearest evaluation.
+  const cross = svg('line', {y1: top, y2: height - bottom, class: 'crosshair', visibility: 'hidden'});
+  const hit = svg('rect', {x: left, y: top, width: width - left - right, height: height - top - bottom, fill: 'transparent'});
+  s.append(cross, hit);
+  const tip = trainingTooltip();
+  hit.addEventListener('mousemove', event => {
+    if (!points.length) return;
+    const box = s.getBoundingClientRect();
+    const value = ((event.clientX - box.left) / box.width * width - left) / (width - left - right) * xMax;
+    const p = points.reduce((a, b) => Math.abs(b.transitions - value) < Math.abs(a.transitions - value) ? b : a);
+    cross.setAttribute('x1', x(p.transitions)); cross.setAttribute('x2', x(p.transitions)); cross.setAttribute('visibility', 'visible');
+    const objects = Object.entries(p.per_object || {}).map(([k, v]) => `${OBJECT_IDS[k] || k} ${Math.round(v * 100)}%`).join(' · ');
+    tip.replaceChildren(el('strong', `${(p.transitions / 1e6).toFixed(1)}M steps`),
+      el('div', `Lift success ${Math.round((p.success_rate || 0) * 100)}%` + (run.carry ? ` · carry ${Math.round((p.carry_success_rate || 0) * 100)}%` : '')),
+      el('div', `Mean peak lift ${((p.peak_lift || 0) * 100).toFixed(1)} cm` + (p.curriculum_stage !== undefined && p.curriculum_stage !== null ? ` · stage ${p.curriculum_stage + 1}` : '')),
+      el('div', objects, 'muted'));
+    tip.hidden = false;
+    tip.style.left = `${event.pageX + 14}px`; tip.style.top = `${event.pageY + 10}px`;
+  });
+  hit.addEventListener('mouseleave', () => { cross.setAttribute('visibility', 'hidden'); tip.hidden = true; });
+  return s;
+}
+
+function liftChart(run) {
+  // Mean peak lift (cm) at each evaluation: shows progress while success is still zero.
+  const width = 460, height = 96, left = 40, right = 92, top = 10, bottom = 18;
+  const points = run.points.filter(p => Number.isFinite(p.transitions) && Number.isFinite(p.peak_lift));
+  const xMax = Math.max(run.budget || 0, ...points.map(p => p.transitions), 1);
+  const x = v => left + (v / xMax) * (width - left - right);
+  const y = v => top + (1 - Math.min(v, .2) / .2) * (height - top - bottom);
+  const s = frame(width, height);
+  for (const tick of [0, .1, .2]) {
+    s.append(svg('line', {x1: left, x2: width - right, y1: y(tick), y2: y(tick), class: 'grid'}));
+    s.append(svg('text', {x: left - 6, y: y(tick) + 4, class: 'axis', 'text-anchor': 'end'}, `${tick * 100} cm`));
+  }
+  if (points.length) {
+    s.append(svg('polyline', {points: points.map(p => `${x(p.transitions)},${y(p.peak_lift)}`).join(' '), class: 'train-line peak-line'}));
+    const last = points[points.length - 1];
+    s.append(svg('circle', {cx: x(last.transitions), cy: y(last.peak_lift), r: 4, class: 'train-dot peak-dot'}));
+    s.append(svg('text', {x: x(last.transitions) + 8, y: y(last.peak_lift) + 4, class: 'label'}, `${(last.peak_lift * 100).toFixed(1)} cm`));
+  }
+  return s;
+}
+
+function objectBars(point) {
+  const box = el('div', undefined, 'obj-bars');
+  for (const [id, name] of Object.entries(OBJECT_IDS)) {
+    const value = point && point.per_object ? point.per_object[id] : null;
+    const row = el('div', undefined, 'obj-bar');
+    const track = el('span', undefined, 'obj-track');
+    const fill = el('span', undefined, 'obj-fill');
+    fill.style.width = `${Math.round((value || 0) * 100)}%`;
+    track.append(fill);
+    row.append(el('span', name, 'obj-name'), track, el('span', value === null || value === undefined ? '—' : `${Math.round(value * 100)}%`, 'obj-value'));
+    row.title = `${name}: lift success at the latest evaluation`;
+    box.append(row);
+  }
+  return box;
+}
+
+function renderTraining(curves) {
+  const target = $('training');
+  const signature = JSON.stringify(curves.map(c => [c.id, c.status, c.points.length, c.transitions]));
+  if (signature === trainingSignature) return;
+  trainingSignature = signature;
+  target.replaceChildren();
+  if (!curves.length) { target.append(el('p', 'No hand training runs yet.', 'muted')); return; }
+  for (const run of curves) {
+    const card = el('div', undefined, 'train-card');
+    const last = run.points[run.points.length - 1];
+    const speed = last && last.steps_per_second;
+    const remaining = run.status === 'running' && speed && run.budget ? (run.budget - (run.transitions || 0)) / speed / 3600 : null;
+    const head = el('div', undefined, 'train-head');
+    head.append(el('strong', run.id), el('span', run.status || '—', `pill state-${run.status}`));
+    const meta = [run.physics ? `${run.physics} physics` : 'course physics', run.init_from ? `warm start ${run.init_from}` : 'from scratch',
+                  run.curriculum ? `curriculum ${run.curriculum}` : null, run.carry ? 'grasp + carry' : 'grasp only',
+                  `${((run.transitions || 0) / 1e6).toFixed(1)}M / ${((run.budget || 0) / 1e6).toFixed(0)}M steps`,
+                  speed ? `${Math.round(speed)} steps/s` : null, remaining !== null ? `~${remaining.toFixed(1)} h left` : null].filter(Boolean);
+    card.append(head, el('div', meta.join(' · '), 'muted small'));
+    card.append(trainingChart(run));
+    card.append(el('div', 'Mean peak lift per evaluation episode (success needs 15 cm with thumb and finger in contact)', 'muted small obj-title'), liftChart(run));
+    card.append(legend([['Lift success (evaluation, all five objects)', null, 'swatch-lift'], ...(run.carry ? [['Carry completed', null, 'swatch-carry']] : [])]));
+    card.append(el('div', 'Latest evaluation per object', 'muted small obj-title'), objectBars(last));
+    target.append(card);
+  }
+}
+
 let drawnSignature = '';
 let mazeDrawn = false;  // drawn once so the animation is never restarted by polling
 async function poll() {
@@ -504,6 +640,7 @@ async function poll() {
     STATE = {overview: state.overview || {}, evaluations: Object.fromEntries((state.evaluations || []).map(e => [e.id, e]))};
     renderHeader(STATE.overview, state.resources, state.timestamp);
     renderActive(state.active || []);
+    renderTraining(state.training || []);
     // Redraw diagrams only when results change, so animations keep running.
     const signature = JSON.stringify([STATE.overview, (state.evaluations || []).map(e => [e.id, e.completed, e.success])]);
     if (signature !== drawnSignature) {
