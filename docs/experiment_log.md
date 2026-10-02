@@ -167,3 +167,18 @@ Hold-out: planner 99 (12 timed), imitation 77 (32), imitation + SAC 77 (27). Cou
   (easy-first: foam and banana, then all five; near-grasp starts) warm-started from the
   realistic RL policy, both with a 200-decision horizon; a 160k-decision carry SAC run for the
   gripper's collisions.
+
+Later on 2026-10-02:
+- Longer carry SAC under realistic physics (`mjr_carry_sac03`, 160k decisions): validation on
+  12 carries bounced 75–100%; the best-validated checkpoint (140k) completes 162/260 dev with
+  77 wall collisions, worse than the 40k-decision carry (178, ~50). More SAC does not fix the
+  collisions, and 12-carry validation is too noisy to select checkpoints.
+- Hand, imitation → PPO (`hand_r_bc01`, lr 3e-4): 12.5% (cloned) → 42% lift-and-carry at 4M
+  steps, then 4–21% (24-episode evaluations) while stochastic training success rose to ~53%.
+  Objects that enter the carry are nearly always carried; the losses are in holding the lift
+  for 10 steps. `hand_r_bc02` repeats it with lr 1e-4 and interleaved behaviour cloning
+  (DAPG-style) to keep the policy near the teacher.
+- Hand, curriculum without a teacher (`hand_r_cur_c`, warm start from the realistic RL policy):
+  0% after 10M steps; stopped.
+- A stateless version of the teacher (for DAgger relabelling) reaches can 17/20, mug 9/20,
+  apple 2/20 carried, below the stateful teacher (16, 15, 12 of 20); DAgger deferred.
