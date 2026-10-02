@@ -497,7 +497,7 @@ function renderRecordings(list) {
 
 
 /* ---------- training curves (dexterous hand) ---------- */
-const OBJECT_IDS = {'14': 'foam', '5': 'banana', '2': 'can', '7': 'apple', '10': 'mug'};
+const OBJECT_IDS = {'0': 'chef can', '2': 'soup can', '5': 'banana', '7': 'apple', '10': 'mug', '14': 'foam'};
 let trainingSignature = '';
 
 function trainingTooltip() {
@@ -590,8 +590,10 @@ function liftChart(run) {
 
 function objectBars(point) {
   const box = el('div', undefined, 'obj-bars');
-  for (const [id, name] of Object.entries(OBJECT_IDS)) {
-    const value = point && point.per_object ? point.per_object[id] : null;
+  // The run's own objects (from its evaluations), in a fixed order.
+  const trained = point && point.per_object ? Object.keys(point.per_object) : [];
+  for (const [id, name] of Object.entries(OBJECT_IDS).filter(([id]) => trained.includes(id))) {
+    const value = point.per_object[id];
     const row = el('div', undefined, 'obj-bar');
     const track = el('span', undefined, 'obj-track');
     const fill = el('span', undefined, 'obj-fill');
@@ -618,14 +620,15 @@ function renderTraining(curves) {
     const remaining = run.status === 'running' && speed && run.budget ? (run.budget - (run.transitions || 0)) / speed / 3600 : null;
     const head = el('div', undefined, 'train-head');
     head.append(el('strong', run.id), el('span', run.status || '—', `pill state-${run.status}`));
-    const meta = [run.physics ? `${run.physics} physics` : 'course physics', run.init_from ? `warm start ${run.init_from}` : 'from scratch',
+    const start = run.init_from ? `warm start ${run.init_from}` : run.imitation ? 'imitation of scripted teacher, then PPO' : 'from scratch';
+    const meta = [run.robot === 'fetch' ? 'hand on the Fetch' : 'hand rig', run.physics ? `${run.physics} physics` : 'course physics', start,
                   run.curriculum ? `curriculum ${run.curriculum}` : null, run.carry ? 'grasp + carry' : 'grasp only',
                   `${((run.transitions || 0) / 1e6).toFixed(1)}M / ${((run.budget || 0) / 1e6).toFixed(0)}M steps`,
                   speed ? `${Math.round(speed)} steps/s` : null, remaining !== null ? `~${remaining.toFixed(1)} h left` : null].filter(Boolean);
     card.append(head, el('div', meta.join(' · '), 'muted small'));
     card.append(trainingChart(run));
     card.append(el('div', 'Mean peak lift per evaluation episode (success needs 15 cm with thumb and finger in contact)', 'muted small obj-title'), liftChart(run));
-    card.append(legend([['Lift success (evaluation, all five objects)', null, 'swatch-lift'], ...(run.carry ? [['Carry completed', null, 'swatch-carry']] : [])]));
+    card.append(legend([['Lift success (evaluation)', null, 'swatch-lift'], ...(run.carry ? [['Carry completed', null, 'swatch-carry']] : [])]));
     card.append(el('div', 'Latest evaluation per object', 'muted small obj-title'), objectBars(last));
     target.append(card);
   }

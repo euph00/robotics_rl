@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Collect scripted power-grasp demonstrations on the hand rig (pnr/hand_teacher.py).
+"""Collect scripted grasp demonstrations on the hand rig (pnr/hand_teacher.py): the side power
+grasp for the env's side-grasp objects (upright, too wide for a top-down claw), else the top-down one.
 
 Each episode runs the teacher from a normal start (optionally with Gaussian action noise, so
 the data covers recoveries) through the lift and, with --carry, the carry phase. Saves
@@ -20,14 +21,15 @@ import numpy as np  # noqa: E402
 
 
 def collect(job):
-    idx, seeds, noise_levels, carry, physics = job
+    idx, seeds, noise_levels, carry, physics, horizon = job
     from pnr.hand_env import HandGraspEnv
-    from pnr.hand_teacher import PowerGraspTeacher
-    env = HandGraspEnv(objects=[idx], seed=0, physics=physics, carry=carry, horizon=160)
+    from pnr.hand_teacher import PowerGraspTeacher, SideGraspTeacher
+    env = HandGraspEnv(objects=[idx], seed=0, physics=physics, carry=carry, horizon=horizon)
+    Teacher = SideGraspTeacher if idx in env.side_objects else PowerGraspTeacher
     episodes = []
     for seed, noise in zip(seeds, noise_levels):
         obs, _ = env.reset(seed=int(seed), options={'object_idx': idx})
-        teacher = PowerGraspTeacher(env, rng=np.random.default_rng(int(seed)))
+        teacher = Teacher(env, rng=np.random.default_rng(int(seed)))
         rng = np.random.default_rng(int(seed) + 1)
         observations, labels, success, carried = [], [], False, False
         while True:
@@ -53,6 +55,7 @@ def main():
     parser.add_argument('--noise', type=float, nargs='+', default=[0., .1, .2], help='Cycled per episode')
     parser.add_argument('--carry', action='store_true')
     parser.add_argument('--physics', default='realistic')
+    parser.add_argument('--horizon', type=int, default=160)
     parser.add_argument('--workers', type=int, default=24)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
@@ -64,7 +67,7 @@ def main():
         noise = np.resize(args.noise, args.episodes)
         for chunk_seeds, chunk_noise in zip(np.array_split(seeds, max(1, args.workers // len(args.objects))),
                                             np.array_split(noise, max(1, args.workers // len(args.objects)))):
-            jobs.append((idx, chunk_seeds, chunk_noise, args.carry, args.physics))
+            jobs.append((idx, chunk_seeds, chunk_noise, args.carry, args.physics, args.horizon))
     with ProcessPoolExecutor(args.workers) as pool:
         episodes = [e for chunk in pool.map(collect, jobs) for e in chunk]
     args.output.mkdir(parents=True)

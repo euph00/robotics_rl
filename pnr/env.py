@@ -28,6 +28,13 @@ in this module, with sources). Gripping surfaces (finger links and palm) are rub
 the jaws close at <= 5 cm/s and squeeze with up to 245 N (Fetch spec). 'course' reproduces
 the course's unlimited motors and mu 0.25 grip, as used for all results before 2026-10-02.
 
+End effector (`effector=`). 'gripper' is the course's parallel gripper. 'allegro' removes the
+jaws and the gripper housing and bolts the Menagerie Allegro hand (pnr/hand.py's model, same
+grip friction and joint torque cap) to the wrist flange by the back of its palm, palm frame
+aligned with gripper_link: the palm faces along the gripper's approach axis, the fingers point
+along gripper_link +z. The hand keeps its own position servos; step() takes the 13 Fetch joint
+targets followed by the 16 hand joint targets.
+
 Kinematic queries (planner, IK, collision checks) run on a separate scratch MjData, so
 they never touch the live simulation.
 """
@@ -53,6 +60,7 @@ UPSTREAM_COMMIT = '54ab2d1faa54d1aa7e2738f114531a76c6514cd3'
 _GLOBAL_RNG_LOCK = threading.Lock()
 
 CACHE = ROOT / '.cache' / 'pnr_mujoco'
+ALLEGRO_PATH = ROOT / 'assets/hands/wonik_allegro/right_hand.xml'
 COLORS = {'robot': (.78, .79, .82, 1), 'table': (.62, .47, .33, 1), 'maze': (.88, .90, .95, 1),
           'object': (.93, .45, .16, 1)}
 CONTACT_SOLREF = (2 / 240, 1.)  # contact time constant 2 dt (stiffest stable), critically damped
@@ -68,6 +76,11 @@ PHYSICS = os.environ.get('PNR_PHYSICS', 'realistic')   # default for every envir
 FINGER_ARMATURE = {'course': 4.09, 'realistic': 20.3}
 GRIP_FRICTION = {'course': .25, 'realistic': 1.}
 GRIP_BODIES = ('fetch/r_gripper_finger_link', 'fetch/l_gripper_finger_link', 'fetch/gripper_link')
+ALLEGRO_TORQUE = .7      # N m per joint (Allegro hand v4 specification)
+# Palm origin in the gripper_link frame: palm back (palm x = -0.03) on the wrist flange (gripper_link
+# x = -0.147), palm length (palm z from -0.095 to 0) centred on the arm axis.
+ALLEGRO_MOUNT = (-.117, 0., .0475)
+ALLEGRO_BITS = (2 | 8, 1 | 8)    # hand: objects, table, maze and its own fingers; not the arm or floor
 _INF = float('inf')
 # Realistic joint limits: velocity, acceleration, effort (SI units). Base: Fetch spec (1.0 m/s) and
 # Fetch base-controller defaults (0.75 m/s^2, 3 rad/s^2); torso and arm: fetch_moveit_config
@@ -202,9 +215,12 @@ class PickNavReachEnv:
     position_gains = GAINS
 
     def __init__(self, seed=0, object_idx=5, gui=False, settle_steps=480, real_time=False,
-                 maze_seed=None, seed_mode=None, physics=None):
+                 maze_seed=None, seed_mode=None, physics=None, effector='gripper'):
         if gui or real_time:
             raise ValueError('The environment is headless; use render_rgb')
+        if effector not in ('gripper', 'allegro'):
+            raise ValueError(f'Unknown end effector: {effector}')
+        self.effector = effector
         self.physics = physics or PHYSICS
         if self.physics not in ('course', 'realistic'):
             raise ValueError(f'Unknown physics settings: {self.physics}')
@@ -304,6 +320,15 @@ class PickNavReachEnv:
             geom(body, 'object', type=mujoco.mjtGeom.mjGEOM_MESH, meshname=f'object_part_{i}', density=0)
 
         robot = mujoco.MjSpec.from_file(str(_course_fetch_urdf()))
+        if self.effector == 'allegro':
+            # Jaws and gripper housing off; gripper_link stays as the flange frame (an adapter plate).
+            for name in ('r_gripper_finger_link', 'l_gripper_finger_link'):
+                robot.delete(robot.body(name))
+            flange = robot.body('gripper_link')
+            for g in list(flange.geoms):
+                robot.delete(g)
+            flange.mass, flange.explicitinertial = .1, True
+            flange.fullinertia, flange.ipos = [1e-4, 1e-4, 1e-4, 0., 0., 0.], [-.14, 0., 0.]
         frame = world.add_frame(pos=self.root_position.tolist())
         frame.attach_body(robot.worldbody.first_body(), 'fetch/', '')
         for g in spec.geoms:
@@ -324,7 +349,20 @@ class PickNavReachEnv:
                 joint.frictionloss, joint.damping = 0., [0., 0., 0.]
                 if 'finger' in joint.name:
                     joint.armature = FINGER_ARMATURE[self.physics]
+        if self.effector == 'allegro':
+            hand = mujoco.MjSpec.from_file(str(ALLEGRO_PATH))
+            for g in hand.geoms:
+                if g.contype or g.conaffinity:          # collision geoms; visual meshes stay non-colliding
+                    g.contype, g.conaffinity, g.condim = ALLEGRO_BITS[0], ALLEGRO_BITS[1], 3
+                    g.friction = [GRIP_FRICTION[self.physics], .005, .0001]
+                    g.solref, g.solimp = list(CONTACT_SOLREF), list(CONTACT_SOLIMP)
+            palm = hand.worldbody.first_body()
+            palm.pos, palm.quat = [0., 0., 0.], [1., 0., 0., 0.]
+            spec.body('fetch/gripper_link').add_frame(pos=list(ALLEGRO_MOUNT)).attach_body(palm, 'hand/', '')
         self.model = spec.compile()
+        if self.effector == 'allegro' and self.physics == 'realistic':
+            self.model.actuator_forcelimited[:] = 1
+            self.model.actuator_forcerange[:] = [-ALLEGRO_TORQUE, ALLEGRO_TORQUE]
         grip = {mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, b) for b in GRIP_BODIES}
         for g in range(self.model.ngeom):
             if self.model.geom_bodyid[g] in grip:
@@ -339,6 +377,7 @@ class PickNavReachEnv:
         self.init_qpos = np.clip(np.zeros(len(self.joint_names)), self.joint_lower, self.joint_upper)
         self.rest_poses = self.init_qpos.copy()
         self._set_qpos(self.init_qpos)
+        self.data.ctrl[:] = self.hand_open
         self.last_target = self.init_qpos.astype(np.float64).copy()
         mujoco.mj_forward(self.model, self.data)
         for _ in range(self.settle_steps):
@@ -364,7 +403,8 @@ class PickNavReachEnv:
         self.arm_slots = np.array([self.joint_name_to_slot[n] for n in (
             'shoulder_pan_joint', 'shoulder_lift_joint', 'upperarm_roll_joint', 'elbow_flex_joint',
             'forearm_roll_joint', 'wrist_flex_joint', 'wrist_roll_joint')], dtype=int)
-        self.finger_slots = np.array([self.joint_name_to_slot[n] for n in ('r_gripper_finger_joint', 'l_gripper_finger_joint')], dtype=int)
+        self.finger_slots = np.array([self.joint_name_to_slot[n] for n in ('r_gripper_finger_joint', 'l_gripper_finger_joint')
+                                      if n in self.joint_name_to_slot], dtype=int)
         self._ee_body = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, 'fetch/gripper_link')
         self.ee_link = self._ee_body
         self._obj_body = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, 'object')
@@ -372,6 +412,12 @@ class PickNavReachEnv:
         self._obj_qpos, self._obj_dof = m.jnt_qposadr[free], m.jnt_dofadr[free]
         self._finger_bodies = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, f'fetch/{n}')
                                for n in ('r_gripper_finger_link', 'l_gripper_finger_link')]
+        # Allegro: hand actuators (position servos on the 16 hand joints) and finger membership.
+        self.hand_low, self.hand_high = m.actuator_ctrlrange[:, 0].copy(), m.actuator_ctrlrange[:, 1].copy()
+        self.hand_open = np.clip(np.zeros(m.nu), self.hand_low, self.hand_high)
+        names = [mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, b) or '' for b in range(m.nbody)]
+        self._hand_finger_of_body = {b: next((i for i, f in enumerate(('ff', 'mf', 'rf', 'th')) if n.startswith(f'hand/{f}_')), None)
+                                     for b, n in enumerate(names) if n.startswith('hand/')}
         # Geom groups by name prefix (robot geoms carry the attach prefix or are unnamed).
         self._group = np.empty(m.ngeom, dtype=object)
         for g in range(m.ngeom):
@@ -380,7 +426,7 @@ class PickNavReachEnv:
         self._robot_bodies = sorted({int(m.geom_bodyid[g]) for g in range(m.ngeom) if self._group[g] == 'robot'})
         # MuJoCo stores mesh vertices in each geom's frame; world vertices use geom poses.
         self._object_geoms = [g for g in range(m.ngeom) if self._group[g] == 'object']
-        self._gain = np.asarray(GAINS)
+        self._gain = np.asarray(GAINS)[:len(self.joint_names)]   # the two jaw joints come last
         limits = np.array([REALISTIC[n] for n in self.joint_names]).T if self.physics == 'realistic' else None
         self._vmax, self._amax, self._effort = limits if limits is not None else (None, None, None)
         self._reference = np.zeros(len(self.joint_names))   # rate-limited velocity reference (realistic)
@@ -423,21 +469,27 @@ class PickNavReachEnv:
 
     @property
     def action_size(self):
-        return len(self.joint_names)
+        return len(self.joint_names) + self.model.nu
 
     @property
     def agent_qpos(self):
         return self.data.qpos[self._qadr].astype(np.float32)
 
-    def step(self, action):
+    def command(self, action):
+        """Set the joint (and hand servo) targets that the following physics ticks track."""
         targets = np.asarray(action, dtype=np.float64)
         if targets.shape != (self.action_size,) or not np.isfinite(targets).all():
             raise ValueError(f'Expected {self.action_size} finite absolute joint targets')
-        targets = targets.copy()
+        targets, hand = targets[:len(self.joint_names)].copy(), targets[len(self.joint_names):]
+        if len(hand):
+            self.data.ctrl[:] = np.clip(hand, self.hand_low, self.hand_high)
         current = self.agent_qpos
         wrap = self.joint_upper == 314
         targets[wrap] = current[wrap] + (targets[wrap] - current[wrap] + np.pi) % (2 * np.pi) - np.pi
         self.last_target = np.clip(targets, self.joint_lower, self.joint_upper)
+
+    def step(self, action):
+        self.command(action)
         for _ in range(self.substeps):
             self._physics_tick()
         self.step_count += 1
@@ -486,16 +538,26 @@ class PickNavReachEnv:
         return float(force[0])
 
     def contacts(self):
-        finger = [False, False]
+        """Robot-object contacts. Bilateral: both jaws, or for the Allegro the thumb and a finger."""
+        finger = [False, False] if self.effector == 'gripper' else [False] * 4
         count, total = 0, 0.
         for i, g1, g2, b1, b2 in self._contacts(self.data, 'robot', 'object'):
             f = self._normal_force(i)
             count += 1
             total += f
-            for k, body in enumerate(self._finger_bodies):
-                if body in (b1, b2) and f > 0:
-                    finger[k] = True
-        return {'bilateral_contact': bool(all(finger)), 'finger_contacts': finger,
+            if f <= 0:
+                continue
+            if self.effector == 'gripper':
+                for k, body in enumerate(self._finger_bodies):
+                    if body in (b1, b2):
+                        finger[k] = True
+            else:
+                for body in (b1, b2):
+                    k = self._hand_finger_of_body.get(body)
+                    if k is not None:
+                        finger[k] = True
+        bilateral = all(finger) if self.effector == 'gripper' else finger[3] and any(finger[:3])
+        return {'bilateral_contact': bool(bilateral), 'finger_contacts': finger,
                 'contact_count': count, 'normal_force': total}
 
     def _object_min_z(self, data=None):

@@ -209,6 +209,9 @@ class HandRig:
     def palm_pose(self):
         return self.data.xpos[self._palm].copy(), self.data.xmat[self._palm].reshape(3, 3).copy()
 
+    def palm_velocity(self):
+        return self.data.qvel[self._wd[:3]].copy()     # the palm origin is the wrist origin
+
     def grasp_point(self):
         position, rotation = self.palm_pose()
         return position + rotation @ GRASP_POINT
@@ -270,3 +273,33 @@ def pregrasp_wrist(rig, yaw, height=.12, offset=(0., 0.)):
     palm_offset = rotation @ mount @ GRASP_POINT
     target = centre + [offset[0], offset[1], height]
     return np.array([*(target - palm_offset), yaw, 0., 0.])
+
+
+SIDE_CLEARANCE = .066   # m: a vertical palm reaches 5.65 cm below its centre, plus margin
+MOUNT = np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]], dtype=float)   # palm frame in the wrist frame
+
+
+def palm_rotation(yaw, pitch, roll):
+    cz, sz, cy, sy, cx, sx = np.cos(yaw), np.sin(yaw), np.cos(pitch), np.sin(pitch), np.cos(roll), np.sin(roll)
+    rz = np.array([[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]])
+    ry = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
+    rx = np.array([[1, 0, 0], [0, cx, -sx], [0, sx, cx]])
+    return rz @ ry @ rx @ MOUNT
+
+
+def wrist_for(point, palm_offset, yaw, pitch=0., roll=0.):
+    """Wrist pose that puts `point` (world) at `palm_offset` in the palm frame."""
+    return np.array([*(np.asarray(point) - palm_rotation(yaw, pitch, roll) @ palm_offset), yaw, pitch, roll])
+
+
+def side_grasp_geometry(rig, yaw, gap=-.005, height_fraction=.5):
+    """Side power grasp with the palm vertical (roll +90 deg), facing the object from wrist yaw `yaw`:
+    the grip point (object centre at mid-height, high enough for the palm to clear the table), the
+    palm depth at contact (object half-width plus the palm surface's 1.1 cm and `gap`) and the top."""
+    points = rig.object_points_world()
+    centre = points.mean(0)
+    top, bottom = points[:, 2].max(), points[:, 2].min()
+    side = np.array([-np.sin(yaw), np.cos(yaw)])                   # palm +x after a +90 deg roll
+    radius = float(np.max(np.abs((points[:, :2] - centre[:2]) @ side)))
+    height = max(bottom + height_fraction * (top - bottom), TABLE_TOP + SIDE_CLEARANCE)
+    return np.array([centre[0], centre[1], height]), radius + .011 + gap, top

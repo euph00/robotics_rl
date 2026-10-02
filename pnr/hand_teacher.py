@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .hand import GRASP_POINT, TABLE_TOP, pregrasp_wrist
+from .hand import GRASP_POINT, TABLE_TOP, palm_rotation, pregrasp_wrist, side_grasp_geometry, wrist_for  # noqa: F401
 from .hand_env import FINGER_STEP, WRIST_STEP
 
 # Closed power grasp: fingers flexed past typical contact, thumb rotated in and flexed.
@@ -111,46 +111,22 @@ def run_teacher(env, object_idx, seed, noise=0., horizon=None, kind='power', **p
     return rows, info
 
 
-SIDE_CLEARANCE = .066   # m: palm half-width 5.65 cm plus margin
-MOUNT = np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]], dtype=float)   # palm frame in the wrist frame (pnr/hand.py)
-
-
-def palm_rotation(yaw, pitch, roll):
-    cz, sz, cy, sy, cx, sx = np.cos(yaw), np.sin(yaw), np.cos(pitch), np.sin(pitch), np.cos(roll), np.sin(roll)
-    rz = np.array([[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]])
-    ry = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
-    rx = np.array([[1, 0, 0], [0, cx, -sx], [0, sx, cx]])
-    return rz @ ry @ rx @ MOUNT
-
-
-def wrist_for(point, palm_offset, yaw, pitch=0., roll=0.):
-    """Wrist pose that puts `point` (world) at `palm_offset` in the palm frame."""
-    return np.array([*(np.asarray(point) - palm_rotation(yaw, pitch, roll) @ palm_offset), yaw, pitch, roll])
-
-
 class SideGraspTeacher(PowerGraspTeacher):
     """Side power grasp for upright objects: palm vertical beside the object (wrist roll 90 deg),
     fingers wrapping horizontally around it, thumb opposite; approach from the side at mid-height."""
 
-    def __init__(self, env, lift=.2, noise=0., rng=None, along=.03, gap=.006, height=.5):
+    def __init__(self, env, lift=.26, noise=0., rng=None, along=.03, gap=-.005, height=.5):
         self.gap, self.height_fraction = gap, height
         super().__init__(env, lift=lift, noise=noise, rng=rng, along=along)
 
     def reset(self):
-        self.phase, self.ticks = 'raise', 0
         rig = self.env.rig
-        points = rig.object_points_world()
-        centre = points.mean(0)
-        self.top, self.bottom = points[:, 2].max(), points[:, 2].min()
         # Approach from the side the hand already faces; the grasp side points at the object.
         self.yaw = float(rig.wrist()[3])
-        side = np.array([-np.sin(self.yaw), np.cos(self.yaw)])        # palm +x after a +90 deg roll
-        radius = float(np.max(np.abs((points[:, :2] - centre[:2]) @ side)))
-        # A vertical palm reaches ~5.7 cm below its centre: grip high enough to clear the table.
-        height = max(self.bottom + self.height_fraction * (self.top - self.bottom), TABLE_TOP + SIDE_CLEARANCE)
-        self.grip_point = np.array([centre[0], centre[1], height])
-        self.contact_depth = radius + .011 + self.gap                  # palm surface 1.1 cm in front of the palm origin
+        self.grip_point, self.contact_depth, self.top = side_grasp_geometry(rig, self.yaw, self.gap, self.height_fraction)
         self.clear_depth = self.contact_depth + .06
+        # From a side pregrasp (palm already vertical beside the object) go straight to lowering.
+        self.phase, self.ticks = ('lower' if abs(rig.wrist()[5] - np.pi / 2) < .05 else 'raise'), 0
 
     def _goal(self, depth, z_shift=0.):
         point = self.grip_point + [0., 0., z_shift]

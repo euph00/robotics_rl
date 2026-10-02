@@ -32,7 +32,7 @@ import mujoco
 import numpy as np
 from gymnasium import spaces
 
-from .hand import GRASP_POINT, TABLE_TOP, HandRig, pregrasp_wrist
+from .hand import GRASP_POINT, TABLE_TOP, HandRig, pregrasp_wrist, side_grasp_geometry, wrist_for
 
 POINTS = 32
 WRIST_STEP = np.array([.01, .01, .01, .05, .05, .05])
@@ -92,6 +92,8 @@ def synthetic_carry(rng, calls):
 # Part-closed power grasp used for curriculum starts (fingers flexed, thumb rotated in).
 CLOSED = np.array([0, 1.4, 1.2, 1.0] * 3 + [1.396, 1.0, 1.0, 1.0])
 SUCCESS_LIFT = .15
+# Upright objects too wide for a top-down claw start from a side pregrasp (palm vertical beside them).
+SIDE_GRASP_OBJECTS = (0,)
 
 
 class HandGraspEnv(gym.Env):
@@ -99,19 +101,24 @@ class HandGraspEnv(gym.Env):
 
     def __init__(self, objects=(14, 5, 2, 7, 10), horizon=120, seed=0, friction=None, finger_kp=None,
                  finger_actions='delta', near_start=0., wrist_lag=.02, carry=False, carry_calls=200,
-                 physics=None, render_mode=None):
+                 physics=None, render_mode=None, side_objects=SIDE_GRASP_OBJECTS, robot='rig'):
         if finger_actions not in ('delta', 'absolute'):
             raise ValueError('finger_actions must be delta or absolute')
         self.finger_actions = finger_actions
         # Training curriculum: this fraction of episodes starts with the palm just above the object
         # and the fingers part-closed, so holding and lifting are experienced early. Evaluate with 0.
         self.near_start = float(near_start)
+        self.side_objects = set(side_objects)
         self.carry, self.carry_calls = bool(carry), int(carry_calls)
         self.wrist_lag = np.array([wrist_lag] * 3 + [.1] * 3)
         self.objects = list(objects)
         self.horizon = int(horizon)
         self.render_mode = render_mode
-        self.rigs = {idx: HandRig(idx, physics=physics) for idx in self.objects}
+        if robot == 'fetch':        # the hand on the Fetch's arm at the course table (pnr/fetch_hand.py)
+            from .fetch_hand import FetchHandRig
+            self.rigs = {idx: FetchHandRig(idx, physics=physics) for idx in self.objects}
+        else:
+            self.rigs = {idx: HandRig(idx, physics=physics) for idx in self.objects}
         for rig in self.rigs.values():
             m = rig.model
             if finger_kp is not None:
@@ -166,13 +173,20 @@ class HandGraspEnv(gym.Env):
         centre = rig.object_pose()[0]
         clearance = rng.uniform(.03, .06)    # palm surface above the object's top
         height = (top + .011 + clearance - .05) - centre[2]
-        wrist = pregrasp_wrist(rig, rng.uniform(-np.pi, np.pi), height=height, offset=rng.uniform(-.02, .02, 2))
+        if idx in self.side_objects:
+            # Palm vertical, facing the object from a random side, 4-8 cm out at about mid-height.
+            yaw = rng.uniform(-np.pi, np.pi)
+            grip, depth, _ = side_grasp_geometry(rig, yaw)
+            offset = [depth + rng.uniform(.04, .08), rng.uniform(-.01, .01), .03 + rng.uniform(-.01, .01)]
+            wrist = wrist_for(grip + [0., 0., rng.uniform(-.01, .01)], np.array(offset), yaw, 0., np.pi / 2)
+        else:
+            wrist = pregrasp_wrist(rig, rng.uniform(-np.pi, np.pi), height=height, offset=rng.uniform(-.02, .02, 2))
         rig.set_wrist(wrist)
         self.wrist_home = wrist.copy()
         self.finger_target = rig.finger_open.copy()
         rig.data.ctrl[:] = self.finger_target
         mujoco.mj_forward(rig.model, d)
-        if rng.random() < self.near_start:
+        if rng.random() < self.near_start and idx not in self.side_objects:
             low = (top + .011 + rng.uniform(.0, .015) - .05) - centre[2]
             wrist = pregrasp_wrist(rig, wrist[3], height=low, offset=rng.uniform(-.015, .015, 2))
             rig.set_wrist(wrist)
@@ -230,6 +244,8 @@ class HandGraspEnv(gym.Env):
                 self.phase, self.carry_step = 'carry', 0
                 generate = synthetic_carry_realistic if rig.physics == 'realistic' else synthetic_carry
                 self.carry_path = generate(self.np_random, self.carry_calls)
+                if hasattr(rig, 'begin_carry'):     # the Fetch drives the path with its base
+                    self.carry_path = rig.begin_carry(self.carry_path)
                 self.carry_origin = rig.wrist_target.copy()
         info.update(phase=self.phase, carried=self.carried)
         done_carry = self.phase == 'carry' and self.carry_step >= self.carry_calls
@@ -283,7 +299,7 @@ class HandGraspEnv(gym.Env):
             [anchor[2] - TABLE_TOP],
             self.previous_action,
             [float(getattr(self, 'phase', 'grasp') == 'carry')],
-            local(rig.data.qvel[rig._wd[:3]]) * .5])
+            local(rig.palm_velocity()) * .5])
         return observation.astype(np.float32)
 
     def render(self):

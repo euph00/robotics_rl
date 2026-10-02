@@ -457,6 +457,7 @@ def training_curves(runs_root, curated, directories, limit=4):
                        "started_at": status.get("started_at"), "updated_at": status.get("updated_at"),
                        "physics": config.get("physics"), "init_from": config.get("init_from"),
                        "curriculum": config.get("curriculum"), "carry": config.get("carry"), "points": points,
+                       "imitation": bool(config.get("bc_demos")), "robot": config.get("robot") or "rig",
                        "stages": stages})
     return curves
 

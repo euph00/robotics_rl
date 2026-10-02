@@ -141,7 +141,8 @@ svg .crosshair { stroke: var(--muted); stroke-width: 1; }
              border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.15); pointer-events: none; max-width: 280px; }
 .obj-title { margin-top: 8px; }
 .obj-bars { display: grid; gap: 3px; margin-top: 4px; }
-.obj-bar { display: grid; grid-template-columns: 52px 1fr 38px; align-items: center; gap: 8px; font-size: 12px; }
+.obj-bar { display: grid; grid-template-columns: 64px 1fr 38px; align-items: center; gap: 8px; font-size: 12px; }
+.obj-name { white-space: nowrap; }
 .obj-track { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
 .obj-fill { display: block; height: 100%; background: var(--series-lift); border-radius: 4px; }
 .obj-value { text-align: right; color: var(--muted); }

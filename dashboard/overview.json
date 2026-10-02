@@ -346,5 +346,8 @@
       "run": "mj_recordings_planner01",
       "label": "Planner only · validation maze 8 · banana"
     }
+  ],
+  "training": [
+    "hand_r_bc03"
   ]
 }
