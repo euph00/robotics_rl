@@ -60,6 +60,40 @@ CURRICULA = {'easy-first': [
     {'objects': [14, 5, 2, 7, 10], 'near_start': .2, 'advance_at': None, 'max_steps': None}]}
 
 
+def behaviour_clone(model, venv, demos, updates, log_std, device):
+    """Fit the PPO actor's mean to teacher actions; observation statistics come from the demonstrations."""
+    import torch
+    data = np.load(demos)
+    observations, actions = data['observations'], data['actions']
+    venv.obs_rms.mean[:], venv.obs_rms.var[:] = observations.mean(0), observations.var(0) + 1e-6
+    venv.obs_rms.count = len(observations)
+    obs = torch.as_tensor(np.clip((observations - venv.obs_rms.mean) / np.sqrt(venv.obs_rms.var + venv.epsilon), -10, 10),
+                          dtype=torch.float32, device=device)
+    target = torch.as_tensor(actions, dtype=torch.float32, device=device)
+    policy = model.policy
+    params = list(policy.mlp_extractor.policy_net.parameters()) + list(policy.action_net.parameters())
+    optimizer = torch.optim.Adam(params, lr=3e-4)
+    rng = np.random.default_rng(0)
+    losses = []
+    for update in range(updates):
+        batch = torch.as_tensor(rng.integers(0, len(obs), 1024), device=device)
+        mean = policy.action_net(policy.mlp_extractor.forward_actor(policy.extract_features(obs[batch], policy.pi_features_extractor)))
+        loss = ((mean - target[batch]) ** 2).mean()
+        optimizer.zero_grad(); loss.backward(); optimizer.step()
+        losses.append(float(loss))
+    with torch.no_grad():
+        policy.log_std.fill_(log_std)
+    return {'examples': len(obs), 'updates': updates, 'final_loss': float(np.mean(losses[-200:]))}
+
+
+def set_actor_trainable(model, trainable):
+    policy = model.policy
+    for module in (policy.mlp_extractor.policy_net, policy.action_net):
+        for parameter in module.parameters():
+            parameter.requires_grad_(trainable)
+    policy.log_std.requires_grad_(trainable)
+
+
 def warm_start(model, venv, source):
     """Copy a PPO checkpoint's weights and normalisation; new trailing inputs start at zero weight."""
     import pickle
@@ -106,6 +140,10 @@ def main():
     parser.add_argument('--carry-calls', type=int, default=200)
     parser.add_argument('--init-from', help='run/step of a PPO checkpoint to warm-start from (extra inputs zero-initialised)')
     parser.add_argument('--curriculum', choices=('easy-first',), help='Staged training distribution (see CURRICULA)')
+    parser.add_argument('--bc-demos', type=Path, help='Teacher demonstrations (scripts/hand_teacher_demos.py) for behaviour cloning')
+    parser.add_argument('--bc-updates', type=int, default=20000)
+    parser.add_argument('--bc-log-std', type=float, default=-1.2, help='Exploration log-std after cloning')
+    parser.add_argument('--critic-warmup', type=int, default=0, help='Environment steps with the actor frozen (value warm-up)')
     parser.add_argument('--gradient-steps', type=int, default=8, help='Updates per vectorised step')
     parser.add_argument('--batch-size', type=int, default=512)
     parser.add_argument('--learning-rate', type=float, default=3e-4)
@@ -125,7 +163,7 @@ def main():
         parser.error(f'{out} exists')
     logger = RunLogger(args.run_id, root=ROOT / 'runs', kind='train', name=f'Allegro grasp {args.algo.upper()} · {args.run_id}',
                        summary='Grasp-lift-hold on the hand rig', budget=args.steps, algorithm=args.algo.upper(), skill='hand_grasp')
-    atomic_json(out / 'config.json', dict(vars(args), command=sys.argv))
+    atomic_json(out / 'config.json', dict({k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}, command=sys.argv))
     venv = VecMonitor(SubprocVecEnv([make_env(i, args) for i in range(args.envs)], start_method='spawn'))
     eval_env = make_env(10_000, args, evaluation=True)()
     normalize = lambda o: o
@@ -139,6 +177,12 @@ def main():
                     seed=args.seed, device=args.device, verbose=0)
         if args.init_from:
             warm_start(model, venv, args.init_from)
+        if args.bc_demos:
+            clone = behaviour_clone(model, venv, args.bc_demos, args.bc_updates, args.bc_log_std, model.device)
+            logger.event('Behaviour cloning complete', **clone)
+            print(json.dumps({'behaviour_cloning': clone}), flush=True)
+        if args.critic_warmup:
+            set_actor_trainable(model, False)
     else:
         model = SAC('MlpPolicy', venv, learning_rate=args.learning_rate, buffer_size=2_000_000, batch_size=args.batch_size,
                     learning_starts=20_000, gamma=.99, tau=.005, train_freq=1, gradient_steps=args.gradient_steps,
@@ -159,39 +203,51 @@ def main():
             if stages:
                 apply_stage(0)
 
+
+        def evaluate_and_save(self):
+            rows = evaluate(self.model, eval_env, args, rng_seed=7_000, normalize=normalize)
+            per_object = {str(i): float(np.mean([r['success'] for r in rows if r['object_idx'] == i])) for i in args.objects}
+            metrics = dict(scope='hand_grasp', metric_source='evaluation',
+                           success_rate=float(np.mean([r['success'] for r in rows])),
+                           ever_success_rate=float(np.mean([r['ever_success'] for r in rows])),
+                           peak_lift=float(np.mean([r['peak_lift'] for r in rows])),
+                           max_penetration_mm=float(max(r['max_penetration_mm'] for r in rows)),
+                           per_object=per_object,
+                           carry_entered=float(np.mean([r['entered_carry'] for r in rows])),
+                           carry_success_rate=float(np.mean([r['carried'] for r in rows])),
+                           train_success_rate=float(np.mean(self.recent[-200:])) if self.recent else 0.,
+                           steps_per_second=self.num_timesteps / (time.monotonic() - self.started))
+            if stages:
+                stage = stages[self.stage]
+                stage_success = float(np.mean([r['success'] for r in rows if r['object_idx'] in stage['objects']]))
+                metrics.update(curriculum_stage=self.stage, stage_success_rate=stage_success)
+                elapsed = self.num_timesteps - self.stage_start
+                if self.stage + 1 < len(stages) and (
+                        (stage['advance_at'] is not None and stage_success >= stage['advance_at'])
+                        or (stage['max_steps'] is not None and elapsed >= stage['max_steps'])):
+                    self.stage, self.stage_start = self.stage + 1, self.num_timesteps
+                    apply_stage(self.stage)
+            logger.metric(transitions=self.num_timesteps, **metrics)
+            print(json.dumps(dict(steps=self.num_timesteps, **metrics)), flush=True)
+            self.model.save(out / 'checkpoints' / f'step_{self.num_timesteps:08d}')
+            if isinstance(venv, VecNormalize):
+                venv.save(str(out / 'checkpoints' / f'step_{self.num_timesteps:08d}_vecnormalize.pkl'))
+
+        def _on_training_start(self):
+            if args.bc_demos:        # the imitation-only policy, before any RL update
+                self.evaluate_and_save()
+
         def _on_step(self):
+            if args.critic_warmup and self.num_timesteps >= args.critic_warmup and not getattr(self, 'unfrozen', False):
+                set_actor_trainable(self.model, True)
+                self.unfrozen = True
+                logger.event(f'Actor unfrozen after {self.num_timesteps} steps of value warm-up')
             for info in self.locals['infos']:
                 if 'episode' in info:
                     self.recent.append(float(info.get('ever_success', False)))
             if self.num_timesteps >= self.next_eval:
                 self.next_eval += args.eval_every
-                rows = evaluate(self.model, eval_env, args, rng_seed=7_000, normalize=normalize)
-                per_object = {str(i): float(np.mean([r['success'] for r in rows if r['object_idx'] == i])) for i in args.objects}
-                metrics = dict(scope='hand_grasp', metric_source='evaluation',
-                               success_rate=float(np.mean([r['success'] for r in rows])),
-                               ever_success_rate=float(np.mean([r['ever_success'] for r in rows])),
-                               peak_lift=float(np.mean([r['peak_lift'] for r in rows])),
-                               max_penetration_mm=float(max(r['max_penetration_mm'] for r in rows)),
-                               per_object=per_object,
-                               carry_entered=float(np.mean([r['entered_carry'] for r in rows])),
-                               carry_success_rate=float(np.mean([r['carried'] for r in rows])),
-                               train_success_rate=float(np.mean(self.recent[-200:])) if self.recent else 0.,
-                               steps_per_second=self.num_timesteps / (time.monotonic() - self.started))
-                if stages:
-                    stage = stages[self.stage]
-                    stage_success = float(np.mean([r['success'] for r in rows if r['object_idx'] in stage['objects']]))
-                    metrics.update(curriculum_stage=self.stage, stage_success_rate=stage_success)
-                    elapsed = self.num_timesteps - self.stage_start
-                    if self.stage + 1 < len(stages) and (
-                            (stage['advance_at'] is not None and stage_success >= stage['advance_at'])
-                            or (stage['max_steps'] is not None and elapsed >= stage['max_steps'])):
-                        self.stage, self.stage_start = self.stage + 1, self.num_timesteps
-                        apply_stage(self.stage)
-                logger.metric(transitions=self.num_timesteps, **metrics)
-                print(json.dumps(dict(steps=self.num_timesteps, **metrics)), flush=True)
-                self.model.save(out / 'checkpoints' / f'step_{self.num_timesteps:08d}')
-                if isinstance(venv, VecNormalize):
-                    venv.save(str(out / 'checkpoints' / f'step_{self.num_timesteps:08d}_vecnormalize.pkl'))
+                self.evaluate_and_save()
             return True
 
     try:
