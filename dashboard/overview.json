@@ -335,6 +335,10 @@
   ],
   "recordings": [
     {
+      "run": "hand_task_recordings01",
+      "label": "Allegro on the Fetch · full task · scripted hand grasp, planned carry and reach · mug delivered (course seed 0)"
+    },
+    {
       "run": "hand_recordings01",
       "label": "Allegro hand · imitation + RL (hand_r_bc03, 6M steps) · grasp, lift 15 cm, realistic base carry"
     },

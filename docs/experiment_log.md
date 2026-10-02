@@ -203,3 +203,26 @@ Later on 2026-10-02:
   through 9M; keeping the policy near a 14% imitator holds it back. Stopped.
 - Next: `hand_r_all5_01` adds the foam brick and banana (no teacher for these; warm start from
   bc03 at 6M, PPO only).
+
+## 2026-10-02: wide objects, the hand on the Fetch, first full task with the hand
+
+- Five objects (`hand_r_all5_01`, warm start from bc03, PPO only): 72.5% at 1–2M steps (foam brick
+  75%, banana 0–13%, can/apple/mug kept). Stopped for CPU.
+- Why the gripper fails (planner diagnosis, 3 trials each): bowl, plate, marker give no antipodal
+  pair within its 1.2–9.8 cm width and 3.7 cm table-clearance filters; bleach bottle (lying) 24
+  pairs, none feasible; master chef can 2/3 at the aperture limit.
+- Side power grasp on the master chef can: the palm stopped 6 mm short, the fingertips (7–8 N
+  each, thumb ~15 N) slid up the can, its weight loading the fingers' soft sideways joints. Palm
+  pressed on (gap −5 mm): lifts 13–15 cm; finger servo kp 3 instead of Menagerie's 1: 0/6. From
+  a side pregrasp with a 26 cm teacher lift: 12/24 carried. Demos: 66 carried of 288 noisy
+  episodes (`runs/hand_demos_chefcan01`).
+- Bleach bottle lying on its side, top-down claw, clearance × `along` sweep: 0/36.
+- Allegro on the Fetch (dorsal mount on the wrist flange, palm frame = gripper_link). The bc03 policy
+  (6M) unchanged: rig 22/24 carried, Fetch 3/24 (lifted 7/24). Holding is exact, but a 1 cm palm
+  move takes ~18 decisions because each joint is rate-limited separately (the same motor law as
+  the gripper systems), and finger contact deflects the wrist by ~0.05 rad.
+- Full task with the hand: scripted grasp, then planned carry and reach. Mug, course seed 0:
+  delivered in 16,095 ticks. Soup can: the scripted grasp knocks it over on the Fetch (wrist
+  deflection). The planner now picks the pregrasp yaw across the object's narrow axis, so the
+  hand has no wrist rotation to make.
+

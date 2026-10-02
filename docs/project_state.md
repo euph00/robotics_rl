@@ -77,9 +77,28 @@ carry while the policy keeps controlling the fingers.
   reward exploit (the policy hovered just under the 15 cm success height because hovering paid
   more than the carry phase) and letting PPO move away from the imitator (keeping it close
   with interleaved cloning and a KL limit held it at 14–33%). Videos are on the dashboard.
-- **Next:** all five objects (`hand_r_all5_01`, warm-started from bc03, PPO only for the foam
-  brick and banana), then the objects the gripper fails, then the hand on the Fetch for the
-  full task and a harder task where the two end effectors differ.
+- **Wide upright objects (side grasp).** The master chef can (10 cm, 1.05 kg) is at the gripper's
+  aperture limit (2/6). A top-down claw cannot hold it; a side power grasp (palm vertical against
+  the can, fingers wrapped round it) can, from a side pregrasp: the scripted version carries 12 of
+  24. With the palm short of the can, the 0.7 N m fingers slide up it (their soft sideways
+  joints carry the weight); pressing the palm on transfers the load to palm friction.
+  `hand_r_side01` trains imitation + PPO on soup can, apple, mug and master chef can.
+- **Objects neither end effector picks yet.** Bleach bottle (lies on its side: 11.5 cm wide,
+  0.97 kg): top-down claw 0/36 over nine settings, the fingertips cannot get below its widest
+  line. Bowl, plate and large marker: the planner's grasp filter rejects them (no antipodal pair
+  1.2–9.8 cm wide, at least 3.7 cm above the table). For the marker and plate this is a real
+  limit of a top-down parallel gripper; the bowl could be grasped by its rim with a better planner.
+- **On the Fetch.** `effector='allegro'` mounts the hand on the wrist flange in place of the
+  gripper; `pnr/fetch_hand.py` runs the hand task on the real arm and base, with the same
+  observation and actions as the rig. The rig policy transfers poorly (3/24 carried against 22/24
+  on the rig): the arm follows small wrist targets in ~0.4 s, not ~3 ticks, and contact
+  pushes its wrist off. `hand_f_01` fine-tunes it on the Fetch.
+- **Full task with the hand** (`pnr/hand_system.py`): planned approach and pregrasp, then the
+  hand policy grasps and lifts, then the planner's carry posture, A* carry, reach and hold with
+  the grip frozen. First success: scripted grasp of the mug, course seed 0, 16.1k ticks (video
+  on the dashboard).
+- **Next:** the Fetch-trained hand policy in the full task on the evaluation sets; the
+  harder task where the two end effectors differ (wide and heavy objects).
 
 ## How we evaluate
 
