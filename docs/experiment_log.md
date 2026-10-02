@@ -226,3 +226,30 @@ Later on 2026-10-02:
   deflection). The planner now picks the pregrasp yaw across the object's narrow axis, so the
   hand has no wrist rotation to make.
 
+## 2026-10-02 (evening): full-task comparison with the hand, randomised object starts
+
+- Every course and bank scene starts the object in the same pose, so a grasp stage is one
+  deterministic attempt per object (the first hand evaluation, 60 course cases: scripted hand
+  60/60 at planner speed 1 but 20/60 at speed 3, RL hand 0/60 then 40/60; all-or-nothing per object).
+  `--random-object-pose` (eval.py, eval_hand.py) seeds an object offset (x ±8 cm, y ±12 cm) and
+  yaw per case; every system sees the same starts.
+- Course seeds × soup can/apple/mug, randomised starts, planner speeds 3 (holding 2), realistic physics:
+
+  | System | Delivered /60 | Within 15k ticks | Median ticks |
+  |---|---:|---:|---:|
+  | Planner + gripper | **57** | 1 | 17.9k |
+  | Planner + scripted Allegro grasp | 40 | **27** | 14.5k |
+  | Planner + RL Allegro grasp (`hand_f_02`, 1M) | 31 | 17 | 14.8k |
+
+  The hand systems are faster (their grasp takes fewer ticks than the gripper's descend, close,
+  lift and validate) but fail more grasps (19 and 27 of 60); failed cases have slightly larger
+  object offsets (9.5 vs 8.3 cm mean).
+- Fixes found on the way: the RL grasp drifted 28 cm and tilted to -82 deg pitch, where the rig's
+  yaw/pitch/roll reading from the arm jumped (gimbal) and no carry posture was reachable: wrist
+  angles now by damped least squares near the target, the grasp works in a box (±8 cm, ±0.5 rad)
+  around the pregrasp, and an unreachable carry posture is retried with the palm levelled. The
+  hand holds the object 10–19 cm higher than the gripper: the arm now corrects what the base and
+  torso cannot at the reach.
+- Chef can specialist (`hand_r_chefcan01`): 88% carried on the rig at 9M (teacher 50%, gripper
+  2/6); 2/8 unchanged on the Fetch, 46% after 1M steps of Fetch fine-tuning (`hand_f_chefcan01`).
+

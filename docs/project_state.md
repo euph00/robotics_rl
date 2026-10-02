@@ -93,12 +93,14 @@ carry while the policy keeps controlling the fingers.
   observation and actions as the rig. The rig policy transfers poorly (3/24 carried against 22/24
   on the rig): the arm follows small wrist targets in ~0.4 s, not ~3 ticks, and contact
   pushes its wrist off. `hand_f_01` fine-tunes it on the Fetch.
-- **Full task with the hand** (`pnr/hand_system.py`): planned approach and pregrasp, then the
-  hand policy grasps and lifts, then the planner's carry posture, A* carry, reach and hold with
-  the grip frozen. First success: scripted grasp of the mug, course seed 0, 16.1k ticks (video
-  on the dashboard).
-- **Next:** the Fetch-trained hand policy in the full task on the evaluation sets; the
-  harder task where the two end effectors differ (wide and heavy objects).
+- **Full task with the hand** (`pnr/hand_system.py`, `scripts/eval_hand.py`): planned approach and
+  pregrasp, then the hand policy grasps and lifts inside a box around the pregrasp, then the
+  planner's carry posture, A* carry and reach (the arm corrects the last height error) with the
+  grip frozen. Course seeds × soup can/apple/mug with randomised object starts (60 cases):
+  planner + gripper 57 delivered (1 within 15k ticks), planner + scripted hand 40 (27), planner +
+  RL hand 31 (17). The hand is faster; its grasp is not yet as reliable on the real arm.
+- **Next:** more Fetch training for the hand (soup can/apple/mug and the chef can), then the
+  harder task where the two end effectors differ (wide and heavy objects, randomised starts).
 
 ## How we evaluate
 
