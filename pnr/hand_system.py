@@ -6,7 +6,8 @@ grasps and lifts through FetchHandRig on this task environment, until it has hel
 with thumb and finger for HOLD_TO_CARRY decisions. From there the hand's servo targets stay
 fixed while the planner's carry posture, A* maze carry, reach and final hold run unchanged.
 Every hand decision goes through the controller's tick, so contact counters, lift timing and
-recordings see it.
+recordings see it. After the grasp the hand policy keeps controlling the fingers (its wrist actions
+ignored) while the planner moves the arm and base, as in the carry phase it was trained on.
 """
 from __future__ import annotations
 
@@ -18,7 +19,7 @@ from scipy.spatial.transform import Rotation
 
 from .fetch_hand import FetchHandRig
 from .hand import pregrasp_wrist, side_grasp_geometry, wrist_for
-from .hand_env import SIDE_GRASP_OBJECTS, HandGraspEnv
+from .hand_env import FINGER_STEP, SIDE_GRASP_OBJECTS, HandGraspEnv
 from .hand_teacher import narrow_axis_yaw
 from .reference import ReferenceController
 
@@ -62,6 +63,7 @@ class HandPlannerSystem(ReferenceController):
             raise ValueError('HandPlannerSystem needs an environment with effector="allegro"')
         super().__init__(env, **kwargs)
         self.policy, self.horizon, self.clearance = policy, int(horizon), float(clearance)
+        self._holding = None          # the grasp's HandGraspEnv once it holds the object
         self.wrist_box = wrist_box
         self.rig = None
 
@@ -85,7 +87,10 @@ class HandPlannerSystem(ReferenceController):
         self.move_base([-.78, 0.], stage='approach')
         self.rig = FetchHandRig(env=self.env, stepper=lambda action: self.tick(action, 'grasp'))
         wrist = self.pregrasp = self.hand_pregrasp()
-        self.move_joint(self.rig.wrist_to_joints(wrist), stage='pregrasp', include_object=True)
+        if self.env.object_idx in SIDE_GRASP_OBJECTS:     # come down beside it from above, as the side teacher
+            above = wrist + [0., 0., .15, 0., 0., 0.]
+            self.move_joint(self.rig.wrist_to_joints(above, collision_free=True), stage='pregrasp', include_object=True)
+        self.move_joint(self.rig.wrist_to_joints(wrist, collision_free=True), stage='pregrasp', include_object=True)
         self.stage_results['hand_pregrasp'] = {'wrist': wrist.tolist(), 'reached': self.rig.wrist().tolist()}
         return wrist
 
@@ -101,14 +106,30 @@ class HandPlannerSystem(ReferenceController):
             if task.phase == 'carry' or terminated:
                 break
         held = task.phase == 'carry'
+        if held:
+            self._holding = task
         self.stage_results['hand_grasp'] = {'policy': self.policy.source, 'decisions': decisions, 'held': held,
                                             'lift_m': info.get('lift'), 'contacts': info.get('contacts'),
                                             'palm_contact': info.get('palm_contact')}
         return held
 
+    def tick(self, target, stage=None):
+        """Planned ticks after the grasp: the hand policy sets the finger targets from its observation."""
+        task = self._holding
+        if task is not None and len(target) == len(self.env.joint_names):
+            action = np.clip(self.policy.act(task._observation()), -1, 1)
+            task.finger_target = np.clip(task.finger_target + action[6:] * FINGER_STEP, self.env.hand_low, self.env.hand_high)
+            task.previous_action = action
+            target = np.r_[target, task.finger_target]
+        return super().tick(target, stage)
+
     def prepare_carry(self):
         """The planner's retreat and carry posture; if the grasp ended at a tilt the tucked posture cannot
-        take, level the palm back to the pregrasp's pitch and roll (keeping its yaw) and try again."""
+        take, level the palm back to the pregrasp's pitch and roll (keeping its yaw) and try again.
+        Side grasps instead translate the hand up and back in a straight line without turning it: the
+        planner's joint-space tuck swings and turns the object, which shakes a heavy one loose."""
+        if self.env.object_idx in SIDE_GRASP_OBJECTS:
+            return self._side_carry_posture()
         try:
             return super().prepare_carry()
         except ValueError:
@@ -136,6 +157,22 @@ class HandPlannerSystem(ReferenceController):
             self.hold(60, 'reach')
             info = self.env.evaluate()
         return info
+
+    def _side_carry_posture(self, steps=4):
+        """Retreat, then raise the hand straight up to carry height without turning or folding it (with
+        the palm vertical the arm cannot fold the hand much closer to the base)."""
+        self.planner.set_payload()
+        self.move_base([-1.25, 0], stage='retreat', step_size=.006)
+        start, orientation = self.planner.ee_pose()
+        goal = np.array([start[0], start[1], 1.05])
+        for t in np.linspace(0, 1, steps + 1)[1:]:
+            self.move_ee(start + (goal - start) * t, orientation, 'carry_posture', step_size=.006)
+        self.hold(50, 'hold')
+        self.planner.set_payload()
+        self.stage_results['carry_posture'] = {'base_position': self.base_position().tolist(), 'side_grasp': True,
+                                               'ee_position': self.planner.ee_pose()[0].tolist(),
+                                               'object_position': self.env.observe()['object_pos'].tolist()}
+        return self.env.observe()
 
     def run(self, stop_after='reach'):
         result = {'status': 'running', 'success': False, 'effector': 'allegro'}

@@ -21,6 +21,9 @@ from .planning import JointPlanner
 BASE_XY = np.array([-.78, 0.])          # the planner's table approach position (world)
 READY = np.array([-.15, 0., TABLE_TOP + .3, 0., 0., 0.])   # parked wrist: palm down over the table
 IK_DAMPING = .05
+# Side grasps: the forearm runs level with the palm, so grip at least this high above the table (it
+# clears the table edge down to ~9 cm; the rig's palm alone clears at 6.6 cm).
+SIDE_CLEARANCE = .10
 
 
 def wrist_angles(rotation, near):
@@ -62,6 +65,7 @@ class FetchHandRig:
         self.object_extents = np.asarray(mesh.extents, dtype=np.float64)
         self._index()
         self.carrying = False
+        self.side_clearance = SIDE_CLEARANCE
         if self.bookkeeping:
             self.rest_height = float(env.initial_object_pos[2])
             self.wrist_target = np.zeros(6)
@@ -82,15 +86,34 @@ class FetchHandRig:
         self.rest_height = self.object_pose()[0][2]
         self.settled = self.snapshot()
 
-    def wrist_to_joints(self, wrist):
+    def wrist_to_joints(self, wrist, collision_free=False):
         """Arm joint targets (full Fetch vector) that put the palm at rig wrist pose `wrist`: planner IK
-        (torso included), refined by damped least squares. Raises ValueError if unreachable."""
+        (torso included) refined by damped least squares. With `collision_free`, IK also starts from the
+        initial arm pose and random arm poses until the arm clears the table, maze and object (the seed
+        picks the IK branch). Raises ValueError if unreachable."""
         position, rotation = self._flange_target(np.asarray(wrist, dtype=float))
-        q = self.planner.ik(position, Rotation.from_matrix(rotation).as_quat(), tolerance=.03)
-        with self.env.query():
-            self.env.set_joint_positions(q)
-            q[self._arm] = self._arm_step(np.asarray(wrist, dtype=float), iterations=30, start=q)
-        return q
+        quaternion = Rotation.from_matrix(rotation).as_quat()
+        current = self.env.agent_qpos.astype(np.float64)
+        seeds = [current, np.r_[current[:3], self.env.init_qpos[3:]]]
+        rng = np.random.default_rng(0)
+        if collision_free:
+            for _ in range(8):
+                seed = current.copy()
+                seed[self.planner.active] = rng.uniform(self.planner.lower, self.planner.upper)
+                seeds.append(seed)
+        error = None
+        for seed in seeds:
+            try:
+                q = self.planner.ik(position, quaternion, seed=seed, tolerance=.03)
+            except ValueError as exc:
+                error = exc
+                continue
+            with self.env.query():
+                self.env.set_joint_positions(q)
+                q[self._arm] = self._arm_step(np.asarray(wrist, dtype=float), iterations=30, start=q)
+            if not collision_free or self.planner.collision_free(q, include_object=True):
+                return q
+        raise error or ValueError('No collision-free IK solution for the hand pose')
 
     def _index(self):
         m, env = self.model, self.env
@@ -113,18 +136,17 @@ class FetchHandRig:
         return wrist[:3] - rotation @ np.asarray(ALLEGRO_MOUNT), rotation
 
     def set_wrist(self, wrist):
-        """Place the arm (planner IK, torso included) so the palm is at the rig wrist pose `wrist`."""
-        position, rotation = self._flange_target(np.asarray(wrist, dtype=float))
+        """Place the arm so the palm is at the rig wrist pose `wrist`: a collision-free IK solution when
+        there is one (as the task's planned pregrasp uses), else the planner's nearest."""
+        wrist = np.asarray(wrist, dtype=float)
         try:
-            q = self.planner.ik(position, Rotation.from_matrix(rotation).as_quat(), tolerance=.03)
+            q = self.wrist_to_joints(wrist, collision_free=True)
         except ValueError:
             q = self.env.agent_qpos.astype(np.float64)
             q[self.planner.active] = np.clip(q[self.planner.active], self.planner.lower, self.planner.upper)
         self.env._set_qpos(q)
-        q[self._arm] = self._arm_step(np.asarray(wrist, dtype=float), iterations=30)   # refine the planner's solution
-        self.env._set_qpos(q)
         self.env.last_target = q.copy()
-        self.wrist_target = np.asarray(wrist, dtype=float).copy()
+        self.wrist_target = wrist.copy()
         self.carrying = False
 
     def _arm_step(self, wrist, iterations=3, start=None):

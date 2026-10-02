@@ -301,5 +301,6 @@ def side_grasp_geometry(rig, yaw, gap=-.005, height_fraction=.5):
     top, bottom = points[:, 2].max(), points[:, 2].min()
     side = np.array([-np.sin(yaw), np.cos(yaw)])                   # palm +x after a +90 deg roll
     radius = float(np.max(np.abs((points[:, :2] - centre[:2]) @ side)))
-    height = max(bottom + height_fraction * (top - bottom), TABLE_TOP + SIDE_CLEARANCE)
+    # The rig's palm clears the table at SIDE_CLEARANCE; on the Fetch the forearm, level with the palm, needs more.
+    height = max(bottom + height_fraction * (top - bottom), TABLE_TOP + getattr(rig, 'side_clearance', SIDE_CLEARANCE))
     return np.array([centre[0], centre[1], height]), radius + .011 + gap, top
