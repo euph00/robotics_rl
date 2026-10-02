@@ -37,7 +37,7 @@ def record_case(case, execution, output, every, width, height, video=True):
             _original(self, *args, **kwargs)
             current.setdefault(type(self).__name__, self)
         cls.__init__ = init
-    native = E.PickNavReachEnv(**case['env_kwargs'])
+    native = E.PickNavReachEnv(**case['env_kwargs'], physics=execution['physics'])
     step, frames, trajectory = native.step, [], []
 
     def recording_step(action):

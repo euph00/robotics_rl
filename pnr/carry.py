@@ -48,6 +48,9 @@ def table_occupancy(bounds):
             & (y[:, None] + .5 > low[1]) & (y[:, None] - .5 < high[1])).astype(np.float32)
 
 
+BASE_ACCELERATION = .75   # m/s^2, the realistic base limit (pnr/env.py)
+
+
 class CarrySkillEnv(gym.Env):
     metadata = {'render_modes': ['rgb_array'], 'render_fps': 24}
     goal_scale = 20.
@@ -283,9 +286,19 @@ class CarrySkillEnv(gym.Env):
         before = self.native.step_count
         collision = False
         failure_reason = None
+        if getattr(self.native, 'physics', 'course') == 'realistic':
+            # Rate-limited base: treat the action as a velocity (delta per decision) and hold the target
+            # at the braking distance for that velocity, so the servo settles at it. A stop point 7.5 cm
+            # ahead would cap the speed near 0.3 m/s; an integrated reference would overshoot corners.
+            velocity = delta / (self.repeat * self.native.substeps * self.native.physics_timestep)
+            speed = float(np.linalg.norm(velocity))
+            lead = velocity * (self.repeat * self.native.substeps * self.native.physics_timestep + speed / (2 * BASE_ACCELERATION))
+            waypoints = [base_q + lead] * self.repeat
+        else:
+            waypoints = [base_q + delta * ((i + 1) / self.repeat) for i in range(self.repeat)]
         for i in range(self.repeat):
             target = self._frozen_target.copy()
-            target[:2] = base_q + delta * ((i + 1) / self.repeat)
+            target[:2] = waypoints[i]
             target[self.native.finger_slots] = 0.
             obs, info = self.native.step(target)
             self._missing_contact_calls = 0 if info['bilateral_contact'] else self._missing_contact_calls + 1

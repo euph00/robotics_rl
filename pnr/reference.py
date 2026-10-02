@@ -72,9 +72,19 @@ class ReferenceController:
                 if stage in ('lift','hold','carry','reach','retreat','carry_posture'):
                     command[self.finger_slots] = 0.
                 self.tick(command,stage)
-        for _ in range(8):
-            self.tick(target,stage)
+        self.settle(target,stage)
         return self.env.observe()
+
+    def settle(self,target,stage=None,minimum=8,limit=400):
+        """Hold the final target until the robot has converged (rate-limited joints lag the commands)."""
+        target = np.asarray(target,dtype=float)
+        arm = np.setdiff1d(np.arange(len(target)),self.finger_slots)
+        for k in range(limit):
+            self.tick(target,stage)
+            if k+1 >= minimum:
+                error = np.abs(self.env.agent_qpos[arm]-target[arm])
+                if error.max() < 2e-3 and np.abs(self.env.observe()['qvel'][arm]).max() < .02:
+                    break
 
     def move_ee(self,position,quaternion,stage=None,closed=None,check=True,step_size=.018):
         q = self.planner.ik(position,quaternion)

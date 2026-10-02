@@ -62,7 +62,8 @@ DEFAULT_EXECUTION = {'grasp_horizon': 600, 'carry_horizon': 1200, 'reach_horizon
                      'holding_speed_scale': 0.,  # 0: same as planned_speed_scale
                      'controller': 'learned',  # or 'reference': classical planner end to end
                      'carry_max_turn_deg': 0., 'carry_slip_drift_mm': 0., 'carry_slip_scale': .5,
-                     'grasp_mode': 'learned', 'carry_mode': 'learned'}  # 'planned' swaps in the classical stage
+                     'grasp_mode': 'learned', 'carry_mode': 'learned',  # 'planned' swaps in the classical stage
+                     'physics': 'realistic'}  # or 'course' (unlimited course motors, mu 0.25 grip)
 _POLICIES = None
 
 
@@ -187,7 +188,7 @@ def evaluate_case(case, execution):
     started = time.monotonic()
     native = None
     try:
-        native = PickNavReachEnv(**case['env_kwargs'])
+        native = PickNavReachEnv(**case['env_kwargs'], physics=execution['physics'])
         if case['maze_hash'] is not None and native.scene_manifest()['maze_hash'] != case['maze_hash']:
             raise ValueError('Native layout differs from the case maze hash')
         if execution['controller'] == 'reference':

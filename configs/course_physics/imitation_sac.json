@@ -27,6 +27,7 @@
     "deadline_physics_ticks": 15000,
     "grasp_lift_m": 0.24,
     "reach_tolerance_m": 0.08,
-    "grasp_proposal_mode": "clearance-v2"
+    "grasp_proposal_mode": "clearance-v2",
+    "physics": "course"
   }
 }

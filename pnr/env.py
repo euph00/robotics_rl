@@ -20,6 +20,14 @@ maximum, so geoms carry robot/object/maze 0.25 and table/floor 0.5. Elliptic con
 impratio 10 and noslip iterations give static friction without soft-contact creep; the
 contact time constant is 2 dt.
 
+Physics settings (`physics=`). 'realistic' (default since 2026-10-02) keeps the same
+position-target interface and law but limits every joint like the real Fetch: the
+commanded velocity is capped by the stopping distance sqrt(2 a |err|), the joint's
+velocity limit and its acceleration limit, and the torque by its effort limit (REALISTIC
+in this module, with sources). Gripping surfaces (finger links and palm) are rubber, mu 1.0;
+the jaws close at <= 5 cm/s and squeeze with up to 245 N (Fetch spec). 'course' reproduces
+the course's unlimited motors and mu 0.25 grip, as used for all results before 2026-10-02.
+
 Kinematic queries (planner, IK, collision checks) run on a separate scratch MjData, so
 they never touch the live simulation.
 """
@@ -54,11 +62,41 @@ CONTACT_SOLIMP = (.9, .95, .001, .5, 2.)
 FRICTION_CONE = 'elliptic'
 IMPRATIO = 10.
 NOSLIP_ITERATIONS = 10
-FINGER_ARMATURE = 4.09        # kg; blocked grip = (0.08 + A) * 0.03 * error / dt^2 ~ 216 N at 3 cm
+PHYSICS = os.environ.get('PNR_PHYSICS', 'realistic')   # default for every environment built in this process
+# Course: blocked grip = (0.08 + A) * 0.03 * error / dt^2 ~ 216 N at 3 cm. Realistic: the 5 cm/s
+# velocity cap bounds the computed-torque push at (0.08 + A) * 0.05 / dt, = 245 N for A = 20.3.
+FINGER_ARMATURE = {'course': 4.09, 'realistic': 20.3}
+GRIP_FRICTION = {'course': .25, 'realistic': 1.}
+GRIP_BODIES = ('fetch/r_gripper_finger_link', 'fetch/l_gripper_finger_link', 'fetch/gripper_link')
+_INF = float('inf')
+# Realistic joint limits: velocity, acceleration, effort (SI units). Base: Fetch spec (1.0 m/s) and
+# Fetch base-controller defaults (0.75 m/s^2, 3 rad/s^2); torso and arm: fetch_moveit_config
+# joint_limits.yaml (velocity, acceleration) and the course URDF (effort); jaws: URDF 0.05 m/s and the
+# Fetch spec 245 N grasp force. The head never moves in this task and keeps uncapped effort.
+REALISTIC = {
+    'root_x_axis_joint': (1.0, .75, 500.), 'root_y_axis_joint': (1.0, .75, 500.),
+    'root_z_rotation_joint': (1.5, 3.0, 500.), 'torso_lift_joint': (.1, .5, 450.),
+    'head_pan_joint': (1.57, 3.0, _INF), 'head_tilt_joint': (1.57, 3.0, _INF),
+    'shoulder_pan_joint': (1.256, 1.5, 33.82), 'shoulder_lift_joint': (1.0, 1.0, 131.76),
+    'upperarm_roll_joint': (1.57, 1.5, 76.94), 'elbow_flex_joint': (1.5, 1.5, 66.18),
+    'forearm_roll_joint': (1.57, 1.5, 29.35), 'wrist_flex_joint': (2.26, 2.5, 25.7),
+    'wrist_roll_joint': (2.26, 2.5, 7.36),
+    'r_gripper_finger_joint': (.05, 1.0, 245.), 'l_gripper_finger_joint': (.05, 1.0, 245.)}
 GAINS = [0.3] * 13 + [0.03, 0.03]
 FRICTION = {'robot': .25, 'object': .25, 'maze': .25, 'table': .5, 'floor': .5}
 # Collision bitmasks: robot never collides with itself or the floor.
 BITS = {'static': (1, 3), 'robot': (2, 1), 'object': (1, 7), 'floor': (4, 4)}
+
+
+def limited_velocity(command, error, previous, vmax, amax, dt):
+    """Velocity reference limited by the stopping distance, the velocity limit and the acceleration limit.
+
+    The acceleration limit applies to the reference (`previous` command), as in a real servo: a blocked
+    joint keeps its reference, so it pushes up to its effort limit instead of stalling at zero.
+    """
+    command = np.clip(command, -np.sqrt(2 * amax * np.abs(error)), np.sqrt(2 * amax * np.abs(error)))
+    command = np.clip(command, -vmax, vmax)
+    return np.clip(command, previous - amax * dt, previous + amax * dt)
 
 
 def _load_maze_helpers():
@@ -147,6 +185,7 @@ class SavedState:
     ever_stably_held: bool
     had_grasp: bool
     drop_events: int
+    reference: tuple = ()
 
 
 class PickNavReachEnv:
@@ -163,9 +202,12 @@ class PickNavReachEnv:
     position_gains = GAINS
 
     def __init__(self, seed=0, object_idx=5, gui=False, settle_steps=480, real_time=False,
-                 maze_seed=None, seed_mode=None):
+                 maze_seed=None, seed_mode=None, physics=None):
         if gui or real_time:
             raise ValueError('The environment is headless; use render_rgb')
+        self.physics = physics or PHYSICS
+        if self.physics not in ('course', 'realistic'):
+            raise ValueError(f'Unknown physics settings: {self.physics}')
         self.seed = int(seed)
         self.seed_mode = seed_mode or ('course-legacy-v1' if maze_seed is None else 'independent-maze-v1')
         if self.seed_mode not in ('course-legacy-v1', 'independent-maze-v1'):
@@ -281,8 +323,12 @@ class PickNavReachEnv:
                 joint.actfrclimited = mujoco.mjtLimited.mjLIMITED_FALSE
                 joint.frictionloss, joint.damping = 0., [0., 0., 0.]
                 if 'finger' in joint.name:
-                    joint.armature = FINGER_ARMATURE
+                    joint.armature = FINGER_ARMATURE[self.physics]
         self.model = spec.compile()
+        grip = {mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, b) for b in GRIP_BODIES}
+        for g in range(self.model.ngeom):
+            if self.model.geom_bodyid[g] in grip:
+                self.model.geom_friction[g, 0] = GRIP_FRICTION[self.physics]
         self.data = mujoco.MjData(self.model)
         self._query = mujoco.MjData(self.model)
         self._jac = mujoco.MjData(self.model)
@@ -335,16 +381,27 @@ class PickNavReachEnv:
         # MuJoCo stores mesh vertices in each geom's frame; world vertices use geom poses.
         self._object_geoms = [g for g in range(m.ngeom) if self._group[g] == 'object']
         self._gain = np.asarray(GAINS)
+        limits = np.array([REALISTIC[n] for n in self.joint_names]).T if self.physics == 'realistic' else None
+        self._vmax, self._amax, self._effort = limits if limits is not None else (None, None, None)
+        self._reference = np.zeros(len(self.joint_names))   # rate-limited velocity reference (realistic)
         self._mass = np.zeros((m.nv, m.nv))
 
     # ---------------- physics ----------------
     def _physics_tick(self):
         m, d, dt = self.model, self.data, self.physics_timestep
         mujoco.mj_step1(m, d)          # positions/velocities -> mass matrix and bias forces
-        command = self._gain * (self.last_target - d.qpos[self._qadr]) / dt
+        error = self.last_target - d.qpos[self._qadr]
+        velocity = d.qvel[self._dadr]
+        command = self._gain * error / dt
+        if self._vmax is not None:
+            command = limited_velocity(command, error, self._reference, self._vmax, self._amax, dt)
+            self._reference = command
         mujoco.mj_fullM(m, d, self._mass)
         robot_mass = self._mass[np.ix_(self._dadr, self._dadr)]
-        d.qfrc_applied[self._dadr] = robot_mass @ (command - d.qvel[self._dadr]) / dt + d.qfrc_bias[self._dadr]
+        torque = robot_mass @ (command - velocity) / dt + d.qfrc_bias[self._dadr]
+        if self._effort is not None:
+            torque = np.clip(torque, -self._effort, self._effort)
+        d.qfrc_applied[self._dadr] = torque
         mujoco.mj_step2(m, d)
 
     def _reset_counters(self):
@@ -361,6 +418,8 @@ class PickNavReachEnv:
         data.qpos[self._qadr] = qpos
         data.qvel[self._dadr] = 0
         mujoco.mj_kinematics(self.model, data)
+        if data is self.data:
+            self._reference = np.zeros(len(self.joint_names))
 
     @property
     def action_size(self):
@@ -489,7 +548,8 @@ class PickNavReachEnv:
         state = mujoco.MjData(self.model)
         mujoco.mj_copyData(state, self.model, self.data)
         saved = SavedState(id(self), state, tuple(self.last_target), self.step_count, self.physics_steps,
-                           self.stable_hold_steps, self.ever_lifted, self.ever_stably_held, self.had_grasp, self.drop_events)
+                           self.stable_hold_steps, self.ever_lifted, self.ever_stably_held, self.had_grasp, self.drop_events,
+                           tuple(self._reference))
         self._saved[id(saved)] = saved
         return saved
 
@@ -498,6 +558,7 @@ class PickNavReachEnv:
             raise ValueError('Snapshot belongs to another or reset/closed environment')
         mujoco.mj_copyData(self.data, self.model, state.state)
         self.last_target = np.asarray(state.target, dtype=np.float64)
+        self._reference = np.asarray(state.reference, dtype=np.float64)
         for field in ('step_count', 'physics_steps', 'stable_hold_steps', 'ever_lifted', 'ever_stably_held', 'had_grasp', 'drop_events'):
             setattr(self, field, getattr(state, field))
         if reset_counters:
@@ -621,7 +682,8 @@ class PickNavReachEnv:
                 'table_height': self.table_height, 'joint_names': self.joint_names,
                 'physics_timestep': self.physics_timestep, 'ticks_per_action': self.substeps,
                 'settling_physics_ticks': self.settle_steps, 'position_gains': self.position_gains,
-                'finger_armature': FINGER_ARMATURE, 'mujoco_version': mujoco.__version__,
+                'physics': self.physics, 'finger_armature': FINGER_ARMATURE[self.physics],
+                'grip_friction': GRIP_FRICTION[self.physics], 'mujoco_version': mujoco.__version__,
                 'object_attachment': False, 'self_collision': False}
 
     def render_rgb(self, camera='overview', width=960, height=540, target=None, distance=None, yaw=None,

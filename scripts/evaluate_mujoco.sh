@@ -1,14 +1,14 @@
 #!/bin/bash
-# MuJoCo evaluations behind the dashboard and docs (about 2 hours on 44 workers):
+# MuJoCo evaluations behind the dashboard and docs, course physics (pre-2026-10-02 results) (about 2 hours on 44 workers):
 # three systems x {dev, holdout, course}, SAC-vs-imitation and planner-vs-learned stage swaps,
 # hand-written carry rules, planned-speed and carry-speed sweeps. Completed runs are skipped.
 cd "$(dirname "$0")/.."
 PY=.venv/bin/python
-SAC=configs/imitation_sac.json; BC=configs/imitation_only.json
+SAC=configs/course_physics/imitation_sac.json; BC=configs/course_physics/imitation_only.json
 BCGRASP=runs/mj_grasp01/candidate/grasp_zero_online.zip; BCCARRY=runs/mj_carry_init02/checkpoints/bc_initialized.zip
 ev() { local id=$1; shift; [ -e runs/$id/summary.json ] && return; rm -rf runs/$id; echo "== $id"; $PY scripts/eval.py --output runs/$id --label $id "$@" 2>&1 | grep -E "^overall|failure"; }
 for set in dev holdout course; do
-  ev mj_planner_$set --controller reference --set $set --planned-speed-scale 3.0 --holding-speed-scale 2.0
+  ev mj_planner_$set --controller reference --set $set --planned-speed-scale 3.0 --holding-speed-scale 2.0 --physics course
   ev mj_imitation_$set --candidate $BC --set $set
   ev mj_imitation_sac_$set --candidate $SAC --set $set
 done

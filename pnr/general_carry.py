@@ -25,10 +25,19 @@ def clean_path(path):
     return path[np.r_[True, np.linalg.norm(np.diff(path, axis=0), axis=1) > 1e-8]]
 
 
-def route_action(path, position, goal, scale, lookahead=.15):
-    """Training-only teacher, recomputing recovery from the measured position."""
+CORNER_SPEED, TEACHER_DECELERATION, DECISION_SECONDS = .15, .5, 25 / 240
+
+
+def route_action(path, position, goal, scale, lookahead=.15, brake=False):
+    """Training-only teacher, recomputing recovery from the measured position.
+
+    With `brake` (realistic, rate-limited base) the action shrinks so the commanded speed
+    (scale per decision at full action) stays below sqrt(v_c^2 + 2 a d), d being the path
+    distance to the next turn of more than 30 degrees or to the goal: the base slows for corners.
+    """
     path = clean_path(path)
     position = np.asarray(position)
+    speed = None
     if len(path) < 2:
         target = np.asarray(goal)
     else:
@@ -43,8 +52,18 @@ def route_action(path, position, goal, scale, lookahead=.15):
         target = path[j]+(target_arc-arcs[j])*vectors[j]/lengths[j]
         if np.linalg.norm(position-goal) < lookahead:
             target = np.asarray(goal)
+        if brake:
+            here = arcs[index]+t[index]*lengths[index]
+            directions = vectors/lengths[:, None]
+            turns = [arcs[k+1] for k in range(len(directions)-1)
+                     if np.dot(directions[k], directions[k+1]) < np.cos(np.radians(30)) and arcs[k+1] > here]
+            distance = min(turns + [arcs[-1]]) - here
+            speed = np.sqrt(CORNER_SPEED**2 + 2*TEACHER_DECELERATION*max(distance, 0.))
     action = (target-position)/scale
-    return (action/max(1., np.linalg.norm(action))).astype(np.float32)
+    action = action/max(1., np.linalg.norm(action))
+    if speed is not None:
+        action = action*min(1., speed*DECISION_SECONDS/scale)
+    return action.astype(np.float32)
 
 
 class GeneralCarryEnv(CarrySkillEnv):
@@ -110,7 +129,8 @@ class GeneralCarryEnv(CarrySkillEnv):
         # Every snapshot is reached by actual control; no joint/object teleportation.
         for i in range(self.horizon):
             action = route_action(path, obs['achieved_goal']*self.goal_scale,
-                                  self.native.goal_pos[:2], self.delta_scale)
+                                  self.native.goal_pos[:2], self.delta_scale,
+                                  brake=getattr(self.native, 'physics', 'course') == 'realistic')
             obs, _, terminated, truncated, info = self.step(action)
             xy = self.controller.base_position().copy()
             arc = arcs[-1]+float(np.linalg.norm(xy-points[-1]))

@@ -112,7 +112,7 @@ def prepare_recovery(env,target,summary,stop_path,max_decisions=250):
         position=observation['achieved_goal']*env.goal_scale
         if np.linalg.norm(position-target)<.075:
             break
-        action=route_action(path,position,np.asarray(target),env.delta_scale)
+        action=route_action(path,position,np.asarray(target),env.delta_scale,brake=getattr(env.native,'physics','course')=='realistic')
         observation,_,terminated,truncated,info=counted_step(env,action,summary,True)
         trace.append((observation['achieved_goal']*env.goal_scale).tolist())
         if not np.array_equal(original_goal,observation['desired_goal']):
@@ -144,7 +144,7 @@ def collect_episode(env,obs,rng,noise_scale,summary,stop_path):
             stopped=True
             if rows:rows[-1]['truncated']=not rows[-1]['terminated']
             break
-        teacher=route_action(path,obs['achieved_goal']*env.goal_scale,goal,env.delta_scale)
+        teacher=route_action(path,obs['achieved_goal']*env.goal_scale,goal,env.delta_scale,brake=getattr(env.native,'physics','course')=='realistic')
         noise=rng.normal(0.,noise_scale,2)
         if np.linalg.norm(obs['achieved_goal']*env.goal_scale-goal)<.25:noise*=.15
         action=np.clip(teacher+noise,-1.,1.).astype(np.float32)
@@ -179,7 +179,7 @@ def collect_on_policy_episode(env,obs,policy,summary,stop_path,*,learner_budget=
             path=np.asarray(maze_astar(env.native.cube_positions,position,world_goal,
                 table_bounds=env.native.table_aabb()))
             remaining=float(np.linalg.norm(np.diff(path,axis=0),axis=1).sum())
-            teacher=route_action(path,position,world_goal,env.delta_scale)
+            teacher=route_action(path,position,world_goal,env.delta_scale,brake=getattr(env.native,'physics','course')=='realistic')
         except ValueError as error:
             collector_error='teacher_route_unavailable: '+str(error);break
         finally:
