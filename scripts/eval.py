@@ -72,13 +72,13 @@ COURSE_SEEDS = range(1000, 1020)
 
 
 def select_cases(name, objects=OBJECTS, layout_limit=None, random_object_pose=False):
+    cases = []
     if name == 'course':
         seeds = list(COURSE_SEEDS)[:layout_limit] if layout_limit else COURSE_SEEDS
-        return [{'case_id': f'course_seed_{seed}_object_{obj:02d}', 'layout_id': f'course_seed_{seed}',
-                 'set': 'course', 'maze_hash': None, 'object_idx': obj,
-                 'env_kwargs': {'seed': seed, 'object_idx': obj, 'seed_mode': 'course-legacy-v1'}}
-                for seed in seeds for obj in objects]
-    cases = []
+        cases = [{'case_id': f'course_seed_{seed}_object_{obj:02d}', 'layout_id': f'course_seed_{seed}',
+                  'set': 'course', 'maze_hash': None, 'object_idx': obj,
+                  'env_kwargs': {'seed': seed, 'object_idx': obj, 'seed_mode': 'course-legacy-v1'}}
+                 for seed in seeds for obj in objects]
     for bank_path, partition, label in SETS[name]:
         bank = load_evaluation_bank(bank_path)
         selected = case_specs(bank, partition, object_indices=objects, allow_heldout=True)
