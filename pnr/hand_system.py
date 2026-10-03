@@ -6,10 +6,11 @@ grasps and lifts through FetchHandRig on this task environment, until it has hel
 with thumb and finger for HOLD_TO_CARRY decisions. From there the hand's servo targets stay
 fixed while the planner's carry posture, A* maze carry, reach and final hold run unchanged.
 Every hand decision goes through the controller's tick, so contact counters, lift timing and
-recordings see it. After the grasp the hand policy keeps setting the finger targets (wrist actions
-ignored) through the carry posture, maze carry and reach: each end effector holds with its own
-controller, and train_hand.py --task-carry trains exactly that sequence (fingers_after_grasp='frozen'
-fixes the servo targets instead).
+recordings see it. After the grasp the hand's servo targets stay fixed (frozen grip) through the
+carry posture, maze carry and reach; fingers_after_grasp='policy' lets the hand policy keep setting
+the finger targets instead (wrist actions ignored), the sequence train_hand.py --task-carry trains.
+Development comparison 2026-10-04 (validation mazes, random starts): imitation + RL seed 2 delivered
+43/50 with the frozen grip, 37/50 with the policy holding; imitation 24 vs 25; wide objects 1 vs 1.
 """
 from __future__ import annotations
 
@@ -63,7 +64,7 @@ class TeacherPolicy:
 
 
 class HandPlannerSystem(ReferenceController):
-    def __init__(self, env, policy, horizon=300, clearance=.045, wrist_box=(.08, .5), fingers_after_grasp='policy', **kwargs):
+    def __init__(self, env, policy, horizon=300, clearance=.045, wrist_box=(.08, .5), fingers_after_grasp='frozen', **kwargs):
         if getattr(env, 'effector', 'gripper') != 'allegro':
             raise ValueError('HandPlannerSystem needs an environment with effector="allegro"')
         super().__init__(env, **kwargs)
