@@ -24,8 +24,12 @@ for s in 0 1 2; do
   done
 done
 # Hand: scripted grasp (deterministic), then the learned hand policies as they become available.
+# Grip after the grasp, chosen per task on development mazes (2026-10-04, dev set, random starts):
+# standard objects frozen (imitation + RL 43/50 vs 37/50 policy-held), wide objects held by the policy
+# (29/104 vs 11/104 frozen: heavy side-held cylinders slip from fixed servo targets).
+WIDE_GRIP="--fingers-after-grasp policy"
 evh p_hand_scripted_standard --policy teacher --objects $STANDARD
-evh p_hand_scripted_wide --policy teacher --objects $WIDE
+evh p_hand_scripted_wide --policy teacher --objects $WIDE $WIDE_GRIP
 # Learned hand grasps, per seed. Imitation = the cloned policy (train_hand.py step 0 of hand_wbc_std_s<seed>,
 # Fetch demonstrations). Imitation + RL = BC -> PPO (10M steps) -> fine-tune with the full task's post-grasp
 # sequence as the carry phase and the protocol's object-start range (scripts/study_finetune.sh):
@@ -45,6 +49,6 @@ for s in 0 1 2; do
   step=$(best hand_wbc_std_tc_s$s 3000000 2>/dev/null) && evh p_hand_bcrl_standard_s$s --policy hand_wbc_std_tc_s$s --step $step --objects $STANDARD
   # Wide objects: no scripted side-grasp demos on the Fetch; seeds fine-tune one side-grasp policy (rig imitation
   # and RL, old-mount Fetch fine-tune hand_f_chefcan02 at 12M, then hand_w_wide*), then the same task-carry fine-tune.
-  step=$(best hand_w_wide_tc_s$s 4000000 2>/dev/null) && evh p_hand_bcrl_wide_s$s --policy hand_w_wide_tc_s$s --step $step --objects $WIDE
+  step=$(best hand_w_wide_tc_s$s 4000000 2>/dev/null) && evh p_hand_bcrl_wide_s$s --policy hand_w_wide_tc_s$s --step $step --objects $WIDE $WIDE_GRIP
 done
 echo "Study evaluations done"
