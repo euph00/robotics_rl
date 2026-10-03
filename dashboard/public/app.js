@@ -248,6 +248,62 @@ function renderPipeline(study) {
   target.append(legend);
 }
 
+/* ---------- algorithm comparison (learning curves per seed) ---------- */
+const ALGO_SOURCE = {ppo: 'imitation_rl', rlpd: 'rl'};
+function comparisonChart(algorithms, xKey, xLabel, xFormat) {
+  const width = 460, height = 210, left = 40, right = 70, top = 12, bottom = 34;
+  const all = algorithms.flatMap(a => a.curves.flatMap(c => c.points.map(p => p[xKey])));
+  const xMax = Math.max(1e-9, ...all);
+  const x = v => left + (v / xMax) * (width - left - right);
+  const y = v => top + (1 - v) * (height - top - bottom);
+  const s = svg('svg', {viewBox: `0 0 ${width} ${height}`, class: 'chart', role: 'img', 'aria-label': `Lift and carry against ${xLabel}`});
+  for (const tick of [0, .5, 1]) {
+    s.append(svg('line', {x1: left, x2: width - right, y1: y(tick), y2: y(tick), class: 'grid'}));
+    s.append(svg('text', {x: left - 6, y: y(tick) + 4, class: 'axis', 'text-anchor': 'end'}, `${tick * 100}%`));
+  }
+  for (const f of [0, .5, 1]) s.append(svg('text', {x: x(xMax * f), y: height - bottom + 15, class: 'axis', 'text-anchor': 'middle'}, xFormat(xMax * f)));
+  s.append(svg('text', {x: (left + width - right) / 2, y: height - 3, class: 'axis', 'text-anchor': 'middle'}, xLabel));
+  for (const a of algorithms) {
+    for (const curve of a.curves) {
+      const pts = curve.points.filter(p => Number.isFinite(p[xKey]) && Number.isFinite(p.carried));
+      if (!pts.length) continue;
+      const g = svg('g', {class: `src-${ALGO_SOURCE[a.key] || 'planned'}`});
+      g.append(svg('polyline', {points: pts.map(p => `${x(p[xKey])},${y(p.carried)}`).join(' '), class: 'cmp-line'}));
+      const last = pts[pts.length - 1];
+      g.append(svg('circle', {cx: x(last[xKey]), cy: y(last.carried), r: 3.5, class: 'cmp-dot'}));
+      g.append(svg('text', {x: x(last[xKey]) + 6, y: y(last.carried) + 4, class: 'label'}, `${a.label.split(' ').pop()} s${curve.id.slice(-1)}`));
+      hover(g, [[`${a.label} · ${curve.id}`, 'tip-title'], [`latest: ${percent(last.carried)} at ${(last.steps / 1e6).toFixed(1)}M steps, ${last.hours.toFixed(1)} h`],
+                [`best: ${percent(Math.max(...pts.map(p => p.carried)))}`, 'muted']]);
+      s.append(g);
+    }
+  }
+  return s;
+}
+
+function renderComparison(study) {
+  const target = $('comparison');
+  target.replaceChildren();
+  const cmp = study.comparison;
+  if (!cmp) return;
+  $('comparison-label').textContent = cmp.label || '';
+  const algorithms = cmp.algorithms || [];
+  target.append(figureBox('Lift and carry vs environment steps', comparisonChart(algorithms, 'steps', 'environment steps', v => `${(v / 1e6).toFixed(1)}M`)),
+                figureBox('Lift and carry vs wall-clock time', comparisonChart(algorithms, 'hours', 'hours of training', v => `${v.toFixed(1)} h`)));
+  const legend = el('div', undefined, 'legend');
+  for (const a of algorithms) {
+    const item = el('span', undefined, 'legend-item');
+    item.append(el('span', undefined, `swatch src-${ALGO_SOURCE[a.key] || 'planned'}`), el('span', a.label));
+    legend.append(item);
+  }
+  legend.append(el('span', 'one line per training seed · hand-task evaluations (12 episodes per object)', 'muted'));
+  target.append(legend);
+}
+function figureBox(title, content) {
+  const box = el('div', undefined, 'figbox');
+  box.append(el('div', title, 'small figtitle'), content);
+  return box;
+}
+
 /* ---------- training curves ---------- */
 function trainingChart(run) {
   const width = 460, height = 190, left = 40, right = 96, top = 12, bottom = 32;
@@ -417,6 +473,7 @@ async function poll() {
       renderAdded(study);
       renderPipeline(study);
     }
+    renderComparison(study);
     renderTraining(state.training || []);
     renderRecordings((state.overview || {}).recordings || []);
     renderFooter(state.overview || {}, state.active || []);

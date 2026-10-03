@@ -149,3 +149,10 @@ svg .crosshair { stroke: var(--muted); stroke-width: 1; }
 .report table { margin: 10px 0; border-collapse: collapse; }
 .report th, .report td { border-bottom: 1px solid var(--line); padding: 5px 8px; text-align: left; }
 .table-scroll { overflow-x: auto; }
+
+/* algorithm comparison */
+.row2.inner { gap: 18px; }
+.row2.inner > .legend { grid-column: 1 / -1; margin-top: 0; }
+.figtitle { font-weight: 600; margin-bottom: 4px; }
+svg .cmp-line { fill: none; stroke: var(--c); stroke-width: 2; stroke-linejoin: round; }
+svg .cmp-dot { fill: var(--c); stroke: var(--panel); stroke-width: 2; }

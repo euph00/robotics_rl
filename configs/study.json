@@ -301,5 +301,28 @@
       "status": "stretch",
       "detail": "only after a complete result set"
     }
-  ]
+  ],
+  "comparison": {
+    "label": "PPO vs RLPD · hand on the Fetch, standard objects, same 243 demonstrations",
+    "algorithms": [
+      {
+        "key": "ppo",
+        "label": "BC → PPO",
+        "runs": [
+          "hand_wbc_std_s0",
+          "hand_wbc_std_s1",
+          "hand_wbc_std_s2"
+        ]
+      },
+      {
+        "key": "rlpd",
+        "label": "RLPD",
+        "runs": [
+          "hand_rlpd_std_s0",
+          "hand_rlpd_std_s1",
+          "hand_rlpd_std_s2"
+        ]
+      }
+    ]
+  }
 }

@@ -467,6 +467,19 @@ def study_progress(runs_root):
                 if status and _alive(status):
                     alive.append({"id": run, "transitions": status.get("transitions"), "budget": status.get("budget")})
             condition["training_status"][task] = alive
+    for algorithm in (study.get("comparison") or {}).get("algorithms", []):
+        algorithm["curves"] = []
+        for run in algorithm.get("runs", []):
+            if not SAFE_ID.fullmatch(str(run)):
+                continue
+            status = read_json(runs_root / run / "status.json") or {}
+            started = status.get("started_at")
+            points = []
+            for row in read_records(runs_root / run / "metrics.jsonl", limit=2000):
+                if row.get("metric_source") == "evaluation" and started and row.get("timestamp"):
+                    hours = (datetime.fromisoformat(row["timestamp"]) - datetime.fromisoformat(started)).total_seconds() / 3600
+                    points.append({"steps": row.get("transitions"), "hours": hours, "carried": row.get("carry_success_rate")})
+            algorithm["curves"].append({"id": run, "points": points, "running": _alive(status)})
     return study
 
 
