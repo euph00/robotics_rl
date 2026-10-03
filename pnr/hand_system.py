@@ -160,39 +160,35 @@ class HandPlannerSystem(ReferenceController):
         return super().tick(target, stage)
 
     def prepare_carry(self):
-        """The planner's retreat and carry posture; if the grasp ended at a tilt the tucked posture cannot
-        take, level the palm back to the pregrasp's pitch and roll (keeping its yaw) and try again.
-        Side grasps instead translate the hand up and back in a straight line without turning it: the
-        planner's joint-space tuck swings and turns the object, which shakes a heavy one loose."""
-        if self.env.object_idx in SIDE_GRASP_OBJECTS:
-            return self._side_carry_posture()
-        try:
-            return super().prepare_carry()
-        except ValueError:
-            pass
-        wrist = self.rig.wrist()
-        wrist[4:] = self.pregrasp[4:]
-        position, rotation = self.rig._flange_target(wrist)
-        self.move_ee(position, Rotation.from_matrix(rotation).as_quat(), 'carry_posture', step_size=.006)
-        self.stage_results['carry_posture_levelled'] = True
-        return super().prepare_carry()
-
-    def reach(self):
-        """The planner's base and torso reach, then the arm takes up what is left: the hand carries the
-        object higher than the gripper, beyond what lowering the torso can correct."""
-        info = super().reach()
-        error = self.env.goal_pos - self.env.observe()['object_pos']
-        if np.linalg.norm(error) > .025:
-            self.planner.set_payload()
-            ee, orientation = self.planner.ee_pose()
+        """Retreat from the table, then tuck the held object close to the base for the maze: the planner's
+        carry-posture pose (flange 24 cm ahead at 1.05 m, grasp orientation kept), solved from several IK
+        seeds and collision-checked with the object attached, then a planned joint-space move. From the arm
+        configurations the hand's pregrasp produces, IK from the current configuration alone often failed
+        (29-34 of 100 standard cases). If no seed works, a straight-line path as far as it reaches."""
+        self.planner.set_payload()
+        self.move_base([-1.25, 0], stage='retreat', step_size=.006)
+        position, orientation = self.planner.ee_pose()
+        base = self.base_position()
+        target = np.array([base[0] + .24, base[1], 1.05])
+        rng = np.random.default_rng(0)
+        current = self.env.agent_qpos.astype(np.float64)
+        seeds = [current, np.r_[current[:3], self.env.init_qpos[3:]]]
+        for _ in range(8):
+            seed = current.copy()
+            seed[self.planner.active] = rng.uniform(self.planner.lower, self.planner.upper)
+            seeds.append(seed)
+        for seed in seeds:
             try:
-                self.move_ee(ee + error, orientation, 'reach', step_size=.006)
-                self.stage_results['arm_reach'] = {'correction_m': error.tolist()}
-            except ValueError as exc:
-                self.stage_results['arm_reach'] = {'correction_m': error.tolist(), 'error': str(exc)}
-            self.hold(60, 'reach')
-            info = self.env.evaluate()
-        return info
+                q = self.planner.ik(target, orientation, seed=seed)
+            except ValueError:
+                continue
+            if self.planner.collision_free(q):
+                self.move_joint(q, 'carry_posture', step_size=.006)
+                self.hold(50, 'hold')
+                self.planner.set_payload()
+                self.stage_results['carry_posture'] = {'tucked': True, 'object_position': self.env.observe()['object_pos'].tolist()}
+                return self.env.observe()
+        return self._continuation_carry_posture(retreat=False)
 
     def _cartesian_path(self, start, goal, stage, steps=8, include_object=False, step_size=.006):
         """Move the palm from rig wrist pose `start` towards `goal` in `steps` straight-line waypoints, each
@@ -214,20 +210,21 @@ class HandPlannerSystem(ReferenceController):
             done = float(t)
         return done
 
-    def _side_carry_posture(self, steps=12, reach=.30, height=1.):
+    def _continuation_carry_posture(self, steps=12, reach=.30, height=1., retreat=True):
         """Retreat, then move the held object in a straight line, upright and without turning, to `reach`
         in front of the base at `height`. Each waypoint's arm targets continue the current arm
         configuration (damped least squares), so the arm never switches IK branch with the object in
         hand; each step is collision-checked with the object attached."""
         self.planner.set_payload()
-        self.move_base([-1.25, 0], stage='retreat', step_size=.006)
+        if retreat:
+            self.move_base([-1.25, 0], stage='retreat', step_size=.006)
         start = self.rig.wrist()
         base = self.base_position()
         shift = np.array([base[0] + reach, base[1], height]) - self.env.observe()['object_pos']
         reached = self._cartesian_path(start, start + np.r_[shift, 0., 0., 0.], 'carry_posture', steps)
         self.hold(50, 'hold')
         self.planner.set_payload()
-        self.stage_results['carry_posture'] = {'base_position': self.base_position().tolist(), 'side_grasp': True,
+        self.stage_results['carry_posture'] = {'base_position': self.base_position().tolist(),
                                                'fraction_of_path': reached,
                                                'ee_position': self.planner.ee_pose()[0].tolist(),
                                                'object_position': self.env.observe()['object_pos'].tolist()}
