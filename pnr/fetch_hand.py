@@ -22,6 +22,81 @@ BASE_XY = np.array([-.78, 0.])          # the planner's table approach position 
 READY = np.array([-.15, 0., TABLE_TOP + .3, 0., 0., 0.])   # parked wrist: palm down over the table
 IK_DAMPING = .05
 RETREAT_X = -1.25          # world x the full task's base backs off to before tucking the arm
+TUCK_HEIGHTS = (.90, .85)              # held-object heights to try (the goal's height, then lower)
+TUCK_AHEAD = (.24, .20, .28)            # held object's distance ahead of the base centre
+TUCK_TURNS = (-90, 90, -135, 135, 180, 0, -45, 45)   # hand turns about the vertical, degrees
+TUCK_COMPACT = .36     # stop searching at a posture this compact: every arm link, hand link and the object within
+                       # this distance of the base centre along x and along y (the base translates without turning
+                       # through axis-aligned corridors)
+TUCK_BUDGET = 24       # IK solves before settling for the most compact posture found (four times that: give up)
+GOAL_HEIGHT = .90
+ARM_LINKS = ('upperarm_roll_link', 'elbow_flex_link', 'forearm_roll_link', 'wrist_flex_link', 'wrist_roll_link')
+
+
+def plan_tuck(planner, q, base_xy, flange, orientation, held):
+    """Carry-posture joint targets for a held object, shared by training (FetchHandRig) and the hand system.
+    Candidates: the held object TUCK_AHEAD of the base centre at TUCK_HEIGHTS, the hand turned about the
+    vertical by one of TUCK_TURNS (palm tilt kept, so gravity pulls on the grasp as before), the torso at its
+    lowest so the reach can raise the object; IK from the current configuration and the initial arm pose. A
+    candidate counts if it keeps the robot and the held object (planner payload) off the table, maze and
+    robot body and the straight joint-space move to it from `q` is clear too. Returns the most compact one
+    (largest distance along x or y of arm links, hand links and object from the base centre: the maze carry
+    is planned for the base's footprint), stopping at the first within TUCK_COMPACT; with no candidate, the search is
+    repeated with the torso free (if its remaining range still brings the object to the goal height). At most
+    TUCK_BUDGET IK solves once a candidate is found (four times that otherwise); the chosen candidate is in
+    `plan_tuck.last`. None if nothing is found. The planner's fixed tuck (flange 24 cm ahead at 1.05 m, orientation kept) carried some
+    grasps 23 cm above the goal or pressed the object into the robot's head; with the wrist-end mount the
+    unturned hand points away from the robot, so few such poses exist close to the base."""
+    q = np.asarray(q, dtype=float)
+    env = planner.env
+    seeds = [q, np.r_[q[:3], env.init_qpos[3:]]]
+    low, high = planner.lower[0], planner.upper[0]
+    offset = np.asarray(held) - np.asarray(flange)
+    grasp = Rotation.from_quat(orientation)
+    names = [mujoco.mj_id2name(env.model, mujoco.mjtObj.mjOBJ_BODY, b) or '' for b in range(env.model.nbody)]
+    bodies = [b for b, n in enumerate(names) if n.startswith('hand/') or n in [f'fetch/{a}' for a in ARM_LINKS]]
+    bodies.append(env._obj_body)
+
+    def extent(tuck):                           # the object placed by the planner's payload
+        with planner.query():
+            planner._put(tuck)
+            return np.abs(env._query.xpos[bodies, :2] - np.asarray(base_xy)[:2]).max()
+
+    best, solves, plan_tuck.last = (np.inf, None), 0, None
+    for torso, heights in ((low, TUCK_HEIGHTS), (None, TUCK_HEIGHTS[:1])):
+        for height in heights:
+            for turn in TUCK_TURNS:
+                rotation = Rotation.from_euler('z', turn, degrees=True)
+                turned, quaternion = rotation.apply(offset), (rotation * grasp).as_quat()
+                for ahead in TUCK_AHEAD:
+                    target = np.r_[base_xy[0] + ahead, base_xy[1], height] - turned
+                    for k, seed in enumerate(seeds):
+                        if solves >= TUCK_BUDGET * (1 if best[1] is not None else 4):
+                            return best[1]
+                        solves += 1
+                        try:
+                            tuck = planner.ik(target, quaternion, seed=seed, torso=torso)
+                        except ValueError:
+                            continue
+                        lift = tuck[planner.active[0]]
+                        if not height - (lift - low) - .03 <= GOAL_HEIGHT <= height + (high - lift) + .03:
+                            continue
+                        size = extent(tuck)
+                        if size >= best[0] or not planner.collision_free(tuck):
+                            continue
+                        with planner.query():
+                            if not planner._edge_free(q, tuck):
+                                continue
+                        best = (size, tuck)
+                        plan_tuck.last = dict(torso_free=torso is None, height=height, turn=turn, ahead=ahead, seed=k,
+                                              extent=round(float(size), 3), solves=solves)
+                        if size <= TUCK_COMPACT:
+                            return tuck
+        if best[1] is not None:
+            return best[1]
+    return None
+
+
 # Side grasps: the forearm runs level with the palm, so grip at least this high above the table (it
 # clears the table edge down to ~9 cm; the rig's palm alone clears at 6.6 cm).
 SIDE_CLEARANCE = .10
@@ -193,7 +268,8 @@ class FetchHandRig:
     def _retreat_and_tuck(self, q):
         """Joint targets, one per decision, for the hand system's post-grasp sequence: the base backs off to
         x = -1.25 at 1.8 cm per decision, then the arm moves (0.012 rad per decision) to the carry posture
-        (flange 24 cm ahead of the base at 1.05 m, orientation kept), each followed by 10 settling decisions."""
+        (`plan_tuck`: object at or below the goal's height close to the base, hand turned about the vertical), each
+        followed by 10 settling decisions."""
         plan, q = [], np.asarray(q, dtype=float).copy()
         goal_x = RETREAT_X - self.env.root_position[0]
         for t in np.linspace(0, 1, int(np.ceil(abs(goal_x - q[0]) / .018)) + 1)[1:]:
@@ -211,27 +287,17 @@ class FetchHandRig:
         return plan
 
     def _tuck_joints(self, q):
-        """The carry posture's joint targets from several IK seeds (as HandPlannerSystem.prepare_carry), or None."""
+        """The carry posture's joint targets (`plan_tuck`, as HandPlannerSystem.prepare_carry), or None."""
         env = self.env
+        held = env.observe()['object_pos']          # the retreat moves the base in x only: same height
         with env.query():
             env.set_joint_positions(q)
-            _, orientation = env.ee_pose()
-        base = env.root_position[:2] + q[:2]
-        target = np.array([base[0] + .24, base[1], 1.05])
-        rng = np.random.default_rng(0)
-        seeds = [q, np.r_[q[:3], env.init_qpos[3:]]]
-        for _ in range(8):
-            seed = q.copy()
-            seed[self.planner.active] = rng.uniform(self.planner.lower, self.planner.upper)
-            seeds.append(seed)
-        for seed in seeds:
-            try:
-                tuck = self.planner.ik(target, orientation, seed=seed)
-            except ValueError:
-                continue
-            if self.planner.collision_free(tuck):
-                return tuck
-        return None
+            flange, orientation = env.ee_pose()
+        self.planner.set_payload()                  # the grasp transform, for checking the held object
+        try:
+            return plan_tuck(self.planner, q, env.root_position[:2] + q[:2], flange, orientation, held)
+        finally:
+            self.planner.payload = None
 
     # ---------------- control ----------------
     def tick(self):

@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from .fetch_hand import READY, FetchHandRig
+from .fetch_hand import READY, FetchHandRig, plan_tuck
 from .hand import pregrasp_wrist, side_grasp_geometry, wrist_for
 from .hand_env import FINGER_STEP, SIDE_GRASP_OBJECTS, HandGraspEnv
 from .hand_teacher import narrow_axis_yaw
@@ -161,35 +161,25 @@ class HandPlannerSystem(ReferenceController):
         return super().tick(target, stage)
 
     def prepare_carry(self):
-        """Retreat from the table, then tuck the held object close to the base for the maze: the planner's
-        carry-posture pose (flange 24 cm ahead at 1.05 m, grasp orientation kept), solved from several IK
-        seeds and collision-checked with the object attached, then a planned joint-space move. From the arm
-        configurations the hand's pregrasp produces, IK from the current configuration alone often failed
-        (29-34 of 100 standard cases). If no seed works, a straight-line path as far as it reaches."""
+        """Retreat from the table, then tuck the held object close to the base for the maze (`plan_tuck`:
+        object at or below the goal's height, hand turned about the vertical, held object kept off the robot's
+        body), then a planned joint-space move. If no tuck is found, a straight-line path as far as it reaches."""
         self.planner.set_payload()
         self.move_base([-1.25, 0], stage='retreat', step_size=.006)
         position, orientation = self.planner.ee_pose()
-        base = self.base_position()
-        target = np.array([base[0] + .24, base[1], 1.05])
-        rng = np.random.default_rng(0)
-        current = self.env.agent_qpos.astype(np.float64)
-        seeds = [current, np.r_[current[:3], self.env.init_qpos[3:]]]
-        for _ in range(8):
-            seed = current.copy()
-            seed[self.planner.active] = rng.uniform(self.planner.lower, self.planner.upper)
-            seeds.append(seed)
-        for seed in seeds:
-            try:
-                q = self.planner.ik(target, orientation, seed=seed)
-            except ValueError:
-                continue
-            if self.planner.collision_free(q):
-                self.move_joint(q, 'carry_posture', step_size=.006)
-                self.hold(50, 'hold')
-                self.planner.set_payload()
-                self.stage_results['carry_posture'] = {'tucked': True, 'object_position': self.env.observe()['object_pos'].tolist()}
-                return self.env.observe()
-        return self._continuation_carry_posture(retreat=False)
+        q = plan_tuck(self.planner, self.env.agent_qpos.astype(np.float64), self.base_position(), position, orientation,
+                      self.env.observe()['object_pos'])
+        try:
+            if q is None:
+                raise RuntimeError('no tuck')
+            self.move_joint(q, 'carry_posture', step_size=.006)
+        except (ValueError, RuntimeError):             # no tuck, or no planned path to it
+            return self._continuation_carry_posture(retreat=False)
+        self.hold(50, 'hold')
+        self.planner.set_payload()
+        self.stage_results['carry_posture'] = {'tucked': True, 'tuck': plan_tuck.last,
+                                               'object_position': self.env.observe()['object_pos'].tolist()}
+        return self.env.observe()
 
     def _cartesian_path(self, start, goal, stage, steps=8, include_object=False, step_size=.006):
         """Move the palm from rig wrist pose `start` towards `goal` in `steps` straight-line waypoints, each
@@ -246,6 +236,8 @@ class HandPlannerSystem(ReferenceController):
                 info = self.reach()
                 result.update(status='complete', success=bool(info['complete_task_success']),
                               upstream_success=bool(info['success']))
+                if not result['success']:
+                    result.update(failed_stage='reach', error='Object outside the goal tolerance after the reach')
         except (ValueError, RuntimeError) as exc:
             result.update(status='failed', error=str(exc), failed_stage=self.stage)
         result.update(stages=self.stage_results, metrics=self.env.evaluate(),

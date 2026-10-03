@@ -136,8 +136,13 @@ class JointPlanner:
     def ee_pose(self):
         return self.env.ee_pose()
 
-    def ik(self, position, quaternion, seed=None, tolerance=.012):
+    def ik(self, position, quaternion, seed=None, tolerance=.012, torso=None):
+        """Arm and torso joints reaching the end-effector pose; `torso` pins the torso at that height."""
         seed = self.env.agent_qpos.copy() if seed is None else np.asarray(seed).copy()
+        lower, upper = self.lower.copy(), self.upper.copy()
+        if torso is not None:
+            lower[0] = np.clip(torso, self.lower[0], self.upper[0] - 2e-6)
+            upper[0] = lower[0] + 2e-6
         position = np.asarray(position)
         target_rot = Rotation.from_quat(quaternion)
         with self.query():
@@ -160,12 +165,12 @@ class JointPlanner:
                 return matrix
 
             # Numerical FK in Bullet returns float32, requiring a useful finite step.
-            seeds = [np.clip(seed[self.active], self.lower+1e-6, self.upper-1e-6)]
+            seeds = [np.clip(seed[self.active], lower+1e-6, upper-1e-6)]
             default = np.array([.22, 0., -.65, 0., 1.5, 0., .75, 0.])
-            seeds.append(np.clip(default, self.lower+1e-6, self.upper-1e-6))
+            seeds.append(np.clip(default, lower+1e-6, upper-1e-6))
             best = None
             for x0 in seeds:
-                result = least_squares(residual, x0, bounds=(self.lower, self.upper),
+                result = least_squares(residual, x0, bounds=(lower, upper),
                                        jac=jacobian, max_nfev=140,
                                        xtol=1e-6, ftol=1e-6, gtol=1e-6)
                 err = np.linalg.norm(residual(result.x))
@@ -188,6 +193,8 @@ class JointPlanner:
             pairs.append(('robot', body))
             if self.payload is not None and body != 'object':
                 pairs.append(('object', body))
+        if self.payload is not None:
+            pairs.append(('object', 'body'))     # the held object off the robot's body (Allegro only; env.py)
         return not self.env.any_within(pairs, margin)
 
     def collision_free(self, q, include_object=False, margin=.001):

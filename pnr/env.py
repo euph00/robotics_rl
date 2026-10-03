@@ -460,6 +460,12 @@ class PickNavReachEnv:
             name = m.geom(g).name
             self._group[g] = next((k for k in ('floor', 'table', 'maze', 'object') if name.startswith(k)), 'robot')
         self._robot_bodies = sorted({int(m.geom_bodyid[g]) for g in range(m.ngeom) if self._group[g] == 'robot'})
+        # 'body': the robot apart from the Allegro and the wrist links it is mounted on, for keeping a held
+        # object off the robot (pairs ('object', 'body') in any_within). Empty for the gripper, whose planned
+        # carry holds objects below the jaws, away from the body.
+        clear_of = ('hand/', 'fetch/wrist_roll_link', 'fetch/wrist_flex_link')
+        self._body_geom = np.array([self.effector == 'allegro' and self._group[g] == 'robot'
+                                    and not names[int(m.geom_bodyid[g])].startswith(clear_of) for g in range(m.ngeom)])
         # MuJoCo stores mesh vertices in each geom's frame; world vertices use geom poses.
         self._object_geoms = [g for g in range(m.ngeom) if self._group[g] == 'object']
         self._gain = np.asarray(GAINS)[:len(self.joint_names)]   # the two jaw joints come last
@@ -761,10 +767,10 @@ class PickNavReachEnv:
         try:
             m.geom_margin[:] = max(margin, 0.) + 1e-4
             mujoco.mj_collision(m, data)
+            labels = lambda g: (self._group[g], 'body') if self._body_geom[g] else (self._group[g],)
             for i in range(data.ncon):
                 c = data.contact[i]
-                pair = frozenset((self._group[c.geom1], self._group[c.geom2]))
-                if pair in wanted and c.dist < margin:
+                if c.dist < margin and any(frozenset((a, b)) in wanted for a in labels(c.geom1) for b in labels(c.geom2)):
                     return True
             return False
         finally:
