@@ -1,36 +1,40 @@
 {
-  "title": "Where does RL add value in mobile manipulation?",
-  "documents": [
-    {
-      "label": "Project spec",
-      "href": "/reports/project_spec.md"
-    },
-    {
-      "label": "Project state",
-      "href": "/reports/project_state.md"
-    },
-    {
-      "label": "Experiment log",
-      "href": "/reports/experiment_log.md"
-    },
-    {
-      "label": "Study plan (JSON)",
-      "href": "/reports/study.json"
-    }
-  ],
-  "training": [],
-  "recordings": [
-    {
-      "run": "hand_task_recordings01",
-      "label": "Allegro on the Fetch · full task · scripted hand grasp, planned carry and reach · mug delivered (course seed 0)"
-    },
-    {
-      "run": "hand_recordings01",
-      "label": "Allegro hand · imitation + RL (hand_r_bc03, 6M steps) · grasp, lift 15 cm, realistic base carry"
-    },
-    {
-      "run": "mj_recordings_planner01",
-      "label": "Planner only · validation maze 8 · banana"
-    }
-  ]
+ "title": "Where does RL add value in mobile manipulation?",
+ "documents": [
+  {
+   "label": "Project spec",
+   "href": "/reports/project_spec.md"
+  },
+  {
+   "label": "Project state",
+   "href": "/reports/project_state.md"
+  },
+  {
+   "label": "Experiment log",
+   "href": "/reports/experiment_log.md"
+  },
+  {
+   "label": "Study plan (JSON)",
+   "href": "/reports/study.json"
+  }
+ ],
+ "training": [],
+ "recordings": [
+  {
+   "run": "clips_gripper_wide",
+   "label": "Gripper planner · wide objects (hold-out, random start) · master chef can and soup can ×1.6: the grasp does not hold"
+  },
+  {
+   "run": "clips_hand_wide",
+   "label": "Allegro hand, imitation + RL · the same two cases · chef can delivered; soup can ×1.6 dropped in the carry"
+  },
+  {
+   "run": "clips_gripper_standard",
+   "label": "Gripper planner · mug (hold-out, random start) · delivered in 15.5k ticks"
+  },
+  {
+   "run": "clips_hand_standard",
+   "label": "Allegro hand, imitation + RL · the same mug case · delivered in 13.1k ticks, within the deadline"
+  }
+ ]
 }

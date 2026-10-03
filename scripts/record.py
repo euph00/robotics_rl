@@ -96,7 +96,8 @@ def main():
         execution.update(planned_speed_scale=3.0, holding_speed_scale=2.0)
     elif not checkpoints:
         parser.error('Learned recordings need --candidate')
-    by_id = {case['case_id']: case for case in E.select_cases(args.set, layout_limit=None, random_object_pose=args.random_object_pose)}
+    by_id = {case['case_id']: case for case in E.select_cases(args.set, objects=sorted(set(E.OBJECTS) | {0, 102}), layout_limit=None,
+                                                                   random_object_pose=args.random_object_pose)}
     missing = [case for case in args.cases if case not in by_id]
     if missing:
         parser.error(f'Unknown cases: {missing}')

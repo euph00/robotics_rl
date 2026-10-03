@@ -27,10 +27,11 @@ NAMES = {0: 'master chef can', 2: 'soup can', 5: 'banana', 7: 'apple', 10: 'mug'
 CHASE = dict(distance=6, pitch=-75)
 
 
-def record(env_kwargs, name, policy, output, every, size):
+def record(env_kwargs, name, policy, output, every, size, fingers='frozen'):
     env = PickNavReachEnv(**env_kwargs, physics='realistic', effector='allegro', hand_mount='wrist')
     frames, step = [], env.step
-    system = HandPlannerSystem(env, policy, seed=env.seed, speed_scale=3., holding_speed_scale=2.)   # as eval_hand.py
+    system = HandPlannerSystem(env, policy, seed=env.seed, speed_scale=3., holding_speed_scale=2.,   # as eval_hand.py
+                               fingers_after_grasp=fingers)
 
     def recording_step(action):
         result = step(action)
@@ -63,10 +64,12 @@ def main():
     parser.add_argument('--set', help="eval.py case set (e.g. holdout); with --cases, replaces --objects/--seed")
     parser.add_argument('--cases', nargs='+', help='case_id values from --set')
     parser.add_argument('--random-object-pose', action='store_true', help="The protocol's seeded random object start per case")
+    parser.add_argument('--fingers-after-grasp', choices=('policy', 'frozen'), default='frozen')
     args = parser.parse_args()
     if args.set:
         import scripts.eval as E
-        by_id = {c['case_id']: c for c in E.select_cases(args.set, random_object_pose=args.random_object_pose)}
+        by_id = {c['case_id']: c for c in E.select_cases(args.set, objects=sorted(set(E.OBJECTS) | {0, 102}),
+                                                         random_object_pose=args.random_object_pose)}
         episodes = [(by_id[c]['env_kwargs'], c, by_id[c]['object_idx']) for c in args.cases]
     else:
         episodes = [(dict(seed=args.seed, object_idx=idx), f'object_{idx:02d}_seed_{args.seed}', idx) for idx in args.objects]
@@ -76,7 +79,7 @@ def main():
                        name=args.label or f'Allegro on the Fetch · {policy.source}', summary=f'{len(episodes)} episodes')
     outcomes = []
     for env_kwargs, name, idx in episodes:
-        name, outcome, result = record(env_kwargs, name, policy, args.output, args.every, args.size)
+        name, outcome, result = record(env_kwargs, name, policy, args.output, args.every, args.size, args.fingers_after_grasp)
         logger.artifact(f'artifacts/{name}.webm', f'{NAMES.get(idx, idx)} · {outcome}', kind='video')
         outcomes.append(f'{NAMES.get(idx, idx)} {outcome}')
         print(json.dumps({'object_idx': idx, 'outcome': outcome, 'ticks': result['metrics']['physics_ticks'],
