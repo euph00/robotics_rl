@@ -21,10 +21,11 @@ import numpy as np  # noqa: E402
 
 
 def collect(job):
-    idx, seeds, noise_levels, carry, physics, horizon = job
+    idx, seeds, noise_levels, carry, physics, horizon, robot = job
     from pnr.hand_env import HandGraspEnv
     from pnr.hand_teacher import PowerGraspTeacher, SideGraspTeacher
-    env = HandGraspEnv(objects=[idx], seed=0, physics=physics, carry=carry, horizon=horizon)
+    env = HandGraspEnv(objects=[idx], seed=0, physics=physics, carry=carry, horizon=horizon, robot=robot,
+                       wrist_box=(.08, .5) if robot == 'fetch' else None)
     Teacher = SideGraspTeacher if idx in env.side_objects else PowerGraspTeacher
     episodes = []
     for seed, noise in zip(seeds, noise_levels):
@@ -56,6 +57,7 @@ def main():
     parser.add_argument('--carry', action='store_true')
     parser.add_argument('--physics', default='realistic')
     parser.add_argument('--horizon', type=int, default=160)
+    parser.add_argument('--robot', choices=('rig', 'fetch'), default='rig', help='fetch: the hand on the Fetch (wrist-end mount)')
     parser.add_argument('--workers', type=int, default=24)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
@@ -67,7 +69,7 @@ def main():
         noise = np.resize(args.noise, args.episodes)
         for chunk_seeds, chunk_noise in zip(np.array_split(seeds, max(1, args.workers // len(args.objects))),
                                             np.array_split(noise, max(1, args.workers // len(args.objects)))):
-            jobs.append((idx, chunk_seeds, chunk_noise, args.carry, args.physics, args.horizon))
+            jobs.append((idx, chunk_seeds, chunk_noise, args.carry, args.physics, args.horizon, args.robot))
     with ProcessPoolExecutor(args.workers) as pool:
         episodes = [e for chunk in pool.map(collect, jobs) for e in chunk]
     args.output.mkdir(parents=True)

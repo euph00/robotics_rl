@@ -42,6 +42,14 @@ class PowerGraspTeacher:
         rig = self.env.rig
         points = rig.object_points_world()
         self.yaw = narrow_axis_yaw(points, rig.wrist()[3])
+        if getattr(getattr(rig, 'env', None), 'hand_mount', None) == 'wrist':
+            # On the Fetch the fingers must point away from the robot: of the two equivalent narrow-axis
+            # directions (thumb and fingers swapped), take the one within +-90 deg of +x.
+            self.yaw = (self.yaw + np.pi / 2) % np.pi - np.pi / 2
+        # The Fetch arm settles more slowly than the rig's wrist: looser hand-over tolerances there.
+        on_fetch = hasattr(rig, 'env')
+        self.align_tolerance = np.array([.02] * 3 + [.05] * 3) if on_fetch else .01
+        self.descend_tolerance = .008 if on_fetch else .004
         self.top = points[:, 2].max()
 
     def _wrist_goal(self, height):
@@ -69,11 +77,11 @@ class PowerGraspTeacher:
         finger_goal[12] = 1.0                                            # thumb pre-rotated toward opposition
         if self.phase == 'align':
             goal = self._wrist_goal(above + .06)
-            if np.abs(goal - rig.wrist()).max() < .01:
+            if (np.abs(goal - rig.wrist()) < self.align_tolerance).all():
                 self.phase = 'descend'
         elif self.phase == 'descend':
             goal = self._wrist_goal(above)
-            if abs(goal[2] - rig.wrist()[2]) < .004:
+            if abs(goal[2] - rig.wrist()[2]) < self.descend_tolerance:
                 self.phase = 'close'
         elif self.phase == 'close':
             goal = self._wrist_goal(above)

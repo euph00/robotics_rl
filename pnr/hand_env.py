@@ -93,7 +93,7 @@ def synthetic_carry(rng, calls):
 CLOSED = np.array([0, 1.4, 1.2, 1.0] * 3 + [1.396, 1.0, 1.0, 1.0])
 SUCCESS_LIFT = .15
 # Upright objects too wide for a top-down claw start from a side pregrasp (palm vertical beside them).
-SIDE_GRASP_OBJECTS = (0,)
+SIDE_GRASP_OBJECTS = (0, 102)   # master chef can, soup can x1.6
 
 
 def hand_mount_of(rig):
