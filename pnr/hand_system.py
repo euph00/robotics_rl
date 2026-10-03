@@ -105,13 +105,25 @@ class HandPlannerSystem(ReferenceController):
         else:
             raise error
         self.move_base([-.78, 0.], stage='approach')
-        above = wrist + [0., 0., .2, 0., 0., 0.]
-        self.move_joint(self.rig.wrist_to_joints(above, collision_free=True), stage='pregrasp', include_object=True, step_size=.012)
-        self.rig.wrist_target = above.copy()
-        # Straight down in small steps that continue the arm configuration (a fresh collision-free IK
-        # solution at the bottom can sit on another branch with no clear path to it); stop early if blocked.
-        reached = self._cartesian_path(above, wrist, 'pregrasp', steps=8, include_object=True)
-        self.rig.wrist_target = (above + (wrist - above) * reached).copy()   # angle reading near the planned pose
+        # Plan backwards from the pregrasp: its arm configuration as the training resets choose it
+        # (collision-free IK seeded from the initial arm pose), then 20 cm straight up by IK continuation;
+        # move to the top of that path and come down along it. A descent planned from above can end on a
+        # branch that cannot reach the pregrasp (the hand then starts too high for the policy).
+        seed = np.r_[self.env.agent_qpos[:3], self.env.init_qpos[3:]]
+        path = [self.rig.wrist_to_joints(wrist, collision_free=True, seed=seed)]
+        for lift in np.linspace(0, .2, 9)[1:]:
+            q = path[-1].copy()
+            q[self.rig._arm] = self.rig._arm_step(wrist + [0., 0., lift, 0., 0., 0.], iterations=10, start=q)
+            with self.env.query():
+                self.env.set_joint_positions(q)
+                position, _ = self.rig._flange_target(wrist + [0., 0., lift, 0., 0., 0.])
+                if np.linalg.norm(self.env.ee_pose()[0] - position) > .01:
+                    break
+            path.append(q)
+        self.move_joint(path[-1], stage='pregrasp', include_object=True, step_size=.012)
+        for q in reversed(path[:-1]):
+            self.move_joint(q, stage='pregrasp', include_object=True, step_size=.006)
+        self.rig.wrist_target = wrist.copy()        # read the reached pose's angles near the planned ones
         self.stage_results['hand_pregrasp'] = {'wrist': wrist.tolist(), 'reached': self.rig.wrist().tolist()}
         return wrist
 

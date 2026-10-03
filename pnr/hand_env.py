@@ -106,7 +106,7 @@ class HandGraspEnv(gym.Env):
     def __init__(self, objects=(14, 5, 2, 7, 10), horizon=120, seed=0, friction=None, finger_kp=None,
                  finger_actions='delta', near_start=0., wrist_lag=.02, carry=False, carry_calls=200,
                  physics=None, render_mode=None, side_objects=SIDE_GRASP_OBJECTS, robot='rig', wrist_box=None,
-                 hand_mount='wrist'):
+                 hand_mount='wrist', start_shift=(.03, .03)):
         if finger_actions not in ('delta', 'absolute'):
             raise ValueError('finger_actions must be delta or absolute')
         self.finger_actions = finger_actions
@@ -114,6 +114,9 @@ class HandGraspEnv(gym.Env):
         # and the fingers part-closed, so holding and lifting are experienced early. Evaluate with 0.
         self.near_start = float(near_start)
         self.side_objects = set(side_objects)
+        # Object start offset range (x, y) in m around its settled pose: (.08, .12) matches the protocol's
+        # random object starts (pnr/env.py object_pose_seed); .03 was used for every run before 2026-10-03 18:30.
+        self.start_shift = tuple(float(v) for v in start_shift)
         # Optional workspace around the pregrasp, (xy m, pitch/roll rad): keeps the grasp near where the
         # planner put the hand and the palm near its pregrasp tilt, so a planned carry posture follows.
         self.wrist_box = None if wrist_box is None else tuple(float(v) for v in wrist_box)
@@ -172,7 +175,7 @@ class HandGraspEnv(gym.Env):
         quat = np.zeros(4)
         mujoco.mju_mulQuat(quat, turn, d.qpos[q0 + 3:q0 + 7].copy())
         d.qpos[q0 + 3:q0 + 7] = quat
-        d.qpos[q0:q0 + 2] += rng.uniform(-.03, .03, 2)
+        d.qpos[q0:q0 + 2] += rng.uniform(-np.asarray(self.start_shift), np.asarray(self.start_shift))
         d.qvel[rig._obj_dof:rig._obj_dof + 6] = 0
         mujoco.mj_forward(rig.model, d)
         for _ in range(30):

@@ -94,14 +94,14 @@ class FetchHandRig:
         self.rest_height = self.object_pose()[0][2]
         self.settled = self.snapshot()
 
-    def wrist_to_joints(self, wrist, collision_free=False):
+    def wrist_to_joints(self, wrist, collision_free=False, seed=None):
         """Arm joint targets (full Fetch vector) that put the palm at rig wrist pose `wrist`: planner IK
         (torso included) refined by damped least squares. With `collision_free`, IK also starts from the
         initial arm pose and random arm poses until the arm clears the table, maze and object (the seed
         picks the IK branch). Raises ValueError if unreachable."""
         position, rotation = self._flange_target(np.asarray(wrist, dtype=float))
         quaternion = Rotation.from_matrix(rotation).as_quat()
-        current = self.env.agent_qpos.astype(np.float64)
+        current = self.env.agent_qpos.astype(np.float64) if seed is None else np.asarray(seed, dtype=np.float64)
         seeds = [current, np.r_[current[:3], self.env.init_qpos[3:]]]
         rng = np.random.default_rng(0)
         if collision_free:
