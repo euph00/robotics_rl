@@ -84,6 +84,7 @@ def main():
     parser.add_argument('--every', type=int, default=3, help='Native calls per video frame')
     parser.add_argument('--size', type=int, nargs=2, default=(960, 540))
     parser.add_argument('--no-video', action='store_true', help='Trajectories and results only')
+    parser.add_argument('--random-object-pose', action='store_true', help="The protocol's seeded random object start per case")
     args = parser.parse_args()
     execution, checkpoints = dict(E.DEFAULT_EXECUTION, controller=args.controller), {}
     if args.candidate:
@@ -95,7 +96,7 @@ def main():
         execution.update(planned_speed_scale=3.0, holding_speed_scale=2.0)
     elif not checkpoints:
         parser.error('Learned recordings need --candidate')
-    by_id = {case['case_id']: case for case in E.select_cases(args.set, layout_limit=None)}
+    by_id = {case['case_id']: case for case in E.select_cases(args.set, layout_limit=None, random_object_pose=args.random_object_pose)}
     missing = [case for case in args.cases if case not in by_id]
     if missing:
         parser.error(f'Unknown cases: {missing}')
