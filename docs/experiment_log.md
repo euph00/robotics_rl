@@ -364,7 +364,7 @@ Later on 2026-10-02:
   | Gripper · imitation + SAC, 3 seeds | 77/80/80 · 78/81/81 | – |
   | Hand · scripted | 44 (16) · 47 | 0 · 0 |
   | Hand · imitation, 3 seeds | 53/52/47 · 54/54/49 | – |
-  | Hand · imitation + PPO, 3 seeds | 79/48/84 (20/14/26) · 83/59/88 | 14/–/14 · 36/–/33 (seed 1 training) |
+  | Hand · imitation + PPO, 3 seeds | 79/48/84 (20/14/26) · 83/59/88 | 14/10/14 · 36/31/33 |
 
   Ablation, standard objects, the PPO 10M checkpoints without the task-carry fine-tune: 84/46/88
   (picked 87/55/95); the fine-tune did not help. Seed 1 grasps poorly from the protocol's wider object

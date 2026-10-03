@@ -273,7 +273,7 @@
       "key": "wide_task",
       "label": "Wide objects complete the task",
       "status": "done",
-      "detail": "hand 14/40 per seed, gripper 12/40"
+      "detail": "hand 14/10/14 of 40, gripper 12/40"
     },
     {
       "key": "matrix",
@@ -284,8 +284,8 @@
     {
       "key": "seeds",
       "label": "3 seeds",
-      "status": "active",
-      "detail": "wide imitation + RL seed 1 training"
+      "status": "done",
+      "detail": "every learned condition"
     },
     {
       "key": "algorithms",

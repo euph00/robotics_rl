@@ -15,9 +15,9 @@ task, evaluated on held-out mazes with random object starts under realistic phys
 |---|---|---|
 | 1 | Protocol frozen | done 2026-10-03 |
 | 2 | Hand trained on the Fetch (wrist-end mount; standard and wide objects) | done: BC → PPO 10M → task-carry fine-tune, 3 seeds per task |
-| 3 | Wide objects complete the full task with the hand | done: 14/40 per seed (gripper 12/40) |
+| 3 | Wide objects complete the full task with the hand | done: 14/10/14 of 40 (gripper 12/40) |
 | 4 | Matrix filled with one seed | done |
-| 5 | Three seeds per learned condition | done except wide imitation + RL seed 1 (training) |
+| 5 | Three seeds per learned condition | done |
 | 6 | PPO vs RLPD on the hand; ablations | done: RLPD 3–12% after 6 h; fine-tune ablation |
 | 7 | Report | figures (`scripts/report_figures.py`); text and clips next |
 | — | Stretch: orientation-constrained delivery | only after 1–6 |
@@ -34,7 +34,7 @@ picked · delivered given picked. Figures: [docs/figures/](figures/).
 | Gripper · imitation + SAC, 3 seeds | 77/80/80 · 78/81/81 · 99% | – |
 | Hand · scripted | 44 (16) · 47 · 94% | 0 · 0 (side grasp fails) |
 | Hand · imitation, 3 seeds | 53/52/47 · 54/54/49 · 97% | – (no Fetch demos) |
-| Hand · imitation + PPO, 3 seeds | 79/48/84 (20/14/26) · 83/59/88 · 92% | **14**/–/**14** · 36/–/33 · 41% |
+| Hand · imitation + PPO, 3 seeds | 79/48/84 (20/14/26) · 83/59/88 · 92% | **14**/10/**14** (0) · 36/31/33 · 38% |
 
 Reading:
 
@@ -43,8 +43,8 @@ Reading:
   of three seeds; seed 1 grasps poorly from the protocol's wider starts). With the hand's own carry
   posture almost every picked object is delivered (92–97%). Best hand seeds reach 79–84 delivered,
   near the gripper planner's 89, and 20–26 within the deadline vs the planner's 19.
-- **Wide objects: the hand picks, the carry drops.** The RL hand picks 33–36 of 40 heavy cylinders
-  (gripper 13) but loses half in the carry; delivered 14 vs 12.
+- **Wide objects: the hand picks, the carry drops.** The RL hand picks 31–36 of 40 heavy cylinders
+  (gripper 13) but loses about half in the carry; delivered 14/10/14 vs 12.
 - **Algorithms:** BC → PPO ~70% lift and carry within 2M steps (~1 h); RLPD 3–12% after 0.75M steps
   (6 h). The task-carry fine-tune did not help (ablation: PPO 10M checkpoints 84/46/88).
 - **Grip after the grasp** is chosen per task on development mazes: frozen for standard objects,
