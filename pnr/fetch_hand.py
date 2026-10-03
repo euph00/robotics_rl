@@ -43,9 +43,9 @@ def plan_tuck(planner, q, base_xy, flange, orientation, held, first=False):
     (largest distance along x or y of arm links, hand links and object from the base centre: the maze carry
     is planned for the base's footprint), stopping at the first within TUCK_COMPACT; with no candidate, the search is
     repeated with the torso free (if its remaining range still brings the object to the goal height). At most
-    TUCK_BUDGET IK solves once a candidate is found (four times that otherwise); the chosen candidate is in
-    `plan_tuck.last`. `first`: the first candidate that counts, compact or not (training: its carry runs in
-    open space, and its vectorised environments all wait for the slowest one's search). None if nothing is found. The planner's fixed tuck (flange 24 cm ahead at 1.05 m, orientation kept) carried some
+    TUCK_BUDGET IK solves once a candidate is found, four times that otherwise; the chosen candidate is in `plan_tuck.last`. `first`: the first candidate that counts, compact
+    or not, and give up after TUCK_BUDGET solves (training: its carry runs in open space, and its vectorised
+    environments all wait for the slowest one's search). None if nothing is found. The planner's fixed tuck (flange 24 cm ahead at 1.05 m, orientation kept) carried some
     grasps 23 cm above the goal or pressed the object into the robot's head; with the wrist-end mount the
     unturned hand points away from the robot, so few such poses exist close to the base."""
     q = np.asarray(q, dtype=float)
@@ -64,17 +64,18 @@ def plan_tuck(planner, q, base_xy, flange, orientation, held, first=False):
             return np.abs(env._query.xpos[bodies, :2] - np.asarray(base_xy)[:2]).max()
 
     best, solves, plan_tuck.last = (np.inf, None), 0, None
+    give_up = TUCK_BUDGET * (1 if first else 4)
     for torso, heights in ((low, TUCK_HEIGHTS), (None, TUCK_HEIGHTS[:1])):
         for height in heights:
-            for turn in TUCK_TURNS:
-                rotation = Rotation.from_euler('z', turn, degrees=True)
-                turned, quaternion = rotation.apply(offset), (rotation * grasp).as_quat()
+            for k, seed in enumerate(seeds):              # every turn from the current arm first: cheapest
                 for ahead in TUCK_AHEAD:
-                    target = np.r_[base_xy[0] + ahead, base_xy[1], height] - turned
-                    for k, seed in enumerate(seeds):
-                        if solves >= TUCK_BUDGET * (1 if best[1] is not None else 4):
+                    for turn in TUCK_TURNS:
+                        if solves >= (TUCK_BUDGET if best[1] is not None else give_up):
                             return best[1]
                         solves += 1
+                        rotation = Rotation.from_euler('z', turn, degrees=True)
+                        turned, quaternion = rotation.apply(offset), (rotation * grasp).as_quat()
+                        target = np.r_[base_xy[0] + ahead, base_xy[1], height] - turned
                         try:
                             tuck = planner.ik(target, quaternion, seed=seed, torso=torso)
                         except ValueError:

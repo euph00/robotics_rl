@@ -137,8 +137,9 @@ class JointPlanner:
     def ee_pose(self):
         return self.env.ee_pose()
 
-    def ik(self, position, quaternion, seed=None, tolerance=.012, torso=None):
-        """Arm and torso joints reaching the end-effector pose; `torso` pins the torso at that height."""
+    def ik(self, position, quaternion, seed=None, tolerance=.012, torso=None, max_nfev=140, fallback=True):
+        """Arm and torso joints reaching the end-effector pose; `torso` pins the torso at that height;
+        `fallback` also starts from a default folded arm when the seed does not converge."""
         seed = self.env.agent_qpos.copy() if seed is None else np.asarray(seed).copy()
         lower, upper = self.lower.copy(), self.upper.copy()
         if torso is not None:
@@ -168,11 +169,12 @@ class JointPlanner:
             # Numerical FK in Bullet returns float32, requiring a useful finite step.
             seeds = [np.clip(seed[self.active], lower+1e-6, upper-1e-6)]
             default = np.array([.22, 0., -.65, 0., 1.5, 0., .75, 0.])
-            seeds.append(np.clip(default, lower+1e-6, upper-1e-6))
+            if fallback:
+                seeds.append(np.clip(default, lower+1e-6, upper-1e-6))
             best = None
             for x0 in seeds:
                 result = least_squares(residual, x0, bounds=(lower, upper),
-                                       jac=jacobian, max_nfev=140,
+                                       jac=jacobian, max_nfev=max_nfev,
                                        xtol=1e-6, ftol=1e-6, gtol=1e-6)
                 err = np.linalg.norm(residual(result.x))
                 if best is None or err < best[0]:
