@@ -474,14 +474,34 @@ def study_progress(runs_root):
             if not SAFE_ID.fullmatch(str(run)):
                 continue
             status = read_json(runs_root / run / "status.json") or {}
-            started = status.get("started_at")
-            points = []
-            for row in read_records(runs_root / run / "metrics.jsonl", limit=2000):
-                if row.get("metric_source") == "evaluation" and started and row.get("timestamp"):
-                    hours = (datetime.fromisoformat(row["timestamp"]) - datetime.fromisoformat(started)).total_seconds() / 3600
-                    points.append({"steps": row.get("transitions"), "hours": hours, "carried": row.get("carry_success_rate")})
-            algorithm["curves"].append({"id": run, "points": points, "running": _alive(status)})
+            algorithm["curves"].append({"id": run, "points": training_hours(runs_root / run, status), "running": _alive(status)})
     return study
+
+
+def training_hours(directory, status):
+    """Evaluation points with training wall-clock hours: time after a resume ("Resumed from step N") continues
+    from the hours at checkpoint N, so an interruption's idle gap and its lost steps are not counted."""
+    started = status.get("started_at")
+    if not started:
+        return []
+    resumes = []
+    for event in read_records(directory / "events.jsonl", limit=500):
+        match = re.fullmatch(r"Resumed from step (\d+)", str(event.get("message", "")))
+        if match and event.get("timestamp"):
+            resumes.append((datetime.fromisoformat(event["timestamp"]), int(match.group(1))))
+    origin, offset, points = datetime.fromisoformat(started), 0., []
+    for row in read_records(directory / "metrics.jsonl", limit=2000):
+        if row.get("metric_source") != "evaluation" or not row.get("timestamp"):
+            continue
+        when = datetime.fromisoformat(row["timestamp"])
+        while resumes and when >= resumes[0][0]:
+            resumed_at, step = resumes.pop(0)
+            offset = next((p["hours"] for p in points if p["steps"] == step), offset)
+            origin = resumed_at
+        points = [p for p in points if p["steps"] < row.get("transitions", 0)]    # work redone after a resume
+        points.append({"steps": row.get("transitions"), "hours": offset + (when - origin).total_seconds() / 3600,
+                       "carried": row.get("carry_success_rate")})
+    return points
 
 
 def training_curves(runs_root, curated, directories, limit=4):
