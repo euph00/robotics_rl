@@ -84,15 +84,27 @@ class HandPlannerSystem(ReferenceController):
         return pregrasp_wrist(rig, yaw, height=(top + .011 + self.clearance - .05) - centre[2])
 
     def prepare_hand_grasp(self):
-        base = self.base_position()
-        self.move_ee([base[0] + .35, base[1], 1.1], TOPDOWN, 'fold')
-        self.move_base([-.78, 0.], stage='approach')
+        """Fold the arm with the hand already in its pregrasp orientation, drive to the table, move the hand
+        to 20 cm above the pregrasp and come straight down. With the wrist-end mount the hand reaches
+        ~25 cm past the flange: turning it near the table, or sweeping between planner waypoints, pushes
+        the object away."""
         self.rig = FetchHandRig(env=self.env, stepper=lambda action: self.tick(action, 'grasp'))
         wrist = self.pregrasp = self.hand_pregrasp()
-        if self.env.object_idx in SIDE_GRASP_OBJECTS:     # come down beside it from above, as the side teacher
-            above = wrist + [0., 0., .15, 0., 0., 0.]
-            self.move_joint(self.rig.wrist_to_joints(above, collision_free=True), stage='pregrasp', include_object=True)
-        self.move_joint(self.rig.wrist_to_joints(wrist, collision_free=True), stage='pregrasp', include_object=True)
+        _, rotation = self.rig._flange_target(wrist)
+        orientation = Rotation.from_matrix(rotation).as_quat()
+        base, error = self.base_position(), None
+        for dx, dy, z in ((.3, 0., 1.15), (.35, 0., 1.), (.3, .15, 1.1), (.3, -.15, 1.1), (.4, 0., .95)):
+            try:                                    # fold poses near the base, first reachable one
+                self.move_ee([base[0] + dx, base[1] + dy, z], orientation, 'fold')
+                break
+            except ValueError as exc:
+                error = exc
+        else:
+            raise error
+        self.move_base([-.78, 0.], stage='approach')
+        for lift in (.2, 0.):
+            target = self.rig.wrist_to_joints(wrist + [0., 0., lift, 0., 0., 0.], collision_free=True)
+            self.move_joint(target, stage='pregrasp', include_object=True, step_size=.012 if lift else .006)
         self.rig.wrist_target = wrist.copy()        # read the reached pose's angles near the planned ones
         self.stage_results['hand_pregrasp'] = {'wrist': wrist.tolist(), 'reached': self.rig.wrist().tolist()}
         return wrist

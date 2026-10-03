@@ -17,10 +17,14 @@ from .hand_env import FINGER_STEP, WRIST_STEP
 CLOSED = np.array([0, 1.5, 1.4, 1.2] * 3 + [1.396, 1.1, 1.3, 1.3])
 
 
-def narrow_axis_yaw(points, current):
-    """Wrist yaw that points the fingers along the object's narrow horizontal axis (closest to current)."""
+def narrow_axis_yaw(points, current, round_ratio=.75):
+    """Wrist yaw that points the fingers along the object's narrow horizontal axis (closest to current).
+    A nearly round footprint (minor/major spread above `round_ratio`) has no meaningful narrow axis:
+    keep the current yaw."""
     xy = points[:, :2] - points[:, :2].mean(0)
-    _, vectors = np.linalg.eigh(np.cov(xy.T))
+    values, vectors = np.linalg.eigh(np.cov(xy.T))
+    if values[0] > round_ratio * values[1]:
+        return float(current)
     minor = vectors[:, 0]
     yaw = np.arctan2(minor[1], minor[0])
     options = yaw + np.pi * np.arange(-2, 3)
@@ -81,7 +85,9 @@ class PowerGraspTeacher:
                 self.phase = 'descend'
         elif self.phase == 'descend':
             goal = self._wrist_goal(above)
-            if abs(goal[2] - rig.wrist()[2]) < self.descend_tolerance:
+            touching, palm, table, _ = rig.contacts()
+            # Guarded descent: close on reaching the height, or as soon as the hand touches the object or table.
+            if abs(goal[2] - rig.wrist()[2]) < self.descend_tolerance or table or palm or touching.any():
                 self.phase = 'close'
         elif self.phase == 'close':
             goal = self._wrist_goal(above)
