@@ -101,6 +101,10 @@ def main():
     cases = E.select_cases(args.set, objects=args.objects, layout_limit=args.layout_limit,
                            random_object_pose=args.random_object_pose)
     args.output.mkdir(parents=True)
+    atomic_json(args.output / 'config.json', {'set': args.set, 'cases': len(cases), 'label': f'hand · {args.policy}',
+                                              'controller': 'hand', 'policy': args.policy, 'step': args.step,
+                                              'objects': args.objects, 'random_object_pose': args.random_object_pose,
+                                              'hand_mount': args.hand_mount, 'command': sys.argv})
     source = 'scripted teacher' if args.policy == 'teacher' else f'{args.policy}/{args.step}'
     logger = RunLogger(args.output.name, root=args.output.parent, kind='evaluation',
                        name=f'Allegro on the Fetch · {source} · {args.set}', summary=f'{len(cases)} cases')
@@ -109,7 +113,7 @@ def main():
                              initializer=initialize_worker, initargs=(args.policy, args.step)) as pool:
         futures = [pool.submit(evaluate_case, case, args.speed_scale, args.holding_speed_scale, args.horizon, args.fingers_after_grasp,
                                args.hand_mount) for case in cases]
-        with (args.output / 'cases.jsonl').open('w') as stream:
+        with (args.output / 'results.jsonl').open('w') as stream:
             for future in as_completed(futures):
                 row = future.result()
                 rows.append(row)

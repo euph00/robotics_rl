@@ -322,8 +322,9 @@ def case_specs(bank, partition="train", *, object_indices=None, allow_heldout=Fa
     objects = bank["object_indices"] if object_indices is None else [int(i) for i in object_indices]
     if not objects:
         raise ValueError("Declare the object set before constructing physical cases")
-    if len(set(objects)) != len(objects) or any(not 0 <= i < 15 for i in objects):
-        raise ValueError("Object indices must be distinct entries from the original 15 assets")
+    from .env import OBJECT_VARIANTS
+    if len(set(objects)) != len(objects) or any(not 0 <= i < 15 and i not in OBJECT_VARIANTS for i in objects):
+        raise ValueError("Object indices must be distinct: the original 15 assets or pnr.env.OBJECT_VARIANTS")
     result = []
     for layout in scene_records(bank, partition, allow_heldout=allow_heldout):
         for object_idx in objects:

@@ -1,114 +1,84 @@
-# Aligned project specification
+# Project spec
 
-Reconciled on 2026-09-28 against upstream commit `54ab2d1faa54d1aa7e2738f114531a76c6514cd3`. This document describes planned work, not completed simulation or training results.
+Refocused 2026-10-03. Earlier plans: [archive/project_spec_2026-09-28.md](archive/project_spec_2026-09-28.md)
+(SAC+HER vs TD3+HER × two grippers) and the PyBullet-era guide in [archive/](archive/).
+Machine-readable version of this plan (drives the dashboard): [`configs/study.json`](../configs/study.json).
 
-## Authority and objective
+## Question
 
-The current user instruction makes the [course repository](https://github.com/NUS-LinS-Lab/Pick-Nav-Reach-Default-Project) the foundation. Its README supplies task requirements and rubric; its source supplies the actual simulator contract. Where these differ or leave gaps, document the gap rather than treating an implementation defect as an intended task rule. This specification and the updated handoff/guide replace conflicting assumptions in the archived drafts and original presentation.
+**Where does RL add value in mobile manipulation, and how does that depend on the end
+effector's complexity?**
 
-Build a working system that approaches the table, generates antipodal grasps from the supplied point cloud and normals, physically picks and lifts a supplied object, carries it through the maze, and brings the object within **0.1 m in 3-D** of the goal sphere while retaining it. Then compare SAC+HER with TD3+HER across two gripper configurations, using independently trained complete systems and a reproducible evaluation.
+Expected claim, supported by the development results so far: RL adds little to a two-finger
+gripper that a classical planner already handles well; for a 16-joint dexterous hand it is what
+makes the hand usable, and the resulting system is faster than the gripper planner.
 
-The extension is the goal-conditioned learning study, staged learned control, gripper comparison, and rigorous evaluation on the original task. A new placement surface, object release, or wheel-dynamics task is unnecessary for this extension.
+## Task
 
-**Simulator (decided 2026-10-01):** the task runs in MuJoCo (`pnr/env.py`) instead of the course's PyBullet, keeping the course robot, objects, mazes, seed mapping, motor law, friction coefficients and success criterion. The course grader is a sanity check, not a constraint; its rubric is estimated by `scripts/rubric.py`. The PyBullet-era record is in `docs/archive/pybullet/`.
+The course task, unchanged in substance: a Fetch drives from the start room to a table, picks up
+a supplied object, carries it through an unseen maze and holds it within 10 cm of a goal sphere
+0.9 m high. Simulated in MuJoCo (`pnr/env.py`) with **realistic physics for both end effectors**:
+every joint limited in velocity, acceleration and effort; rubber grip (μ 1.0); Fetch jaws ≤ 245 N;
+Allegro joints ≤ 0.7 N m. The course rubric is estimated by `scripts/rubric.py`.
 
-## Reconciliation decisions
+## Study matrix: end effector × grasp controller
 
-| Earlier assumption | Upstream evidence | Working decision |
+| Grasp controller | Parallel gripper (2 joints) | Allegro hand (16 joints) |
 |---|---|---|
-| Pick a block | Fifteen YCB-style object assets; default `object_idx=5` is a banana | Use supplied objects. A simple object can be a pilot curriculum, not the final task restriction. |
-| Place, release, and settle on a target surface | Target is a collision-free visual sphere at z=0.9 m; no destination support surface is created | Final skill is reach while holding the object. Release/placement is outside the core. |
-| Wheel velocity control | Fixed robot root with movable x/y/yaw joints; wheel joints fixed | Preserve the supplied planar base and position-control semantics. |
-| Fixed maze; unseen layouts optional | README evaluates navigation/reach on five unprovided-seed mazes | Fixed maze is only an early curriculum. Held-out maze layouts are required. |
-| Generic RL manipulation alone | README explicitly requires grasp generation, motion planning, and navigation modules | Implement these components and a classical reference; describe shared assistance in the learned extension. |
-| Near-object initial condition | Robot root starts at [-2, 0, 0], object above the table at [0, 0, 1] | Include the table approach in full episodes; close starts are training curricula only. |
-| Complete RL environment supplied | Only `step(action) -> (obs, info)` and a partial reset exist | Add a Gymnasium/goal adapter, rewards, episode handling, deterministic resets, and checks. |
-| RTX 5080 and A100 both available | Only gpu09/A100 access has been verified | Plan locally around measured gpu09 capacity; do not assume access to the 5080. |
+| Scripted | Planner: antipodal grasp from the point cloud, planned descent (the default project) | Scripted top-down or side power grasp |
+| Imitation | Behaviour cloning of the planner's grasp | Behaviour cloning of the scripted grasp |
+| Imitation + RL | BC then SAC fine-tuning | BC then PPO fine-tuning |
+| RL from scratch | — (not part of the study) | PPO from scratch (rig ablation) |
 
-## Task and observation contract
+Everything else is shared within an end effector: planned approach and pregrasp, planned carry
+posture, maze carry, reach and final hold. The gripper systems' learned carry and reach skills are
+kept as in the course-task study (BC carry on a maze map; SAC+HER reach). The hand systems use
+the planner for approach, carry and reach; **only the hand's grasp is learned**.
 
-The original robot has 15 controlled joints: planar x/y/yaw, torso lift, two head joints, seven arm joints, and two finger joints. Upstream actions are **absolute position targets**, clipped/wrapped by the environment and executed through position control. Each upstream action uses five physics steps. A policy can use a smaller normalized action interface, but its conversion into those targets must be explicit and identical between learners for the same robot.
+Hand hardware: Menagerie Allegro (right hand), mounted on the Fetch's wrist flange by its wrist
+end (`hand_mount='wrist'`), as Allegro hands are mounted on arms.
 
-Supplied observations are joint positions/velocities, object pose, goal position, 1,024 world-frame surface points and normals, and maze wall centers. Wall count depends on the maze; the README's `(140, 2)` is an example, not a fixed observation-space guarantee. Navigation needs a consistent geometry encoding, such as an occupancy grid derived from the given wall centers. No image perception is required.
+## Evaluation protocol (frozen 2026-10-03)
 
-Preserve the source maze geometry: a 12-by-16 maze plus a six-column starting room, 1 m horizontal cells, and 2 m walls. Preserve the original objects, table, goal height, and planar robot mechanism. Source repairs and training-only reset curricula must be distinguishable from changes to the evaluation task.
+| Item | Setting |
+|---|---|
+| Tasks | **Standard**: the course's five objects (foam brick, banana, soup can, apple, mug). **Wide**: master chef can and soup can ×1.6 (wide, heavy cylinders at the gripper's limit) |
+| Cases | Hold-out bank: 20 unseen mazes × the task's objects (standard 100, wide 40) |
+| Object start | Seeded random offset (±8 cm, ±12 cm) and yaw per case (`--random-object-pose`); the course always starts objects in one pose |
+| Physics and speeds | Realistic; planned motions at speed 3 (holding 2); hand grasp ≤ 300 decisions |
+| Primary metrics | Delivered (`complete_task_success`); delivered within 15,000 physics ticks including settling |
+| Secondary | Course rubric estimate per trial; failures by stage; median ticks |
+| Seeds | 3 independently trained systems per learned condition; scripted conditions run once (deterministic) |
+| Checkpoints | Chosen on development evaluations only (training-time evaluations, course set), never on the hold-out bank |
+| Sealed | `reserve` bank stays unused |
 
-## Controllers and learning boundary
+## Algorithms
 
-First implement the course-required components in our own controller module:
-
-1. Antipodal grasp proposals from point pairs and normals, filtered for the actual gripper aperture and approach clearance.
-2. IK with verified joint/link indexing, and collision-aware arm motion planning (for example, our own RRT-style search with checked interpolation) to approach and execute proposed grasps.
-3. Maze representation, footprint/held-object clearance checks, and a navigation reference (for example, our own grid A* and path following).
-4. Physical grasp validation, lift and hold checks, and a complete approach–pick–carry–reach reference rollout using the original action contract.
-
-The reference establishes physical feasibility and provides rubric-visible functions. It is evaluated separately from the learned systems. The simulator's kinematics/collision primitives can support our algorithms; calling a keyboard controller or importing an end-to-end planner does not replace their implementation.
-
-Use a fixed supervisor and independently trained goal-conditioned skills for the extension:
-
-| Stage | Learned behavior | Shared assistance and constraints |
+| Where | Algorithm | Why |
 |---|---|---|
-| Approach, grasp, lift | Local end-effector refinement, closure, and lift control | Antipodal candidates, verified IK, collision checking, and potentially a planned pre-grasp approach; all assistance declared and measured |
-| Carry | Planar base motion conditioned on maze geometry and a fixed episode goal | Arm carry posture and gripper closure; final learned navigation must not quietly receive an A* route oracle |
-| Reach | Fine base/arm positioning of the held object at the goal | Verified IK, collision checks, closed-gripper retention; no release or support surface |
+| Gripper grasp, carry | BC; SAC fine-tuning | Low-dimensional actions; existing course-task study |
+| Gripper reach | SAC + HER | Goal-reaching with sparse reward, where HER applies |
+| Hand grasp | BC from scripted demos, then PPO (rig pretraining, then Fetch fine-tuning) | 22-D actions, dense reward, cheap parallel simulation: the standard dexterous-manipulation recipe; SAC ran ~10× slower per wall-clock second here |
+| Hand algorithm comparison | PPO vs RLPD (SAC with demonstrations in every batch, high update ratio) on the chef can, equal wall-clock | Tests whether a demonstration-driven off-policy method beats PPO where environment steps are expensive |
 
-During feasibility work, freeze exactly which approach segments and arm motions are planned versus learned. The default direction is a **hybrid system with common geometric assistance**, not a claim of learning every low-level motion from scratch. Count autonomous controller steps in full-task duration and report their contribution. Learned manipulation should make a substantive decision, not merely select an algorithm label while a script performs the whole task. Do not introduce planner-generated navigation waypoints without explicitly revising the learned-navigation claim.
+TD3+HER is dropped: same family as SAC, and on the gripper RL is not the bottleneck.
 
-Train skills on easier valid starts, then broaden them to the states produced by earlier skills and to the actual object/maze distribution. Final evaluation starts at the original task start and has no inter-skill resets or teacher corrections. Training states with an object already held must be physically valid, not welded attachment shortcuts.
+## Milestones
 
-## Success, rubric, and evaluation
+1. Protocol frozen (this document, `configs/study.json`).
+2. Hand policies trained on the Fetch with the wrist-end mount (standard objects and the chef can).
+3. Wide objects complete the full task with the hand (side-grasp carry posture).
+4. Matrix filled with one seed per condition, both tasks.
+5. Three seeds per learned condition.
+6. Algorithm comparison on the hand (PPO vs RLPD) and ablations (imitation only, RL from scratch).
+7. Report (5–8 page NeurIPS-style) and presentation material (figures, clips from the dashboard).
 
-Keep two named result families:
+**Stretch, only after milestones 1–6 give a complete set of results:** orientation-constrained
+delivery (the object must arrive in a required orientation, e.g. a lying bottle delivered upright),
+where the hand can turn the object in its fingers and the gripper must set it down and re-grasp.
 
-- **Upstream proximity:** preserve the source `success = norm(object_pos - goal_pos) < 0.1` exactly as a compatibility measurement. This alone does not establish successful grasping and transport.
-- **Complete physical task:** document pickup/lift/hold history, retained maze transport, and a final held-object reach satisfying the same position tolerance. Pushing, throwing through the sphere, or dropping and accidentally passing the proximity check do not establish this metric. No final release requirement is added.
+## Reporting rules
 
-Record every explicit rubric item: grasp-generation function, motion-planning function, lift by 3,000 simulation steps, lift height at least 10 cm above the table, at least 50 stable hold steps, pose error relative to the target grasp, navigation function, reach within 10 cm, reach within 15,000 simulation steps, and carry stability/drop/re-grasp events.
-
-Several scoring details are unspecified or inconsistent upstream:
-
-- “Simulation steps” could mean environment calls or physics ticks; one source call advances five ticks. Record policy decisions, source action calls, and physics ticks separately, plus both interpretations of deadline flags. Also log cumulative and navigation-stage times. Do not claim a definitive grading interpretation until documented.
-- “Final pose close to target grasp,” lift reference point, hold-stability tolerance, and collision penalties are not fully defined. Preserve continuous diagnostics and predeclare operational research thresholds before tuning/final evaluation.
-- Carry stability is headed “4 pts” but its subline says “2 pts each (max 8).” Report component measurements; do not invent an authoritative corrected total score.
-
-The README calls for five test objects from the provided set and five unprovided-seed test mazes, but supplies no exact seed list or pairing rule. Prepare a development bank and a separate held-out bank in that spirit; do not label self-selected tests as the instructor's hidden tests. Support all 15 object assets and evaluate a declared representative five-object set at minimum, with broader coverage when feasible. The proposed research bank crosses those five objects with five distinct held-out mazes, producing 25 cases per trained system; this cross-product is our protocol, not an asserted course requirement. Final object choices and seeds are frozen after feasibility and before final training/testing.
-
-Inspect maze-content hashes as well as seed numbers: the existing generator resets an internal RNG to 5, so new environment seed values do not automatically establish distinct or unseen layouts. Preserve a course-compatible seed mode. Any repaired independent maze RNG mode is a separately versioned extension distribution, with course-mode evaluation retained.
-
-## Experimental matrix and fair comparison
-
-| Gripper | SAC + HER | TD3 + HER |
-|---|---|---|
-| Original Fetch parallel fingers | 3 independent system seeds | 3 independent system seeds |
-| Same robot, meaningful finger/contact-geometry modification | 3 independent system seeds | 3 independent system seeds |
-
-Keep the original Fetch configuration as the course-compatible track; the modified gripper is an explicitly labeled research extension, not a replacement for that track.
-
-This is **12 independently trained complete systems**, potentially up to 36 trained skill policies if every system has three learned skills. Shared learned skills would create dependence and must not be counted as fresh system replications. A classical reference is additional to, not a cell in, this matrix.
-
-Prefer a controlled finger-pad/shape modification because the supplied fingers already use simple collision boxes. Validate its aperture, contact, inertia, IK reach, and maze clearance before selecting exact dimensions. A cosmetic mesh change is not a morphology experiment. Keep the base, arm, joint count, closure abstraction, task bank, and controller assistance matched where feasible; document unavoidable differences.
-
-Use the same observations, rewards, curriculum rules, and total real interaction budgets for SAC and TD3 within a robot configuration. Track all skills, curriculum/data-generation transitions, integration fine-tuning, actor/critic updates, wall time, and peak resource use. Separate pilots from final runs. Preserve algorithm-specific behavior such as TD3's delayed actor updates. Three seeds support a modest empirical comparison; neither universal algorithm/morphology claims nor HER's causal benefit follows from this matrix.
-
-Demonstration replay and optional behavior-cloning (BC) actor initialization are permitted development aids when explicitly labeled and counted. A pilot using them is “SAC+HER with demonstration replay” or “BC-initialized SAC+HER,” not from-scratch learning. Pilot protocols may vary while diagnosing feasibility; **no demonstration/BC protocol is selected for the final comparison yet**.
-
-If retained for the final study, freeze a common per-skill initialization protocol before training the twelve systems: demonstration collection/data and replay use, BC objective, sampling and update budget, initialization/checkpoint rules, and subsequent online budgets. Match these between SAC and TD3 within each gripper; collect physically valid data with matched declared collection rules and budgets across grippers. Count demonstration collection, failed collection attempts, physical setup and online interactions, and report BC updates/examples and compute separately. Each of the twelve systems must independently initialize and train its own skill actors, including any BC stage; shared learned actor weights must not stand in for independent system replications.
-
-BC, if used, ends before unchanged online SAC/TD3+HER updates begin. Evaluate the initialized actor at zero online steps and subsequent learning separately; do not attribute imitation-only competence to online RL. BC action labels use their original desired goals; HER remains part of the RL replay process. Evaluation still uses the original physical task with no teacher corrections or inter-skill resets.
-
-Primary reporting: uninterrupted complete-task success by training seed, success versus cumulative interactions, and upstream/rubric diagnostics. Supporting results: stage success, drops, collisions, target position error, grasp pose error, path/time efficiency, inference loadability, and compute. Fix budgets, checkpoint rule, evaluation cases, and failure/recovery policy before final experiments; retain valid unsuccessful seeds. No hindsight goals are used during evaluation.
-
-## Implementation gates and deliverables
-
-1. **Environment and reference:** create a project-local Python 3.10 environment; pin compatible dependencies; integrate a headless simulator (PyBullet at first, MuJoCo since 2026-10-01); repair/reset/seed/isolation issues; implement explicit baseline algorithms; verify contact grasping and complete reference rollouts. Measure table height, controllable frame transforms, simulator time, physical feasibility, and end-to-end throughput.
-2. **Goal-conditioned adapter:** define observation/achieved/desired goals and replayable vectorized rewards; check HER behavior, episode boundaries, truncation and physical failures, observation consistency, fresh-process load, and resume. Add Gymnasium, SB3, and PyTorch after compatibility checks.
-3. **First learned complete system:** run bounded SAC+HER pilots on the original gripper; train and join skills; inspect real contact and handovers; establish repeated uninterrupted successes and progression toward held-out mazes/objects.
-4. **Comparison readiness:** physically validate the second gripper, integrate TD3, estimate affordable budgets/concurrency from profiling, and freeze the exact assistance/evaluation/experiment manifest.
-5. **Replicated results:** train the 12 independent final systems, evaluate the same held-out cases, preserve trajectories/checkpoints/raw results, analyze failures and variability, and verify reproduction from a fresh process.
-6. **Delivery and understanding:** runnable code/configs, asset provenance and patches, dependency record, train/evaluate commands, policies and preprocessing, manifests/recovery records, plots, selected raw clips, and an evidence-based 5–8 page NeurIPS-style report as requested in the local brief. The upstream README does not verify that report format; check course submission instructions later. Slides, final-video production, external publication, and submission remain deferred.
-
-The available machine has an A100 80 GB, 48 logical CPUs, and about 251 GiB RAM. Physics simulation is CPU-bound; GPU availability alone is not a training-rate estimate. Keep dependencies, caches, temporary meshes, replay storage, and outputs on the workspace volume because the system disk is nearly full. No extra GPU machine or paid resource is assumed.
-
-## Current limits of knowledge
-
-The original reconciliation above was based on source/document inspection. Subsequent environment execution, physical-reference results, and skill pilots are recorded in [project_state.md](project_state.md) and [implementation_log.md](implementation_log.md). Final comparative budgets, held-out results, and gripper dimensions remain to be established.
+Report every completed condition and seed, including failures; development numbers are labelled
+as such. State the control boundary for every system (what is planned, scripted or learned).
+Count training interactions for every learned component, including demonstration collection.

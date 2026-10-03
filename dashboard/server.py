@@ -25,8 +25,10 @@ from urllib.parse import quote, unquote, urlsplit
 REPO = Path(__file__).resolve().parents[1]
 PUBLIC = Path(__file__).resolve().parent / "public"
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,100}$")
+STUDY = REPO / "configs/study.json"
 REPORTS = {
     "project_state.md": REPO / "docs/project_state.md",
+    "study.json": REPO / "configs/study.json",
     "experiment_log.md": REPO / "docs/experiment_log.md",
     "imitation_sac.json": REPO / "configs/imitation_sac.json",
     "imitation_only.json": REPO / "configs/imitation_only.json",
@@ -418,10 +420,46 @@ def get_overview(runs_root):
             recording["media"].append(dict(item, poster=poster))
     maze = read_json(OVERVIEW.with_name("maze_example.json"))
     return finite_json({"timestamp": utcnow(), "overview": curated, "maze": maze, "evaluations": evaluations,
-                        "active": active, "history": history, "training": training_curves(runs_root, curated, directories)})
+                        "active": active, "history": history, "training": training_curves(runs_root, curated, directories),
+                        "study": study_progress(runs_root)})
 
 
 TRAINING_SKILLS = {"hand_grasp"}
+
+
+def eval_result(runs_root, run_id):
+    """Tally of one full-task evaluation run (scripts/eval.py results.jsonl, or eval_hand.py)."""
+    if not isinstance(run_id, str) or not SAFE_ID.fullmatch(run_id):
+        return {"id": str(run_id), "status": "missing"}
+    directory = runs_root / run_id
+    status = read_json(directory / "status.json") or {}
+    path = next((p for p in (directory / "results.jsonl", directory / "cases.jsonl") if p.is_file()), None)
+    if path is None:
+        return {"id": run_id, "status": "running" if _alive(status) else "missing", "cases": 0}
+    rows = [row for row in read_records(path, limit=5000) if "success" in row]
+    config = read_json(directory / "config.json") or {}
+    summary = read_json(directory / "summary.json") or {}
+    planned = config.get("cases") if isinstance(config.get("cases"), int) else (summary.get("overall") or {}).get("cases")
+    by_object = {}
+    for row in rows:
+        entry = by_object.setdefault(str(row.get("object_idx")), {"cases": 0, "success": 0, "timed": 0})
+        entry["cases"] += 1
+        entry["success"] += bool(row["success"])
+        entry["timed"] += bool(row.get("timed"))
+    return {"id": run_id, "status": "running" if _alive(status) else "complete", "cases": len(rows),
+            "planned": planned or len(rows), "success": sum(bool(r["success"]) for r in rows),
+            "timed": sum(bool(r.get("timed")) for r in rows), "by_object": by_object}
+
+
+def study_progress(runs_root):
+    """configs/study.json with each matrix cell's evaluation tallies attached (one entry per seed)."""
+    study = read_json(STUDY) or {}
+    for condition in study.get("conditions", []):
+        condition["results"] = {task: None if runs is None else [eval_result(runs_root, run) for run in runs]
+                                for task, runs in (condition.get("evals") or {}).items()}
+        if condition.get("dev"):
+            condition["dev"]["result"] = eval_result(runs_root, condition["dev"].get("run"))
+    return study
 
 
 def training_curves(runs_root, curated, directories, limit=4):
@@ -431,8 +469,10 @@ def training_curves(runs_root, curated, directories, limit=4):
     for directory in directories:
         status = read_json(directory / "status.json") or {}
         if status.get("skill") in TRAINING_SKILLS and directory.name not in chosen:
-            found.append((status.get("started_at") or "", directory.name))
-    chosen += [name for _, name in sorted(found, reverse=True)]
+            found.append((_alive(status), status.get("started_at") or "", directory.name))
+    running = [name for alive, _, name in sorted(found, reverse=True) if alive]
+    recent = [name for alive, _, name in sorted(found, reverse=True) if not alive]
+    chosen += running + recent[:max(0, 2 - len(running))]     # running runs; else the two most recent
     curves = []
     for run_id in chosen[:limit]:
         if not SAFE_ID.fullmatch(run_id):

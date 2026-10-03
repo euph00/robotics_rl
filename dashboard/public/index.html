@@ -3,14 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pick–Nav–Reach · Dashboard</title>
+  <title>RL in Mobile Manipulation</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
   <header class="top">
     <div>
-      <h1 id="title">Pick–Nav–Reach</h1>
-      <p class="meta"><span class="pill" id="phase">Loading</span> <span id="summary"></span></p>
+      <h1 id="title">Loading…</h1>
+      <p class="question" id="question"></p>
+      <p class="muted small" id="protocol"></p>
     </div>
     <div class="top-right">
       <div class="resources" id="resources"></div>
@@ -19,73 +20,43 @@
   </header>
 
   <main>
-    <section class="cards" id="headline"></section>
-
     <section class="panel">
-      <h2>Systems: who controls each phase, and how they score</h2>
-      <div id="systems"></div>
+      <h2>Plan</h2>
+      <ol class="plan" id="plan"></ol>
     </section>
 
     <section class="panel">
-      <h2>Dexterous hand training <span class="muted small">Allegro on the test rig · deterministic evaluations every 1–2M steps · hover for details</span></h2>
+      <h2>Results <span class="hint">share of held-out cases delivered · darker part: delivered within the 15k-tick deadline</span></h2>
+      <div class="matrices" id="matrix"></div>
+    </section>
+
+    <div class="row2">
+      <section class="panel">
+        <h2>What RL adds <span class="hint">standard objects</span></h2>
+        <div id="added"></div>
+      </section>
+      <section class="panel">
+        <h2>What each system learns</h2>
+        <div id="pipeline"></div>
+      </section>
+    </div>
+
+    <section class="panel">
+      <h2>Training now <span class="hint">deterministic evaluations · hover for details</span></h2>
       <div class="train-grid" id="training"></div>
     </section>
 
     <section class="panel">
-      <h2>Where the time goes <span class="muted small">median successful run, physics ticks</span></h2>
-      <div id="timeline"></div>
-    </section>
-
-    <section class="panel">
-      <h2>How the learned policies are made</h2>
-      <div id="imitation"></div>
-    </section>
-
-    <section class="panel">
-      <h2>Carry through an unseen maze <span class="muted small">recorded trajectories, replayed</span></h2>
-      <div class="maze-row">
-        <div id="maze" class="maze-box"></div>
-        <div id="slip" class="slip-box"></div>
-      </div>
-    </section>
-
-    <section class="panel">
-      <h2>Results</h2>
-      <div class="figs" id="results"></div>
-    </section>
-
-    <section class="panel">
-      <h2>What we learned</h2>
-      <div class="figs" id="findings"></div>
-    </section>
-
-    <section class="panel">
-      <h2>Course rubric estimate <span class="muted small">per trial · course seeds</span></h2>
-      <div id="rubric"></div>
-    </section>
-
-    <section class="panel" id="active-panel" hidden>
-      <h2>Running now</h2>
-      <div id="active"></div>
-    </section>
-
-    <section class="panel">
-      <h2>Recordings</h2>
+      <h2>Clips</h2>
       <div id="recordings"></div>
     </section>
 
-    <section class="panel">
-      <details>
-        <summary>All evaluations</summary>
-        <div class="scroll"><table id="evaluations"></table></div>
-      </details>
-      <details>
-        <summary>Historical runs <span id="history-count"></span></summary>
-        <div class="scroll"><table id="history"></table></div>
-      </details>
+    <footer class="foot">
       <nav class="docs" id="documents"></nav>
-    </section>
+      <div id="active"></div>
+    </footer>
   </main>
+  <div class="tip" id="tip" hidden></div>
   <script src="/app.js"></script>
 </body>
 </html>
