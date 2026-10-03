@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from .fetch_hand import FetchHandRig
+from .fetch_hand import READY, FetchHandRig
 from .hand import pregrasp_wrist, side_grasp_geometry, wrist_for
 from .hand_env import FINGER_STEP, SIDE_GRASP_OBJECTS, HandGraspEnv
 from .hand_teacher import narrow_axis_yaw
@@ -109,8 +109,11 @@ class HandPlannerSystem(ReferenceController):
         # (collision-free IK seeded from the initial arm pose), then 20 cm straight up by IK continuation;
         # move to the top of that path and come down along it. A descent planned from above can end on a
         # branch that cannot reach the pregrasp (the hand then starts too high for the policy).
-        seed = np.r_[self.env.agent_qpos[:3], self.env.init_qpos[3:]]
-        path = [self.rig.wrist_to_joints(wrist, collision_free=True, seed=seed)]
+        # Exactly as a training reset: the arm parked at READY (solved from the initial pose), then the
+        # pregrasp solved from there (pnr/fetch_hand.py FetchHandRig.__init__ and set_wrist).
+        initial = np.r_[self.env.agent_qpos[:3], self.env.init_qpos[3:]]
+        ready = self.rig.wrist_to_joints(READY, collision_free=True, seed=initial)
+        path = [self.rig.wrist_to_joints(wrist, collision_free=True, seed=ready)]
         for lift in np.linspace(0, .2, 9)[1:]:
             q = path[-1].copy()
             q[self.rig._arm] = self.rig._arm_step(wrist + [0., 0., lift, 0., 0., 0.], iterations=10, start=q)
