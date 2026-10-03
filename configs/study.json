@@ -124,17 +124,19 @@
     {
       "effector": "gripper",
       "controller": "imitation",
-      "system": "Cloned grasp and carry, SAC+HER reach",
+      "system": "Cloned grasp, planner for the rest",
       "pipeline": [
         "planned",
         "imitation",
         "planned",
-        "imitation",
-        "rl"
+        "planned",
+        "planned"
       ],
       "evals": {
         "standard": [
-          "p_gripper_bc_standard_s0"
+          "p_gripper_bc_standard_s0",
+          "p_gripper_bc_standard_s1",
+          "p_gripper_bc_standard_s2"
         ],
         "wide": null
       }
@@ -142,17 +144,19 @@
     {
       "effector": "gripper",
       "controller": "imitation_rl",
-      "system": "Cloned + SAC grasp and carry, SAC+HER reach",
+      "system": "Cloned + SAC grasp, planner for the rest",
       "pipeline": [
         "planned",
         "imitation_rl",
         "planned",
-        "imitation_rl",
-        "rl"
+        "planned",
+        "planned"
       ],
       "evals": {
         "standard": [
-          "p_gripper_bcrl_standard_s0"
+          "p_gripper_bcrl_standard_s0",
+          "p_gripper_bcrl_standard_s1",
+          "p_gripper_bcrl_standard_s2"
         ],
         "wide": null
       }
@@ -203,9 +207,14 @@
         "planned"
       ],
       "evals": {
-        "standard": [],
-        "wide": []
-      }
+        "standard": [
+          "p_hand_bc_standard_s0",
+          "p_hand_bc_standard_s1",
+          "p_hand_bc_standard_s2"
+        ],
+        "wide": null
+      },
+      "note": "no wide-object demos: the scripted side grasp fails on the Fetch"
     },
     {
       "effector": "hand",
@@ -219,8 +228,16 @@
         "planned"
       ],
       "evals": {
-        "standard": [],
-        "wide": []
+        "standard": [
+          "p_hand_bcrl_standard_s0",
+          "p_hand_bcrl_standard_s1",
+          "p_hand_bcrl_standard_s2"
+        ],
+        "wide": [
+          "p_hand_bcrl_wide_s0",
+          "p_hand_bcrl_wide_s1",
+          "p_hand_bcrl_wide_s2"
+        ]
       },
       "dev": {
         "run": "rp_hand_f02_4m_frozen_course",

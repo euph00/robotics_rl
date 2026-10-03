@@ -35,7 +35,9 @@ def collect_case(config):
                 'policy_decisions': 0, 'case_status': 'running'}
     episodes, env, native = [], None, None
     try:
-        native = PickNavReachEnv(seed=scene_seed, object_idx=object_idx)
+        pose_seed = scene_seed if config.get('random_object_pose') else None    # one random object start per scene seed
+        metadata['object_pose_seed'] = pose_seed
+        native = PickNavReachEnv(seed=scene_seed, object_idx=object_idx, object_pose_seed=pose_seed)
         controller = ReferenceController(native, seed=config['seed'],
                                          grasp_proposal_mode=config['grasp_proposal_mode'])
         metadata['initialization_physics_ticks'] = native.settle_steps
@@ -147,6 +149,7 @@ def main():
     parser.add_argument('--horizon', type=int, default=100)
     parser.add_argument('--repetitions', type=int, default=1)
     parser.add_argument('--jitter-xy', type=float, default=0.)
+    parser.add_argument('--random-object-pose', action='store_true', help='Each scene seed also seeds a random object start')
     parser.add_argument('--seed', type=int, default=61000)
     parser.add_argument('--lift-range', nargs=2, type=float, default=[.20, .20])
     parser.add_argument('--grasp-proposal-mode', choices=['legacy','clearance-v2'], default='legacy')

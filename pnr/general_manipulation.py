@@ -193,11 +193,11 @@ class GraspSchema(gym.Env):
 
 
 def make_grasp_case(object_idx, scene_seed, seed=0, horizon=100, evaluation=False, *,
-                    goal_lift_m=.20, bounded_ik_fallback=True, grasp_proposal_mode='legacy'):
+                    goal_lift_m=.20, bounded_ik_fallback=True, grasp_proposal_mode='legacy', object_pose_seed=None):
     """Construct a physical case, preserving costs even on setup exceptions."""
     from .env import PickNavReachEnv
     from .reference import ReferenceController
-    native = PickNavReachEnv(seed=scene_seed, object_idx=object_idx)
+    native = PickNavReachEnv(seed=scene_seed, object_idx=object_idx, object_pose_seed=object_pose_seed)
     try:
         controller = ReferenceController(native, seed=seed, grasp_proposal_mode=grasp_proposal_mode)
         env = GeneralGraspEnv(native=native, controller=controller, seed=seed,
@@ -248,7 +248,8 @@ class MultiObjectGrasp(GraspSchema):
                 old.close()
             try:
                 env = make_grasp_case(*key, seed=self.seed+index, horizon=self.horizon,
-                                      grasp_proposal_mode=self.grasp_proposal_mode)
+                                      grasp_proposal_mode=self.grasp_proposal_mode,
+                                      object_pose_seed=case.get('object_pose_seed'))
             except Exception as error:
                 costs = getattr(error, 'setup_accounting', {})
                 self.setup_action_calls += costs.get('source_action_calls', 0)

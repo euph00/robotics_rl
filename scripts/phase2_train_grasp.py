@@ -135,6 +135,7 @@ class Progress(BaseCallback):
             try:
                 if key not in self.evaluation:
                     env = make_grasp_case(*key, seed=71000, horizon=self.args.eval_horizon, evaluation=True,
+                                          object_pose_seed=case.get('object_pose_seed'),
                                           goal_lift_m=self.args.eval_lift_m,
                                           grasp_proposal_mode=self.args.grasp_proposal_mode)
                     self.evaluation[key] = env
@@ -314,6 +315,7 @@ def main():
     parser.add_argument('--lift-range', nargs=2, type=float, default=[.20, .20])
     parser.add_argument('--eval-lift-m', type=float, default=.20)
     parser.add_argument('--grasp-proposal-mode', choices=['legacy','clearance-v2'], default='legacy')
+    parser.add_argument('--random-object-pose', action='store_true', help='Validation cases use random object starts (training cases follow the demonstrations)')
     args = parser.parse_args()
     if not 1 <= args.workers <= 8 or args.steps > 40000:
         raise ValueError('Initial pilot limited to eight workers and40k online decisions')
@@ -326,7 +328,7 @@ def main():
     dataset_mode = dataset['metadata'].get('configuration', {}).get('grasp_proposal_mode', 'legacy')
     if dataset_mode != args.grasp_proposal_mode:
         raise ValueError('Dataset proposal mode differs from declared physical training/evaluation mode')
-    training_cases = [{'object_idx': r['object_idx'], 'scene_seed': r['scene_seed']}
+    training_cases = [{'object_idx': r['object_idx'], 'scene_seed': r['scene_seed'], 'object_pose_seed': r.get('object_pose_seed')}
                       for r in dataset['metadata']['cases'] if r['case_status'] == 'complete']
     training_cases.sort(key=lambda case: (case['scene_seed'], case['object_idx']))
     if args.shuffle_training_cases:
@@ -336,9 +338,10 @@ def main():
     if set(args.validation_seeds) & {case['scene_seed'] for case in training_cases}:
         raise ValueError('Validation point-cloud seeds overlap training')
     objects = sorted({case['object_idx'] for case in training_cases})
-    evaluation_cases = [{'object_idx': index, 'scene_seed': seed, 'partition': 'validation'}
+    pose = (lambda seed: seed) if args.random_object_pose else (lambda seed: None)
+    evaluation_cases = [{'object_idx': index, 'scene_seed': seed, 'partition': 'validation', 'object_pose_seed': pose(seed)}
                         for index in objects for seed in args.validation_seeds]
-    evaluation_cases += [{'object_idx': index, 'scene_seed': 42, 'partition': 'train'} for index in objects]
+    evaluation_cases += [{'object_idx': index, 'scene_seed': 42, 'partition': 'train', 'object_pose_seed': pose(42)} for index in objects]
     algorithm = ('Behavior cloning initializer; zero online updates' if args.bc_only else
                  'SAC+HER+demonstration regularization' if args.bc_weight > 0 else 'BC-initialized SAC+HER')
     logger = RunLogger(args.run_id, kind='train', skill='grasp', algorithm=algorithm,

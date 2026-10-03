@@ -64,7 +64,7 @@ DEFAULT_EXECUTION = {'grasp_horizon': 600, 'carry_horizon': 1200, 'reach_horizon
                      'holding_speed_scale': 0.,  # 0: same as planned_speed_scale
                      'controller': 'learned',  # or 'reference': classical planner end to end
                      'carry_max_turn_deg': 0., 'carry_slip_drift_mm': 0., 'carry_slip_scale': .5,
-                     'grasp_mode': 'learned', 'carry_mode': 'learned',  # 'planned' swaps in the classical stage
+                     'grasp_mode': 'learned', 'carry_mode': 'learned', 'reach_mode': 'learned',  # 'planned': classical stage
                      'physics': 'realistic'}  # or 'course' (unlimited course motors, mu 0.25 grip)
 _POLICIES = None
 
@@ -176,6 +176,8 @@ def run_learned(native, execution):
             except RuntimeError as exc:
                 raise RuntimeError(f'carry: {exc}') from exc
             ok = bool(native.contacts()['bilateral_contact']) and native.drop_events == 0
+        elif name == 'reach':
+            ok = bool(system.controller.reach()['complete_task_success'])
         else:
             raise ValueError(f'No planned version of {name}')
         system._finish(name, start, ok)

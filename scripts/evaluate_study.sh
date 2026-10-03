@@ -14,11 +14,15 @@ evh() { local id=$1; shift; [ -e runs/$id/summary.json ] && return; rm -rf runs/
         $PY scripts/eval_hand.py --output runs/$id "${P[@]}" "$@" > /dev/null 2>&1; python3 -c "
 import json; o = json.load(open('runs/$id/summary.json'))['overall']; print('   ', o['success'], '/', o['cases'], 'delivered,', o['timed'], 'in time')"; }
 
-# Gripper: planner (the default project), imitation, imitation + SAC (seed 0 = the mjr_ training run).
+# Gripper: planner (the default project); imitation and imitation + SAC grasps per seed
+# (scripts/train_gripper_grasp.sh writes configs/study/gripper_{bc,bcrl}_s<seed>.json; planned carry and reach).
 ev p_gripper_planner_standard --controller reference --objects $STANDARD --planned-speed-scale 3.0 --holding-speed-scale 2.0
 ev p_gripper_planner_wide --controller reference --objects $WIDE --planned-speed-scale 3.0 --holding-speed-scale 2.0
-ev p_gripper_bc_standard_s0 --candidate configs/imitation_only.json --objects $STANDARD
-ev p_gripper_bcrl_standard_s0 --candidate configs/imitation_sac.json --objects $STANDARD
+for s in 0 1 2; do
+  for kind in bc bcrl; do
+    [ -e configs/study/gripper_${kind}_s$s.json ] && ev p_gripper_${kind}_standard_s$s --candidate configs/study/gripper_${kind}_s$s.json --objects $STANDARD
+  done
+done
 # Hand: scripted grasp (deterministic), then the learned hand policies as they become available.
 evh p_hand_scripted_standard --policy teacher --objects $STANDARD
 evh p_hand_scripted_wide --policy teacher --objects $WIDE

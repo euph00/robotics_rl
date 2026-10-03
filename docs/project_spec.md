@@ -30,10 +30,10 @@ Allegro joints ≤ 0.7 N m. The course rubric is estimated by `scripts/rubric.py
 | Imitation + RL | BC then SAC fine-tuning | BC then PPO fine-tuning |
 | RL from scratch | — (not part of the study) | PPO from scratch (rig ablation) |
 
-Everything else is shared within an end effector: planned approach and pregrasp, planned carry
-posture, maze carry, reach and final hold. The gripper systems' learned carry and reach skills are
-kept as in the course-task study (BC carry on a maze map; SAC+HER reach). The hand systems use
-the planner for approach, carry and reach; **only the hand's grasp is learned**.
+**Only the grasp differs between systems.** Every system plans the rest: approach and pregrasp,
+carry posture, A* maze carry, reach and final hold (refined 2026-10-03; the gripper's learned
+carry and reach from the course-task study are reported separately). Learned grasps of both end
+effectors train from random object starts, as the protocol evaluates them.
 
 Hand hardware: Menagerie Allegro (right hand), mounted on the Fetch's wrist flange by its wrist
 end (`hand_mount='wrist'`), as Allegro hands are mounted on arms.
@@ -56,8 +56,7 @@ end (`hand_mount='wrist'`), as Allegro hands are mounted on arms.
 
 | Where | Algorithm | Why |
 |---|---|---|
-| Gripper grasp, carry | BC; SAC fine-tuning | Low-dimensional actions; existing course-task study |
-| Gripper reach | SAC + HER | Goal-reaching with sparse reward, where HER applies |
+| Gripper grasp | BC of the planner's grasp, then demonstration-regularised SAC+HER | Low-dimensional actions; the course-task study's recipe, now from random object starts (`scripts/train_gripper_grasp.sh`) |
 | Hand grasp | BC from scripted demos, then PPO (rig pretraining, then Fetch fine-tuning) | 22-D actions, dense reward, cheap parallel simulation: the standard dexterous-manipulation recipe; SAC ran ~10× slower per wall-clock second here |
 | Hand algorithm comparison | PPO vs RLPD (SAC with demonstrations in every batch, high update ratio) on the chef can, equal wall-clock | Tests whether a demonstration-driven off-policy method beats PPO where environment steps are expensive |
 
