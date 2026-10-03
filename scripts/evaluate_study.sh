@@ -26,11 +26,12 @@ done
 # Hand: scripted grasp (deterministic), then the learned hand policies as they become available.
 evh p_hand_scripted_standard --policy teacher --objects $STANDARD
 evh p_hand_scripted_wide --policy teacher --objects $WIDE
-# Learned hand grasps, per seed (train_hand.py: Fetch demos -> BC -> PPO). Imitation = the cloned policy
-# (step 0); imitation + RL = the best training-time evaluation (lift and carry) within BUDGET steps,
-# chosen once the run has passed the budget. Development evaluations only, never the hold-out bank.
-BUDGET=10000000
-best() { python3 - "$1" "$BUDGET" <<'PY'
+# Learned hand grasps, per seed. Imitation = the cloned policy (train_hand.py step 0 of hand_wbc_std_s<seed>,
+# Fetch demonstrations). Imitation + RL = BC -> PPO (10M steps) -> fine-tune with the full task's post-grasp
+# sequence as the carry phase and the protocol's object-start range (scripts/study_finetune.sh):
+# the best training-time evaluation (lift and carry) within the fine-tune's budget, once it has passed it.
+# Development evaluations only, never the hold-out bank.
+best() { python3 - "$1" "$2" <<'PY'
 import json, sys
 rows = [json.loads(l) for l in open(f'runs/{sys.argv[1]}/metrics.jsonl') if '"evaluation"' in l]
 done = [r for r in rows if r['transitions'] <= int(sys.argv[2])]
@@ -40,14 +41,10 @@ print(max(done, key=lambda r: (r['carry_success_rate'], r['transitions']))['tran
 PY
 }
 for s in 0 1 2; do
-  R=hand_wbc_std_s$s
-  [ -e runs/$R/checkpoints/step_00000000.zip ] && evh p_hand_bc_standard_s$s --policy $R --step 0 --objects $STANDARD
-  step=$(best $R 2>/dev/null) && evh p_hand_bcrl_standard_s$s --policy $R --step $step --objects $STANDARD
-done
-# Wide objects: no scripted side-grasp demos on the Fetch; seeds fine-tune the same side-grasp policy
-# (rig imitation and RL, then the old-mount Fetch fine-tune, hand_f_chefcan02 at 12M) on the Fetch.
-for s in 0 1 2; do
-  R=$([ $s = 0 ] && echo hand_w_wide01 || echo hand_w_wide_s$s)
-  step=$(best $R 2>/dev/null) && evh p_hand_bcrl_wide_s$s --policy $R --step $step --objects $WIDE
+  [ -e runs/hand_wbc_std_s$s/checkpoints/step_00000000.zip ] && evh p_hand_bc_standard_s$s --policy hand_wbc_std_s$s --step 0 --objects $STANDARD
+  step=$(best hand_wbc_std_tc_s$s 3000000 2>/dev/null) && evh p_hand_bcrl_standard_s$s --policy hand_wbc_std_tc_s$s --step $step --objects $STANDARD
+  # Wide objects: no scripted side-grasp demos on the Fetch; seeds fine-tune one side-grasp policy (rig imitation
+  # and RL, old-mount Fetch fine-tune hand_f_chefcan02 at 12M, then hand_w_wide*), then the same task-carry fine-tune.
+  step=$(best hand_w_wide_tc_s$s 4000000 2>/dev/null) && evh p_hand_bcrl_wide_s$s --policy hand_w_wide_tc_s$s --step $step --objects $WIDE
 done
 echo "Study evaluations done"

@@ -207,7 +207,7 @@
     {
       "effector": "hand",
       "controller": "imitation_rl",
-      "system": "Cloned + PPO hand grasp, planner for the rest",
+      "system": "Cloned + PPO hand grasp (and hold through the carry), planner for the rest",
       "pipeline": [
         "planned",
         "imitation_rl",
@@ -231,12 +231,15 @@
         "standard": [
           "hand_wbc_std_s0",
           "hand_wbc_std_s1",
-          "hand_wbc_std_s2"
+          "hand_wbc_std_s2",
+          "hand_wbc_std_tc_s0",
+          "hand_wbc_std_tc_s1",
+          "hand_wbc_std_tc_s2"
         ],
         "wide": [
-          "hand_w_wide01",
-          "hand_w_wide_s1",
-          "hand_w_wide_s2"
+          "hand_w_wide_tc_s0",
+          "hand_w_wide_tc_s1",
+          "hand_w_wide_tc_s2"
         ]
       }
     },
@@ -269,7 +272,7 @@
       "key": "wide_task",
       "label": "Wide objects complete the task",
       "status": "active",
-      "detail": "first chef-can delivery by the RL hand; grasp still training"
+      "detail": "grasps hold; training the hold through the real tuck and carry"
     },
     {
       "key": "matrix",
