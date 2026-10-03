@@ -14,7 +14,7 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 import trimesh
 
-from .env import ALLEGRO_MOUNT, PickNavReachEnv
+from .env import ALLEGRO_MOUNTS, PickNavReachEnv, object_source
 from .hand import FINGERS, GRASP_POINT, MOUNT, TABLE_TOP, object_dirs, palm_rotation
 from .planning import JointPlanner
 
@@ -24,6 +24,12 @@ IK_DAMPING = .05
 # Side grasps: the forearm runs level with the palm, so grip at least this high above the table (it
 # clears the table edge down to ~9 cm; the rig's palm alone clears at 6.6 cm).
 SIDE_CLEARANCE = .10
+
+
+def closed_form_angles(rotation):
+    """Rig wrist yaw, pitch, roll of a palm rotation with pitch in [-90, 90] degrees."""
+    r = rotation @ MOUNT.T
+    return np.array([np.arctan2(r[1, 0], r[0, 0]), -np.arcsin(np.clip(r[2, 0], -1, 1)), np.arctan2(r[2, 1], r[2, 2])])
 
 
 def wrist_angles(rotation, near):
@@ -50,16 +56,18 @@ class FetchHandRig:
     given `env` (a PickNavReachEnv with effector='allegro', e.g. mid-task) it wraps that one as it is,
     and steps through env.step so the task's lift, hold and drop bookkeeping stays exact."""
 
-    def __init__(self, object_idx=14, physics=None, seed=0, settle_ticks=240, env=None, stepper=None):
+    def __init__(self, object_idx=14, physics=None, seed=0, settle_ticks=240, env=None, stepper=None, hand_mount='wrist'):
         self.bookkeeping = env is not None
         self.stepper = stepper or (env.step if env is not None else None)   # e.g. a controller's tick
         if env is None:
-            env = PickNavReachEnv(seed=seed, object_idx=object_idx, physics=physics, effector='allegro')
+            env = PickNavReachEnv(seed=seed, object_idx=object_idx, physics=physics, effector='allegro', hand_mount=hand_mount)
         self.env = env
         self.physics, self.object_idx, self.object_name = env.physics, int(env.object_idx), env.object_name
         self.model, self.data = env.model, env.data
         self.planner = JointPlanner(env, seed=seed)
-        mesh = trimesh.load(str(object_dirs()[self.object_idx] / 'textured.obj'), force='mesh')
+        object_dir, scale, _ = object_source(self.object_idx, object_dirs())
+        mesh = trimesh.load(str(object_dir / 'textured.obj'), force='mesh')
+        mesh.apply_scale(scale)
         points, _ = trimesh.sample.sample_surface(mesh, 64, seed=np.random.default_rng(0))   # as HandRig
         self.object_points = np.asarray(points, dtype=np.float64)
         self.object_extents = np.asarray(mesh.extents, dtype=np.float64)
@@ -68,8 +76,8 @@ class FetchHandRig:
         self.side_clearance = SIDE_CLEARANCE
         if self.bookkeeping:
             self.rest_height = float(env.initial_object_pos[2])
-            self.wrist_target = np.zeros(6)
-            self.wrist_target = self.wrist()
+            position, rotation = self.palm_pose()
+            self.wrist_target = np.r_[position, closed_form_angles(rotation)]   # no target yet: the pitch <= 90 deg branch
             return
 
         q = env.agent_qpos.astype(np.float64)
@@ -132,8 +140,10 @@ class FetchHandRig:
 
     # ---------------- wrist <-> arm ----------------
     def _flange_target(self, wrist):
-        rotation = palm_rotation(*wrist[3:])
-        return wrist[:3] - rotation @ np.asarray(ALLEGRO_MOUNT), rotation
+        position, axes = ALLEGRO_MOUNTS[self.env.hand_mount]
+        palm = palm_rotation(*wrist[3:])
+        flange = palm @ axes.T
+        return wrist[:3] - flange @ np.asarray(position), flange
 
     def set_wrist(self, wrist):
         """Place the arm so the palm is at the rig wrist pose `wrist`: a collision-free IK solution when

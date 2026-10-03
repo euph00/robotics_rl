@@ -30,10 +30,11 @@ the course's unlimited motors and mu 0.25 grip, as used for all results before 2
 
 End effector (`effector=`). 'gripper' is the course's parallel gripper. 'allegro' removes the
 jaws and the gripper housing and bolts the Menagerie Allegro hand (pnr/hand.py's model, same
-grip friction and joint torque cap) to the wrist flange by the back of its palm, palm frame
-aligned with gripper_link: the palm faces along the gripper's approach axis, the fingers point
-along gripper_link +z. The hand keeps its own position servos; step() takes the 13 Fetch joint
-targets followed by the 16 hand joint targets.
+grip friction and joint torque cap) to the wrist flange (`hand_mount=`, ALLEGRO_MOUNTS): 'wrist'
+(default) by the hand's wrist end, fingers continuing the forearm, as Allegro hands are mounted on
+arms; 'dorsal' (2026-10-02 results) by the back of the palm, palm facing along the approach axis.
+The hand keeps its own position servos; step() takes the 13 Fetch joint targets followed by the
+16 hand joint targets (or only the 13, keeping the hand's).
 
 Kinematic queries (planner, IK, collision checks) run on a separate scratch MjData, so
 they never touch the live simulation.
@@ -77,9 +78,15 @@ FINGER_ARMATURE = {'course': 4.09, 'realistic': 20.3}
 GRIP_FRICTION = {'course': .25, 'realistic': 1.}
 GRIP_BODIES = ('fetch/r_gripper_finger_link', 'fetch/l_gripper_finger_link', 'fetch/gripper_link')
 ALLEGRO_TORQUE = .7      # N m per joint (Allegro hand v4 specification)
-# Palm origin in the gripper_link frame: palm back (palm x = -0.03) on the wrist flange (gripper_link
-# x = -0.147), palm length (palm z from -0.095 to 0) centred on the arm axis.
-ALLEGRO_MOUNT = (-.117, 0., .0475)
+# Allegro mounts in the gripper_link frame (the wrist flange face is at x = -0.147): palm origin, and
+# the palm's axes as columns. Palm frame: x out of the palm (grasp side, surface at +0.011, back at
+# -0.03), z along the fingers (palm from z = -0.095 at the wrist end to 0 at the knuckles).
+ALLEGRO_MOUNTS = {
+    # Wrist end on the flange through a 1 cm adapter, fingers along the approach axis, palm facing -z.
+    'wrist': ((-.042, 0., 0.), np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]], dtype=float)),
+    # Back of the palm on the flange, palm length centred on the arm axis, palm frame = gripper_link.
+    'dorsal': ((-.117, 0., .0475), np.eye(3)),
+}
 ALLEGRO_BITS = (2 | 8, 1 | 8)    # hand: objects, table, maze and its own fingers; not the arm or floor
 _INF = float('inf')
 # Realistic joint limits: velocity, acceleration, effort (SI units). Base: Fetch spec (1.0 m/s) and
@@ -156,6 +163,21 @@ def _course_fetch_urdf():
     return out
 
 
+# Enlarged variants of course objects for the hand-suited task: id -> (course object, scale), same
+# density (mass x scale^3, inertia x scale^5). Each is about 11 cm across at its narrowest, wider than
+# the Fetch gripper's 9.8 cm opening.
+OBJECT_VARIANTS = {102: (2, 1.6), 107: (7, 1.45), 110: (10, 1.35)}
+
+
+def object_source(idx, objects):
+    """(object directory, scale, name) for a course object index or an enlarged variant."""
+    base, scale = OBJECT_VARIANTS.get(int(idx), (int(idx), 1.))
+    if not 0 <= base < len(objects):
+        raise ValueError(f'object_idx must be in [0, {len(objects) - 1}] or one of {sorted(OBJECT_VARIANTS)}')
+    directory = objects[base]
+    return directory, scale, directory.name if scale == 1 else f'{directory.name}_x{scale:g}'
+
+
 def _object_parts(object_dir):
     """Split coacd_allinone.obj into one OBJ per convex part; return (part paths, mass, inertia)."""
     target = CACHE / 'ycb' / object_dir.name
@@ -215,12 +237,16 @@ class PickNavReachEnv:
     position_gains = GAINS
 
     def __init__(self, seed=0, object_idx=5, gui=False, settle_steps=480, real_time=False,
-                 maze_seed=None, seed_mode=None, physics=None, effector='gripper', object_pose_seed=None):
+                 maze_seed=None, seed_mode=None, physics=None, effector='gripper', object_pose_seed=None,
+                 hand_mount='wrist'):
         if gui or real_time:
             raise ValueError('The environment is headless; use render_rgb')
         if effector not in ('gripper', 'allegro'):
             raise ValueError(f'Unknown end effector: {effector}')
         self.effector = effector
+        if hand_mount not in ALLEGRO_MOUNTS:
+            raise ValueError(f'Unknown hand mount: {hand_mount}')
+        self.hand_mount = hand_mount
         # None: the course's object start (dropped at the table centre, canonical yaw). An integer: the
         # object drops at a seeded offset (x +-8 cm, y +-12 cm) and yaw, then settles the same way.
         self.object_pose_seed = None if object_pose_seed is None else int(object_pose_seed)
@@ -243,11 +269,9 @@ class PickNavReachEnv:
     # ---------------- scene construction ----------------
     def _build_scene(self):
         objects = sorted(path for path in (UPSTREAM / 'assets/ycb_objects').iterdir() if path.is_dir())
-        if not 0 <= self.object_idx < len(objects):
-            raise ValueError(f'object_idx must be in [0, {len(objects) - 1}]')
-        object_dir = objects[self.object_idx]
-        self.object_name = object_dir.name
+        object_dir, self.object_scale, self.object_name = object_source(self.object_idx, objects)
         self.object_canonical_mesh = trimesh.load(str(object_dir / 'textured.obj'), force='mesh')
+        self.object_canonical_mesh.apply_scale(self.object_scale)
         helpers = _load_maze_helpers()
         with _preserve_global_rng():   # identical RNG use to the course: same point clouds and mazes
             np.random.seed(self.seed)
@@ -321,10 +345,11 @@ class PickNavReachEnv:
             body.quat = [np.cos(yaw / 2), 0., 0., np.sin(yaw / 2)]
         body.add_freejoint(name='object_free')
         # URDF inertial origin is the mesh origin; MjSpec's unset ipos (NaN) must be given explicitly.
-        body.mass, body.fullinertia, body.explicitinertial = mass, inertia, True
+        s = self.object_scale
+        body.mass, body.fullinertia, body.explicitinertial = mass * s ** 3, [v * s ** 5 for v in inertia], True
         body.ipos = [0., 0., 0.]
         for i, part in enumerate(parts):
-            spec.add_mesh(name=f'object_part_{i}', file=str(part))
+            spec.add_mesh(name=f'object_part_{i}', file=str(part), scale=[s, s, s])
             geom(body, 'object', type=mujoco.mjtGeom.mjGEOM_MESH, meshname=f'object_part_{i}', density=0)
 
         robot = mujoco.MjSpec.from_file(str(_course_fetch_urdf()))
@@ -366,7 +391,10 @@ class PickNavReachEnv:
                     g.solref, g.solimp = list(CONTACT_SOLREF), list(CONTACT_SOLIMP)
             palm = hand.worldbody.first_body()
             palm.pos, palm.quat = [0., 0., 0.], [1., 0., 0., 0.]
-            spec.body('fetch/gripper_link').add_frame(pos=list(ALLEGRO_MOUNT)).attach_body(palm, 'hand/', '')
+            position, axes = ALLEGRO_MOUNTS[self.hand_mount]
+            quat = np.zeros(4)
+            mujoco.mju_mat2Quat(quat, axes.ravel())
+            spec.body('fetch/gripper_link').add_frame(pos=list(position), quat=quat.tolist()).attach_body(palm, 'hand/', '')
         self.model = spec.compile()
         if self.effector == 'allegro' and self.physics == 'realistic':
             self.model.actuator_forcelimited[:] = 1

@@ -93,6 +93,7 @@ class HandPlannerSystem(ReferenceController):
             above = wrist + [0., 0., .15, 0., 0., 0.]
             self.move_joint(self.rig.wrist_to_joints(above, collision_free=True), stage='pregrasp', include_object=True)
         self.move_joint(self.rig.wrist_to_joints(wrist, collision_free=True), stage='pregrasp', include_object=True)
+        self.rig.wrist_target = wrist.copy()        # read the reached pose's angles near the planned ones
         self.stage_results['hand_pregrasp'] = {'wrist': wrist.tolist(), 'reached': self.rig.wrist().tolist()}
         return wrist
 
@@ -160,18 +161,32 @@ class HandPlannerSystem(ReferenceController):
             info = self.env.evaluate()
         return info
 
-    def _side_carry_posture(self, steps=4):
-        """Retreat, then raise the hand straight up to carry height without turning or folding it (with
-        the palm vertical the arm cannot fold the hand much closer to the base)."""
+    def _side_carry_posture(self, steps=12, reach=.30, height=1.):
+        """Retreat, then move the held object in a straight line, upright and without turning, to `reach`
+        in front of the base at `height`. Each waypoint's arm targets continue the current arm
+        configuration (damped least squares), so the arm never switches IK branch with the object in
+        hand; each step is collision-checked with the object attached."""
         self.planner.set_payload()
         self.move_base([-1.25, 0], stage='retreat', step_size=.006)
-        start, orientation = self.planner.ee_pose()
-        goal = np.array([start[0], start[1], 1.05])
+        start = self.rig.wrist()
+        base = self.base_position()
+        shift = np.array([base[0] + reach, base[1], height]) - self.env.observe()['object_pos']
+        reached = 0.
         for t in np.linspace(0, 1, steps + 1)[1:]:
-            self.move_ee(start + (goal - start) * t, orientation, 'carry_posture', step_size=.006)
+            wrist = start + np.r_[shift * t, 0., 0., 0.]
+            target = self.env.last_target.copy()
+            target[self.rig._arm] = self.rig._arm_step(wrist, iterations=10)
+            with self.env.query():
+                self.env.set_joint_positions(target)
+                position, _ = self.rig._flange_target(wrist)
+                if np.linalg.norm(self.env.ee_pose()[0] - position) > .01:
+                    break                                   # no longer reachable in this branch
+            self.move_joint(target, 'carry_posture', step_size=.006)
+            reached = float(t)
         self.hold(50, 'hold')
         self.planner.set_payload()
         self.stage_results['carry_posture'] = {'base_position': self.base_position().tolist(), 'side_grasp': True,
+                                               'fraction_of_path': reached,
                                                'ee_position': self.planner.ee_pose()[0].tolist(),
                                                'object_position': self.env.observe()['object_pos'].tolist()}
         return self.env.observe()

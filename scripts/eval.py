@@ -46,7 +46,8 @@ from pnr.system import LearnedSystem
 from pnr.telemetry import RunLogger, atomic_json
 
 OBJECTS = [14, 5, 2, 7, 10]
-OBJECT_NAMES = {14: 'foam', 5: 'banana', 2: 'can', 7: 'apple', 10: 'mug'}
+OBJECT_NAMES = {14: 'foam', 5: 'banana', 2: 'can', 7: 'apple', 10: 'mug', 0: 'chef can', 8: 'bleach', 9: 'bowl',
+                102: 'big can', 107: 'big apple', 110: 'big mug'}
 MAIN_BANK = ROOT / 'configs/phase2_scene_bank_expanded.json'
 CONFIRMATION_BANK = ROOT / 'configs/phase2_confirmation_bank_20260930.json'
 HOLDOUT_BANK = ROOT / 'configs/holdout_bank_20260929.json'

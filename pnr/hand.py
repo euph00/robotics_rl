@@ -52,9 +52,9 @@ class HandRig:
         if self.physics not in ('course', 'realistic'):
             raise ValueError(f'Unknown physics settings: {self.physics}')
         self.object_idx = int(object_idx)
-        object_dir = object_dirs()[self.object_idx]
-        self.object_name = object_dir.name
+        object_dir, self.object_scale, self.object_name = task_env.object_source(self.object_idx, object_dirs())
         mesh = trimesh.load(str(object_dir / 'textured.obj'), force='mesh')
+        mesh.apply_scale(self.object_scale)
         rng = np.random.default_rng(0)
         points, faces = trimesh.sample.sample_surface(mesh, 64, seed=rng)
         self.object_points = np.asarray(points, dtype=np.float64)    # canonical frame (mesh origin = COM)
@@ -87,10 +87,11 @@ class HandRig:
         parts, mass, inertia = _object_parts(object_dir)
         body = world.add_body(name='object', pos=[0, 0, 1.0])
         body.add_freejoint(name='object_free')
-        body.mass, body.fullinertia, body.explicitinertial = mass, inertia, True
+        s = self.object_scale
+        body.mass, body.fullinertia, body.explicitinertial = mass * s ** 3, [v * s ** 5 for v in inertia], True
         body.ipos = [0., 0., 0.]
         for i, part in enumerate(parts):
-            spec.add_mesh(name=f'object_part_{i}', file=str(part))
+            spec.add_mesh(name=f'object_part_{i}', file=str(part), scale=[s, s, s])
             geom(body, 'object', type=mujoco.mjtGeom.mjGEOM_MESH, meshname=f'object_part_{i}', density=0)
 
         wrist = world.add_body(name='wrist')

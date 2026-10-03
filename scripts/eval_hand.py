@@ -35,14 +35,14 @@ def initialize_worker(policy, step):
     _POLICY = TeacherPolicy() if policy == 'teacher' else HandPolicy(ROOT / 'runs' / policy, step)
 
 
-def evaluate_case(case, speed_scale, holding_speed_scale, horizon, fingers='frozen'):
+def evaluate_case(case, speed_scale, holding_speed_scale, horizon, fingers='frozen', hand_mount='wrist'):
     started, env, first = time.monotonic(), None, {'reach': None}
 
     def on_step(controller, observation, info):
         if first['reach'] is None and info.get('complete_task_success'):
             first['reach'] = env.physics_steps
     try:
-        env = PickNavReachEnv(**case['env_kwargs'], physics='realistic', effector='allegro')
+        env = PickNavReachEnv(**case['env_kwargs'], physics='realistic', effector='allegro', hand_mount=hand_mount)
         system = HandPlannerSystem(env, _POLICY, horizon=horizon, on_step=on_step, seed=env.seed, speed_scale=speed_scale,
                                    holding_speed_scale=holding_speed_scale, fingers_after_grasp=fingers)
         result = system.run()
@@ -92,6 +92,7 @@ def main():
     parser.add_argument('--holding-speed-scale', type=float, default=2., help='Planned motion speed while holding')
     parser.add_argument('--horizon', type=int, default=300, help='Hand-policy decisions for the grasp')
     parser.add_argument('--fingers-after-grasp', choices=('policy', 'frozen'), default='frozen')
+    parser.add_argument('--hand-mount', choices=('wrist', 'dorsal'), default='wrist')
     parser.add_argument('--workers', type=int, default=8)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
@@ -106,7 +107,8 @@ def main():
     rows = []
     with ProcessPoolExecutor(max_workers=min(args.workers, len(cases)), mp_context=mp.get_context('spawn'),
                              initializer=initialize_worker, initargs=(args.policy, args.step)) as pool:
-        futures = [pool.submit(evaluate_case, case, args.speed_scale, args.holding_speed_scale, args.horizon, args.fingers_after_grasp) for case in cases]
+        futures = [pool.submit(evaluate_case, case, args.speed_scale, args.holding_speed_scale, args.horizon, args.fingers_after_grasp,
+                               args.hand_mount) for case in cases]
         with (args.output / 'cases.jsonl').open('w') as stream:
             for future in as_completed(futures):
                 row = future.result()

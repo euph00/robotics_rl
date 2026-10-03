@@ -96,12 +96,17 @@ SUCCESS_LIFT = .15
 SIDE_GRASP_OBJECTS = (0,)
 
 
+def hand_mount_of(rig):
+    return getattr(getattr(rig, 'env', None), 'hand_mount', None)
+
+
 class HandGraspEnv(gym.Env):
     metadata = {'render_modes': ['rgb_array']}
 
     def __init__(self, objects=(14, 5, 2, 7, 10), horizon=120, seed=0, friction=None, finger_kp=None,
                  finger_actions='delta', near_start=0., wrist_lag=.02, carry=False, carry_calls=200,
-                 physics=None, render_mode=None, side_objects=SIDE_GRASP_OBJECTS, robot='rig', wrist_box=None):
+                 physics=None, render_mode=None, side_objects=SIDE_GRASP_OBJECTS, robot='rig', wrist_box=None,
+                 hand_mount='wrist'):
         if finger_actions not in ('delta', 'absolute'):
             raise ValueError('finger_actions must be delta or absolute')
         self.finger_actions = finger_actions
@@ -120,7 +125,7 @@ class HandGraspEnv(gym.Env):
         self.robot = robot
         if robot == 'fetch':        # the hand on the Fetch's arm at the course table (pnr/fetch_hand.py)
             from .fetch_hand import FetchHandRig
-            self.rigs = {idx: FetchHandRig(idx, physics=physics) for idx in self.objects}
+            self.rigs = {idx: FetchHandRig(idx, physics=physics, hand_mount=hand_mount) for idx in self.objects}
         else:
             self.rigs = {idx: HandRig(idx, physics=physics) for idx in self.objects}
         for rig in self.rigs.values():
@@ -185,7 +190,11 @@ class HandGraspEnv(gym.Env):
             offset = [depth + rng.uniform(.04, .08), rng.uniform(-.01, .01), .03 + rng.uniform(-.01, .01)]
             wrist = wrist_for(grip + [0., 0., rng.uniform(-.01, .01)], np.array(offset), yaw, 0., np.pi / 2)
         else:
-            wrist = pregrasp_wrist(rig, rng.uniform(-np.pi, np.pi), height=height, offset=rng.uniform(-.02, .02, 2))
+            # On the Fetch with the wrist-end mount the fingers must point away from the robot (+x) within
+            # ~90 deg for the arm to reach over the table; the rig and the dorsal mount take any yaw.
+            limited = self.robot == 'fetch' and hand_mount_of(rig) == 'wrist'
+            yaw = rng.uniform(-np.pi / 2, np.pi / 2) if limited else rng.uniform(-np.pi, np.pi)
+            wrist = pregrasp_wrist(rig, yaw, height=height, offset=rng.uniform(-.02, .02, 2))
         rig.set_wrist(wrist)
         self.wrist_home = wrist.copy()
         self.finger_target = rig.finger_open.copy()
