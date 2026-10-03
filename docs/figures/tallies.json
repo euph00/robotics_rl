@@ -66,42 +66,42 @@
  "hand/scripted/standard": [
   [
    "p_hand_scripted_standard",
-   20,
-   6,
    44,
-   96
+   16,
+   47,
+   100
   ]
  ],
  "hand/scripted/wide": [
   [
    "p_hand_scripted_wide",
-   null,
-   null,
-   null,
-   0
+   0,
+   0,
+   0,
+   40
   ]
  ],
  "hand/imitation/standard": [
   [
    "p_hand_bc_standard_s0",
-   null,
-   null,
-   null,
-   0
+   53,
+   19,
+   54,
+   100
   ],
   [
    "p_hand_bc_standard_s1",
-   null,
-   null,
-   null,
-   0
+   50,
+   17,
+   54,
+   100
   ],
   [
    "p_hand_bc_standard_s2",
-   null,
-   null,
-   null,
-   0
+   48,
+   16,
+   49,
+   100
   ]
  ],
  "hand/imitation_rl/standard": [

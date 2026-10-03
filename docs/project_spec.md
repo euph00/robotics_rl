@@ -33,7 +33,11 @@ Allegro joints ≤ 0.7 N m. The course rubric is estimated by `scripts/rubric.py
 **Only the grasp differs between systems.** Every system plans the rest: approach and pregrasp,
 carry posture, A* maze carry, reach and final hold (refined 2026-10-03; the gripper's learned
 carry and reach from the course-task study are reported separately). Learned grasps of both end
-effectors train from random object starts, as the protocol evaluates them.
+effectors train from random object starts, as the protocol evaluates them. The carry posture is
+planned for each end effector's geometry: the gripper uses the planner's tuck; the hand's tuck
+(`plan_tuck` in `pnr/fetch_hand.py`) puts the held object close to the base at the goal's height,
+turning the hand about the vertical, with the arm compact and the object clear of the robot's body.
+The wrist-end-mounted hand cannot hold objects in the gripper's tuck pose without touching the robot.
 
 Hand hardware: Menagerie Allegro (right hand), mounted on the Fetch's wrist flange by its wrist
 end (`hand_mount='wrist'`), as Allegro hands are mounted on arms.

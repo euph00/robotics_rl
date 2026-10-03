@@ -1,6 +1,6 @@
 # Project state
 
-Updated 2026-10-03. Plan: [project_spec.md](project_spec.md) (machine-readable:
+Updated 2026-10-03 (evening). Plan: [project_spec.md](project_spec.md) (machine-readable:
 [`configs/study.json`](../configs/study.json)); the dashboard tracks it live. Experiments:
 [experiment_log.md](experiment_log.md).
 
@@ -14,45 +14,40 @@ task, evaluated on held-out mazes with random object starts under realistic phys
 | # | Milestone | Status |
 |---|---|---|
 | 1 | Protocol frozen | done 2026-10-03 |
-| 2 | Hand trained on the Fetch (wrist-end mount; five objects; chef can) | in progress: `hand_w_01`, `hand_w_chefcan01` |
-| 3 | Wide objects complete the full task with the hand | next: side-grasp carry posture |
-| 4 | Matrix filled with one seed | in progress: gripper and scripted-hand protocol runs |
-| 5 | Three seeds per learned condition | next |
-| 6 | PPO vs RLPD on the hand; ablations | next |
-| 7 | Report | next |
+| 2 | Hand trained on the Fetch (wrist-end mount; standard and wide objects) | done: BC → PPO 10M, 3 seeds per task |
+| 3 | Wide objects complete the full task with the hand | in progress: task-carry fine-tunes overnight |
+| 4 | Matrix filled with one seed | gripper and scripted/imitation hand done; hand imitation + RL after the fine-tunes |
+| 5 | Three seeds per learned condition | gripper done; hand imitation done; hand imitation + RL overnight |
+| 6 | PPO vs RLPD on the hand; ablations | RLPD seeds training (6 h each) |
+| 7 | Report | figures script ready (`scripts/report_figures.py`) |
 | — | Stretch: orientation-constrained delivery | only after 1–6 |
 
 ## Results so far
 
-No protocol (hold-out, random-start) results yet. Development results, course mazes with random
-object starts, soup can/apple/mug, 60 cases:
+Protocol: 20 hold-out mazes, random object starts, realistic physics. Standard objects, 100 cases
+per run; delivered (within 15k ticks) · picked · delivered given picked:
 
-| System | Delivered | Within 15k ticks | Median ticks |
+| End effector · grasp controller | Delivered | Picked | Given picked |
 |---|---:|---:|---:|
-| Gripper · planner | 57 | 1 | 17.9k |
-| Hand · scripted grasp | 40 | 27 | 14.5k |
-| Hand · imitation + RL (`hand_f_02` 4M, old back-of-palm mount) | 49 | 28 | 14.6k |
+| Gripper · planner | **89** (19) | 91 | 98% |
+| Gripper · imitation, 3 seeds | 79/79/79 (33/32/32) | 80/80/80 | 99% |
+| Gripper · imitation + SAC, 3 seeds | 77/80/80 (33/32/31) | 78/81/81 | 99% |
+| Hand · scripted | 44 (16) | 47 | 94% |
+| Hand · imitation, 3 seeds | 53/50/48 (19/17/16) | 54/54/49 | 96% |
+| Hand · imitation + PPO | after the fine-tunes; development check (seed 0, 8M, before the fine-tune): 71 (21) | 87 | 82% |
 
-Evidence behind the claim:
+Wide objects (master chef can, soup can ×1.6), 40 cases: gripper planner 12 (none in time); scripted
+hand 0 (its side grasp fails on the Fetch); hand imitation + PPO after the fine-tunes.
 
-- **Hand, RL is essential.** On the test rig (hand on an idealised wrist): PPO from scratch 0% after
-  24M steps; behaviour cloning of the scripted grasp 14% lift and carry; cloning then PPO 97% (soup
-  can, apple, mug; the scripted teacher 72%). Master chef can: 88% (teacher 50%); on the Fetch 92%.
-- **Gripper, RL adds nothing measurable.** Course task, realistic physics, dev set (260 cases):
-  planner 250 delivered, imitation 175, imitation + SAC 178.
-- **Where each end effector wins** (survey, random starts, 6 trials; gripper = planner's pick, hand =
-  scripted grasps on the rig):
+Reading so far: on the gripper RL adds nothing (planner 89, learned 77–80). On the hand RL is what
+makes the grasp work (picked 47 scripted, ~52 imitation, 87 with PPO), and with the hand-specific
+carry posture almost every picked object is delivered. Within the deadline the RL hand already
+matches the gripper planner (21 vs 19).
 
-  | Object | Gripper | Hand (better grasp) |
-  |---|---:|---:|
-  | Master chef can (10.4 cm) | 4 | 5 |
-  | Soup can ×1.6 (1.3 kg) | 2 | 1 |
-  | Apple ×1.45 / mug ×1.35 | 6 / 6 | 0 / 3 |
-  | Bleach bottle / bowl | 5 / 0 | 0 / 0 |
-  | Soup can / apple / mug | 6 / 6 / 6 | 6 / 6 / 4 |
-
-  Rubber pads (μ 1.0) at ~240 N let the gripper hold objects wider than its 9.8 cm opening above
-  their widest line; only wide, heavy cylinders separate the two, hence the wide-object task.
+Earlier evidence (rig and course-task studies): PPO from scratch 0% after 24M steps on the hand rig;
+BC then PPO 97% (teacher 72%); on the gripper course task (dev, 260 cases) planner 250, imitation 175,
+imitation + SAC 178. Object survey: only wide, heavy cylinders separate the two end effectors
+(rubber pads at ~240 N let the gripper hold objects wider than its 9.8 cm opening).
 
 ## Platform
 
@@ -62,8 +57,8 @@ Evidence behind the claim:
 - Allegro hand (Menagerie) mounted on the Fetch wrist flange by its wrist end (`effector='allegro'`,
   `hand_mount='wrist'`). `pnr/fetch_hand.py` runs the hand task on the real arm (palm targets →
   damped least-squares arm targets; the carry drives the base). `pnr/hand_system.py` is the full task
-  with the hand: planned approach and pregrasp, learned or scripted grasp, planned carry posture,
-  A* carry and reach, grip frozen after the grasp.
+  with the hand: planned approach and pregrasp, learned or scripted grasp, the hand's carry posture
+  (`plan_tuck`), A* carry and reach; the hand policy keeps controlling the fingers after the grasp.
 - Objects: the course's 15 YCB objects plus enlarged variants 102/107/110 (soup can ×1.6, apple
   ×1.45, mug ×1.35, same density).
 

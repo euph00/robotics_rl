@@ -301,3 +301,36 @@ Later on 2026-10-02:
   3.4 cm above the centre, 477 N total normal force). The bleach bottle's 0/6 at the course pose
   was its fixed yaw. Width alone separates the end effectors only for wide, heavy cylinders.
 
+
+## 2026-10-03 (evening): first protocol results; the hand's carry posture
+
+- Protocol runs (20 hold-out mazes, random object starts, realistic physics), standard objects,
+  100 cases each; delivered (within 15k ticks) · picked · delivered given picked:
+
+  | System | Delivered | Picked | Given picked |
+  |---|---:|---:|---:|
+  | Gripper · planner | 89 (19) | 91 | 98% |
+  | Gripper · imitation, seeds 0/1/2 | 79/79/79 (33/32/32) | 80/80/80 | 99% |
+  | Gripper · imitation + SAC, seeds 0/1/2 | 77/80/80 (33/32/31) | 78/81/81 | 99% |
+  | Hand · scripted | 44 (16) | 47 | 94% |
+  | Hand · imitation, seeds 0/1/2 | 53/50/48 (19/17/16) | 54/54/49 | 96% |
+  | Hand · BC → PPO 8M, seed 0 (development; before the task-carry fine-tune) | 71 (21) | 87 | 82% |
+
+  Wide objects (40 cases): gripper planner 12 (0 in time); scripted hand 0 (the side grasp fails).
+  The gripper's learned grasps were retrained from random starts first (imitation 63 → 79 with the
+  fixed-pose grasp).
+- The hand's losses after the grasp came from the planner's carry posture (flange 24 cm ahead at
+  1.05 m, orientation kept), designed for the gripper. With the wrist-end mount some grasps pressed
+  the object into the robot's head, which jammed the wrist roll and left the object 23 cm above the
+  goal, below which the torso cannot go; the planner never checked the held object against the robot.
+  `plan_tuck` (shared by training and the hand system): object 20–28 cm ahead of the base at the goal
+  height, the hand turned about the vertical (the unturned hand points away from the robot, so the
+  forearm would have to pass through the body), torso lowest, arm compact along x and y (the first
+  version swung the elbow into maze walls), the move to it clear of table, maze and body. Scripted
+  hand 23 → 44 delivered, hand imitation 11/17/11 → 53/50/48 (before the fix also a multi-seed tuck:
+  12 → 23 scripted). The hand now loses objects mainly at the grasp, where RL helps (picked 54 → 87).
+- Task-carry fine-tunes (`scripts/study_finetune.sh`) train the policy's hold through this real
+  retreat, tuck and carry from the protocol's object-start range; they start after the PPO seeds
+  reach 10M steps. The PPO policy's 12 carry drops above are what they target.
+- RLPD on one shared GPU runs ~37 environment steps/s against PPO's ~510 (22 workers); the
+  comparison reports both axes. Dashboard hours now exclude the OOM interruption.

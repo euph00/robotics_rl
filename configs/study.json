@@ -265,38 +265,38 @@
     {
       "key": "hand_fetch",
       "label": "Hand trained on the Fetch",
-      "status": "active",
-      "detail": "wrist-end mount; imitation 47% → PPO training; wide objects training"
+      "status": "done",
+      "detail": "BC → PPO 10M on the Fetch, 3 seeds per task"
     },
     {
       "key": "wide_task",
       "label": "Wide objects complete the task",
       "status": "active",
-      "detail": "grasps hold; training the hold through the real tuck and carry"
+      "detail": "hand carry posture fixed; task-carry fine-tunes overnight"
     },
     {
       "key": "matrix",
       "label": "Matrix filled, 1 seed",
       "status": "active",
-      "detail": "8 of 13 cells have a first result"
+      "detail": "hand imitation + RL cells after the fine-tunes"
     },
     {
       "key": "seeds",
       "label": "3 seeds",
-      "status": "next",
-      "detail": "every learned condition"
+      "status": "active",
+      "detail": "gripper and hand imitation done; hand imitation + RL overnight"
     },
     {
       "key": "algorithms",
       "label": "PPO vs RLPD",
       "status": "active",
-      "detail": "standard objects, same 243 demos; RLPD seed 0 training"
+      "detail": "standard objects, same 243 demos; RLPD seeds 6 h each"
     },
     {
       "key": "report",
       "label": "Report",
       "status": "next",
-      "detail": "5–8 pages, figures, clips"
+      "detail": "figures: scripts/report_figures.py; 5–8 pages, clips"
     },
     {
       "key": "stretch",
