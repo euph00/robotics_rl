@@ -334,3 +334,43 @@ Later on 2026-10-02:
   reach 10M steps. The PPO policy's 12 carry drops above are what they target.
 - RLPD on one shared GPU runs ~37 environment steps/s against PPO's ~510 (22 workers); the
   comparison reports both axes. Dashboard hours now exclude the OOM interruption.
+
+## 2026-10-04 (night): fine-tunes, grip after the grasp, PPO vs RLPD, the matrix filled
+
+- Task-carry fine-tunes (BC → PPO 10M → PPO with the full task's retreat, tuck and base carry from the
+  protocol's start range; 3M standard, 4M wide). Training-time lift and carry stayed flat or fell
+  (standard 0.60–0.65 → 0.38–0.57; wide 0.17–0.46). Throughput first fell to ~110 steps/s: every tuck
+  search stalled all 22 vectorised environments; training now takes the first clear tuck and searches
+  every hand turn from the current arm first (~300–400 steps/s).
+- Unchecked straight retreat from the table: after some RL grasps the upper arm rests on the table
+  edge and the checked retreat failed (4–9 of 100 per RL run).
+- Grip after the grasp, chosen per task on development mazes (not the hold-out bank):
+
+  | Development set, random starts | Policy holds | Grip frozen |
+  |---|---:|---:|
+  | Standard, imitation + RL seed 2 (validation, 50 cases) | 37 | **43** |
+  | Standard, imitation seed 0 (validation, 50 cases) | 25 | 24 |
+  | Wide, imitation + RL seed 0 (dev, 104 cases) | **29** | 11 |
+
+  Light objects ride best in fixed servo targets (the policy's finger moves in the planned carry
+  dropped them); heavy side-held cylinders slip out of fixed targets (34 slips in the retreat and
+  tuck, 41 carry drops) and need the policy's active hold.
+- Protocol results (hold-out, random starts), delivered (in time) · picked:
+
+  | System | Standard /100 | Wide /40 |
+  |---|---|---|
+  | Gripper · planner | 89 (19) · 91 | 12 (0) · 13 |
+  | Gripper · imitation, 3 seeds | 79/79/79 · 80/80/80 | – |
+  | Gripper · imitation + SAC, 3 seeds | 77/80/80 · 78/81/81 | – |
+  | Hand · scripted | 44 (16) · 47 | 0 · 0 |
+  | Hand · imitation, 3 seeds | 53/52/47 · 54/54/49 | – |
+  | Hand · imitation + PPO, 3 seeds | 79/48/84 (20/14/26) · 83/59/88 | 14/–/14 · 36/–/33 (seed 1 training) |
+
+  Ablation, standard objects, the PPO 10M checkpoints without the task-carry fine-tune: 84/46/88
+  (picked 87/55/95); the fine-tune did not help. Seed 1 grasps poorly from the protocol's wider object
+  starts (training used ±3 cm): picked 55–59.
+- PPO vs RLPD (standard objects, same 243 demonstrations): RLPD reached 0.75M steps in its 6 hours
+  (~37 steps/s on the shared GPU against PPO's ~510 with 22 workers), lift and carry 3–12%; BC → PPO
+  reached ~70% within 2M steps (about an hour). Per environment step below 1M the two are similar
+  (PPO dips after cloning, 10–18% at 1M), so the demonstrations in RLPD's batches did not buy the
+  expected head start here.

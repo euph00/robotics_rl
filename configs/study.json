@@ -241,7 +241,8 @@
           "hand_w_wide_tc_s1",
           "hand_w_wide_tc_s2"
         ]
-      }
+      },
+      "note": "grip after the grasp: frozen (standard), policy-held (wide); chosen on development mazes. Without the task-carry fine-tune: 84/46/88"
     },
     {
       "effector": "hand",
@@ -266,37 +267,37 @@
       "key": "hand_fetch",
       "label": "Hand trained on the Fetch",
       "status": "done",
-      "detail": "BC → PPO 10M on the Fetch, 3 seeds per task"
+      "detail": "BC → PPO 10M → task-carry fine-tune, 3 seeds per task"
     },
     {
       "key": "wide_task",
       "label": "Wide objects complete the task",
-      "status": "active",
-      "detail": "hand carry posture fixed; task-carry fine-tunes overnight"
+      "status": "done",
+      "detail": "hand 14/40 per seed, gripper 12/40"
     },
     {
       "key": "matrix",
       "label": "Matrix filled, 1 seed",
-      "status": "active",
-      "detail": "hand imitation + RL cells after the fine-tunes"
+      "status": "done",
+      "detail": "every studied cell evaluated"
     },
     {
       "key": "seeds",
       "label": "3 seeds",
       "status": "active",
-      "detail": "gripper and hand imitation done; hand imitation + RL overnight"
+      "detail": "wide imitation + RL seed 1 training"
     },
     {
       "key": "algorithms",
       "label": "PPO vs RLPD",
-      "status": "active",
-      "detail": "standard objects, same 243 demos; RLPD seeds 6 h each"
+      "status": "done",
+      "detail": "RLPD 3–12% after 6 h; PPO ~70% within 1 h"
     },
     {
       "key": "report",
       "label": "Report",
-      "status": "next",
-      "detail": "figures: scripts/report_figures.py; 5–8 pages, clips"
+      "status": "active",
+      "detail": "figures ready; text and clips next"
     },
     {
       "key": "stretch",

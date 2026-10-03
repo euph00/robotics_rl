@@ -52,11 +52,20 @@ def systems(study):
     return rows
 
 
+SHORT = {'Scripted': 'Scripted', 'Imitation': 'Imitation', 'Imitation + RL': 'Imit.+RL', 'RL from scratch': 'RL only'}
+
+
 def separate(ax, rows):
-    """A divider between the end effectors' groups of bars."""
-    for i in range(1, len(rows)):
-        if rows[i]['effector'] != rows[i - 1]['effector']:
+    """Short controller names as tick labels, the end effector once under each group, a divider between groups."""
+    ax.set_xticks(range(len(rows)), [SHORT.get(r['controller'], r['controller']) for r in rows], fontsize=7)
+    groups = {}
+    for i, row in enumerate(rows):
+        groups.setdefault(row['effector'], []).append(i)
+        if i and row['effector'] != rows[i - 1]['effector']:
             ax.axvline(i - .5, color=MUTED, lw=.8, ls=':')
+    for effector, members in groups.items():
+        ax.text(np.mean(members), -.16, effector, transform=ax.get_xaxis_transform(), ha='center', va='top',
+                fontsize=8, color=INK)
 
 
 def share(tally, key):
@@ -66,7 +75,7 @@ def share(tally, key):
 def results_figure(study, out):
     tasks = study['tasks']
     rows = systems(study)
-    fig, axes = plt.subplots(1, len(tasks), figsize=(3.4 * len(tasks), 2.8), sharey=True)
+    fig, axes = plt.subplots(1, len(tasks), figsize=(4.2 * len(tasks), 2.8), sharey=True)
     for ax, task in zip(np.atleast_1d(axes), tasks):
         labels = []
         for i, row in enumerate(rows):
@@ -82,7 +91,6 @@ def results_figure(study, out):
             ax.bar(i, np.mean(timed), .7, color=color)
             ax.scatter([i] * len(seeds), delivered, s=10, color=INK, zorder=3)
             ax.text(i, np.mean(delivered) + .03, f'{np.mean(delivered):.0%}', ha='center', fontsize=8, color=INK)
-        ax.set_xticks(range(len(rows)), labels, fontsize=7)
         ax.set_ylim(0, 1.05)
         ax.set_yticks([0, .5, 1], ['0%', '50%', '100%'])
         ax.set_title(task['label'], fontsize=9, color=INK)
@@ -90,7 +98,7 @@ def results_figure(study, out):
     np.atleast_1d(axes)[0].set_ylabel('held-out cases delivered')
     handles = [plt.Rectangle((0, 0), 1, 1, color=SOURCE[s['key']]) for s in study['sources']]
     fig.legend(handles, [s['label'] for s in study['sources']], loc='upper center', ncol=3, bbox_to_anchor=(.5, 1.08))
-    fig.text(.5, -.08, 'light bar: delivered · dark bar: delivered within 15,000 physics ticks · dots: training seeds',
+    fig.text(.5, -.14, 'light bar: delivered · dark bar: delivered within 15,000 physics ticks · dots: training seeds',
              ha='center', color=MUTED, fontsize=8)
     save(fig, out, 'results')
 
@@ -98,7 +106,7 @@ def results_figure(study, out):
 def stages_figure(study, out):
     tasks = study['tasks']
     rows = systems(study)
-    fig, axes = plt.subplots(1, len(tasks), figsize=(3.4 * len(tasks), 2.8), sharey=True)
+    fig, axes = plt.subplots(1, len(tasks), figsize=(4.2 * len(tasks), 2.8), sharey=True)
     for ax, task in zip(np.atleast_1d(axes), tasks):
         labels = []
         for i, row in enumerate(rows):
@@ -113,13 +121,12 @@ def stages_figure(study, out):
             ax.bar(i, delivered, .7, color=color)
             given = delivered / picked if picked else 0
             ax.text(i, picked + .03, f'{given:.0%}', ha='center', fontsize=8, color=INK)
-        ax.set_xticks(range(len(rows)), labels, fontsize=7)
         ax.set_ylim(0, 1.1)
         ax.set_yticks([0, .5, 1], ['0%', '50%', '100%'])
         ax.set_title(task['label'], fontsize=9, color=INK)
         separate(ax, rows)
     np.atleast_1d(axes)[0].set_ylabel('share of held-out cases')
-    fig.text(.5, -.08, 'hatched: picked (grasped and lifted) · solid: delivered · number: delivered given picked',
+    fig.text(.5, -.14, 'hatched: picked (grasped and lifted) · solid: delivered · number: delivered given picked',
              ha='center', color=MUTED, fontsize=8)
     save(fig, out, 'stages')
 

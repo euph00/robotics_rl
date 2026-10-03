@@ -91,15 +91,15 @@
   ],
   [
    "p_hand_bc_standard_s1",
-   50,
-   17,
+   52,
+   16,
    54,
    100
   ],
   [
    "p_hand_bc_standard_s2",
-   48,
-   16,
+   47,
+   17,
    49,
    100
   ]
@@ -107,33 +107,33 @@
  "hand/imitation_rl/standard": [
   [
    "p_hand_bcrl_standard_s0",
-   null,
-   null,
-   null,
-   0
+   79,
+   20,
+   83,
+   100
   ],
   [
    "p_hand_bcrl_standard_s1",
-   null,
-   null,
-   null,
-   0
+   48,
+   14,
+   59,
+   100
   ],
   [
    "p_hand_bcrl_standard_s2",
-   null,
-   null,
-   null,
-   0
+   84,
+   26,
+   88,
+   100
   ]
  ],
  "hand/imitation_rl/wide": [
   [
    "p_hand_bcrl_wide_s0",
-   null,
-   null,
-   null,
-   0
+   14,
+   0,
+   36,
+   40
   ],
   [
    "p_hand_bcrl_wide_s1",
@@ -144,10 +144,10 @@
   ],
   [
    "p_hand_bcrl_wide_s2",
-   null,
-   null,
-   null,
-   0
+   14,
+   0,
+   33,
+   40
   ]
  ]
 }

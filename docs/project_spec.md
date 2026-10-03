@@ -50,6 +50,7 @@ end (`hand_mount='wrist'`), as Allegro hands are mounted on arms.
 | Cases | Hold-out bank: 20 unseen mazes × the task's objects (standard 100, wide 40) |
 | Object start | Seeded random offset (±8 cm, ±12 cm) and yaw per case (`--random-object-pose`); the course always starts objects in one pose |
 | Physics and speeds | Realistic; planned motions at speed 3 (holding 2); hand grasp ≤ 300 decisions; one settle rule for all systems (base/torso 5 mm, arm 0.02 rad, < 0.15 rad/s) |
+| Hand grip after the grasp | Chosen per task on the development mazes (2026-10-04), not the hold-out bank: standard objects keep the servo targets fixed (imitation + RL 43/50 delivered vs 37/50 with the policy holding); wide objects stay under the policy's control (29/104 vs 11/104 fixed: heavy side-held cylinders slip) |
 | Primary metrics | Delivered (`complete_task_success`); delivered within 15,000 physics ticks including settling. Diagnostic: the stage where each failure happens (picked, then delivered given picked) |
 | Secondary | Course rubric estimate per trial; failures by stage; median ticks |
 | Seeds | 3 independently trained systems per learned condition; scripted conditions run once (deterministic) |
