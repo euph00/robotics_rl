@@ -35,7 +35,7 @@ def initialize_worker(policy, step):
     _POLICY = TeacherPolicy() if policy == 'teacher' else HandPolicy(ROOT / 'runs' / policy, step)
 
 
-def evaluate_case(case, speed_scale, holding_speed_scale, horizon, fingers='frozen', hand_mount='wrist'):
+def evaluate_case(case, speed_scale, holding_speed_scale, horizon, fingers='policy', hand_mount='wrist'):
     started, env, first = time.monotonic(), None, {'reach': None}
 
     def on_step(controller, observation, info):
@@ -91,7 +91,7 @@ def main():
     parser.add_argument('--speed-scale', type=float, default=3., help='Planned motion speed (as evaluate_mujoco.sh)')
     parser.add_argument('--holding-speed-scale', type=float, default=2., help='Planned motion speed while holding')
     parser.add_argument('--horizon', type=int, default=300, help='Hand-policy decisions for the grasp')
-    parser.add_argument('--fingers-after-grasp', choices=('policy', 'frozen'), default='frozen')
+    parser.add_argument('--fingers-after-grasp', choices=('policy', 'frozen'), default='policy')
     parser.add_argument('--hand-mount', choices=('wrist', 'dorsal'), default='wrist')
     parser.add_argument('--workers', type=int, default=8)
     parser.add_argument('--output', type=Path, required=True)

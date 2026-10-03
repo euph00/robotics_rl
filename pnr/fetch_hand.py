@@ -21,6 +21,7 @@ from .planning import JointPlanner
 BASE_XY = np.array([-.78, 0.])          # the planner's table approach position (world)
 READY = np.array([-.15, 0., TABLE_TOP + .3, 0., 0., 0.])   # parked wrist: palm down over the table
 IK_DAMPING = .05
+RETREAT_X = -1.25          # world x the full task's base backs off to before tucking the arm
 # Side grasps: the forearm runs level with the palm, so grip at least this high above the table (it
 # clears the table edge down to ~9 cm; the rig's palm alone clears at 6.6 cm).
 SIDE_CLEARANCE = .10
@@ -176,12 +177,61 @@ class FetchHandRig:
         return q[self._arm]
 
     def begin_carry(self, path):
-        """Hold the arm and drive the base along `path` (base xy offsets), turned in 90 degree steps so
-        it heads away from the table into the start room."""
+        """Drive the base along `path` (base xy offsets), turned in 90 degree steps so it heads away from
+        the table into the start room. With `task_carry`, first the full task's post-grasp sequence
+        (pnr/hand_system.py): retreat from the table and tuck the arm into the carry posture, one planned
+        joint target per decision; the returned path then begins with that many zero offsets."""
         turns = [np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]]) for a in np.arange(4) * np.pi / 2]
         path = min((np.asarray(path) @ turn.T for turn in turns), key=lambda p: p[:, 0].max())
-        self.carrying, self._carry_q, self._carry_wrist = True, self.env.last_target.copy(), self.wrist_target.copy()
-        return path
+        start = self.env.last_target.copy()
+        self._carry_plan = self._retreat_and_tuck(start) if getattr(self, 'task_carry', False) else []
+        self.carrying, self._carry_k = True, 0
+        self._carry_q = (self._carry_plan[-1] if self._carry_plan else start).copy()
+        self._carry_wrist = self.wrist_target.copy()
+        return np.vstack([np.zeros((len(self._carry_plan), 2)), path]) if self._carry_plan else path
+
+    def _retreat_and_tuck(self, q):
+        """Joint targets, one per decision, for the hand system's post-grasp sequence: the base backs off to
+        x = -1.25 at 1.8 cm per decision, then the arm moves (0.012 rad per decision) to the carry posture
+        (flange 24 cm ahead of the base at 1.05 m, orientation kept), each followed by 10 settling decisions."""
+        plan, q = [], np.asarray(q, dtype=float).copy()
+        goal_x = RETREAT_X - self.env.root_position[0]
+        for t in np.linspace(0, 1, int(np.ceil(abs(goal_x - q[0]) / .018)) + 1)[1:]:
+            target = q.copy()
+            target[0] = q[0] + (goal_x - q[0]) * t
+            plan.append(target)
+        if plan:
+            q = plan[-1].copy()
+        plan += [q.copy()] * 10
+        tuck = self._tuck_joints(q)
+        if tuck is not None:
+            steps = int(np.ceil(np.abs(tuck[self._arm] - q[self._arm]).max() / .012))
+            plan += [q + (tuck - q) * t for t in np.linspace(0, 1, steps + 1)[1:]]
+            plan += [tuck.copy()] * 10
+        return plan
+
+    def _tuck_joints(self, q):
+        """The carry posture's joint targets from several IK seeds (as HandPlannerSystem.prepare_carry), or None."""
+        env = self.env
+        with env.query():
+            env.set_joint_positions(q)
+            _, orientation = env.ee_pose()
+        base = env.root_position[:2] + q[:2]
+        target = np.array([base[0] + .24, base[1], 1.05])
+        rng = np.random.default_rng(0)
+        seeds = [q, np.r_[q[:3], env.init_qpos[3:]]]
+        for _ in range(8):
+            seed = q.copy()
+            seed[self.planner.active] = rng.uniform(self.planner.lower, self.planner.upper)
+            seeds.append(seed)
+        for seed in seeds:
+            try:
+                tuck = self.planner.ik(target, orientation, seed=seed)
+            except ValueError:
+                continue
+            if self.planner.collision_free(tuck):
+                return tuck
+        return None
 
     # ---------------- control ----------------
     def tick(self):
@@ -191,8 +241,12 @@ class FetchHandRig:
         self.wrist_target = np.asarray(wrist_target, dtype=float)
         target = self.env.last_target.copy()
         if self.carrying:
-            target = self._carry_q.copy()
-            target[:2] += self.wrist_target[:2] - self._carry_wrist[:2]
+            if self._carry_k < len(self._carry_plan):           # retreat and tuck first
+                target = self._carry_plan[self._carry_k].copy()
+            else:
+                target = self._carry_q.copy()
+                target[:2] += self.wrist_target[:2] - self._carry_wrist[:2]
+            self._carry_k += 1
         else:
             target[self._arm] = self._arm_step(self.wrist_target)
         action = np.r_[target, np.clip(finger_target, self.finger_low, self.finger_high)]

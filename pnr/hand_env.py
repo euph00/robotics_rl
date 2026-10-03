@@ -106,7 +106,7 @@ class HandGraspEnv(gym.Env):
     def __init__(self, objects=(14, 5, 2, 7, 10), horizon=120, seed=0, friction=None, finger_kp=None,
                  finger_actions='delta', near_start=0., wrist_lag=.02, carry=False, carry_calls=200,
                  physics=None, render_mode=None, side_objects=SIDE_GRASP_OBJECTS, robot='rig', wrist_box=None,
-                 hand_mount='wrist', start_shift=(.03, .03)):
+                 hand_mount='wrist', start_shift=(.03, .03), task_carry=False):
         if finger_actions not in ('delta', 'absolute'):
             raise ValueError('finger_actions must be delta or absolute')
         self.finger_actions = finger_actions
@@ -129,6 +129,8 @@ class HandGraspEnv(gym.Env):
         if robot == 'fetch':        # the hand on the Fetch's arm at the course table (pnr/fetch_hand.py)
             from .fetch_hand import FetchHandRig
             self.rigs = {idx: FetchHandRig(idx, physics=physics, hand_mount=hand_mount) for idx in self.objects}
+            for rig in self.rigs.values():   # carry phase = the full task's retreat, tuck and base carry
+                rig.task_carry = bool(task_carry)
         else:
             self.rigs = {idx: HandRig(idx, physics=physics) for idx in self.objects}
         for rig in self.rigs.values():
@@ -267,7 +269,7 @@ class HandGraspEnv(gym.Env):
             reward = reward + 1. * kept
             if lift < .05:
                 reward, terminated, info['dropped_in_carry'] = -20., True, True
-            elif self.carry_step >= self.carry_calls:
+            elif self.carry_step >= len(self.carry_path):
                 self.carried = kept
                 reward += 10. * kept
         elif self.carry:
@@ -280,8 +282,8 @@ class HandGraspEnv(gym.Env):
                     self.carry_path = rig.begin_carry(self.carry_path)
                 self.carry_origin = rig.wrist_target.copy()
         info.update(phase=self.phase, carried=self.carried)
-        done_carry = self.phase == 'carry' and self.carry_step >= self.carry_calls
-        truncated = done_carry or self.steps >= self.horizon + (self.carry_calls if self.phase == 'carry' else 0)
+        done_carry = self.phase == 'carry' and self.carry_step >= len(self.carry_path)
+        truncated = done_carry or self.steps >= self.horizon + (len(self.carry_path) if self.phase == 'carry' else 0)
         return self._observation(), reward, terminated, truncated, info
 
     # ---------------- reward ----------------

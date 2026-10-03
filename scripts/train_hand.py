@@ -29,7 +29,8 @@ def make_env(rank, args, evaluation=False):
                             friction=args.friction, finger_kp=args.finger_kp, finger_actions=args.finger_actions,
                             near_start=0. if evaluation else args.near_start, wrist_lag=args.wrist_lag,
                             carry=args.carry, carry_calls=args.carry_calls, physics=args.physics,
-                            robot=args.robot, wrist_box=args.wrist_box, hand_mount=args.hand_mount)
+                            robot=args.robot, wrist_box=args.wrist_box, hand_mount=args.hand_mount,
+                            task_carry=args.task_carry, start_shift=tuple(args.start_shift))
     return thunk
 
 
@@ -169,6 +170,8 @@ def main():
     parser.add_argument('--wrist-lag', type=float, default=.02, help='Max wrist target lead (m)')
     parser.add_argument('--physics', choices=('realistic', 'course'), help='Default: PNR_PHYSICS or realistic')
     parser.add_argument('--hand-mount', choices=('wrist', 'dorsal'), default='wrist', help='Allegro mount on the Fetch')
+    parser.add_argument('--task-carry', action='store_true', help='Fetch: carry phase = the full task\'s retreat, tuck and base carry')
+    parser.add_argument('--start-shift', type=float, nargs=2, default=[.03, .03], metavar=('X', 'Y'), help='Object start offset range (m)')
     parser.add_argument('--wrist-box', type=float, nargs=2, metavar=('XY', 'TILT'),
                         help='Keep the wrist within XY m of the pregrasp and its pitch/roll within TILT rad')
     parser.add_argument('--robot', choices=('rig', 'fetch'), default='rig',
