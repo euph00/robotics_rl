@@ -83,10 +83,6 @@
     {
       "key": "imitation_rl",
       "label": "Imitation + RL"
-    },
-    {
-      "key": "rl",
-      "label": "RL from reward"
     }
   ],
   "stages": [
@@ -115,10 +111,6 @@
         "wide": [
           "p_gripper_planner_wide"
         ]
-      },
-      "dev": {
-        "run": "rp_planner_course",
-        "note": "dev: course mazes · soup can, apple, mug"
       }
     },
     {
@@ -189,10 +181,6 @@
         "wide": [
           "p_hand_scripted_wide"
         ]
-      },
-      "dev": {
-        "run": "rp_hand_teacher_course",
-        "note": "dev: course mazes · soup can, apple, mug"
       }
     },
     {
@@ -239,9 +227,15 @@
           "p_hand_bcrl_wide_s2"
         ]
       },
-      "dev": {
-        "run": "rp_hand_f02_4m_frozen_course",
-        "note": "dev: course mazes · soup can, apple, mug · old mount"
+      "training": {
+        "standard": [
+          "hand_wbc_std_s0",
+          "hand_wbc_std_s1",
+          "hand_wbc_std_s2"
+        ],
+        "wide": [
+          "hand_w_wide01"
+        ]
       }
     },
     {

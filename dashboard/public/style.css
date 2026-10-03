@@ -70,7 +70,7 @@ main { padding: 18px 28px 40px; max-width: 1280px; margin: 0 auto; }
 .mhead { text-align: center; font-weight: 600; font-size: 13px; padding-bottom: 2px; }
 .mrow { font-weight: 600; font-size: 13px; display: flex; flex-direction: column; justify-content: center; }
 .mcell { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-height: 74px; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
-.mcell-na, .mcell-planned { align-items: center; text-align: center; background: var(--bg); }
+.mcell-na, .mcell-planned, .mcell-training { align-items: center; text-align: center; background: var(--bg); }
 .mcell-dev { border-style: dashed; }
 .mtop { display: flex; align-items: baseline; gap: 6px; }
 .big { font-size: 22px; font-weight: 700; }

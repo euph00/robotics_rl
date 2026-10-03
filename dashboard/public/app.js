@@ -71,6 +71,8 @@ function cellState(condition, task) {
   const agg = aggregate(runs);
   if (agg.done.length) return {kind: 'done', ...agg};
   if (agg.running.length) return {kind: 'running', ...agg};
+  const training = ((condition.training_status || {})[task.key] || []);
+  if (training.length) return {kind: 'training', text: `${training.length} seed${training.length > 1 ? 's' : ''} training`};
   const dev = condition.dev && condition.dev.result;
   if (task.key === 'standard' && dev && dev.cases) {
     return {kind: 'dev', rate: dev.success / dev.cases, timed: dev.timed / dev.cases, note: condition.dev.note,
@@ -124,8 +126,9 @@ function renderMatrix(study) {
         const condition = byKey[`${e.key}/${ctl.key}`] || {na: '—'};
         const state = cellState(condition, task);
         const cell = el('div', undefined, `mcell mcell-${state.kind}`);
-        if (state.kind === 'na' || state.kind === 'planned') {
-          cell.append(el('span', state.kind === 'planned' ? 'planned' : '—', 'chip'));
+        if (state.kind === 'na' || state.kind === 'planned' || state.kind === 'training') {
+          cell.append(el('span', state.kind === 'na' ? '—' : state.kind, `chip${state.kind === 'training' ? ' chip-run' : ''}`));
+          if (state.kind === 'training') cell.append(el('div', `${state.text} · see Training now`, 'muted small'));
           if (state.text && state.kind === 'na' && state.text !== '—') cell.append(el('div', state.text, 'muted small'));
         } else {
           const top = el('div', undefined, 'mtop');
@@ -209,7 +212,7 @@ function renderAdded(study) {
     item.append(el('span', undefined, `swatch src-${SOURCE_OF[ctl.key]}`), el('span', ctl.label));
     legend.append(item);
   }
-  legend.append(el('span', '* development result (course mazes, 3 objects) until the protocol runs land · – not run yet', 'muted'));
+  legend.append(el('span', '– no protocol result yet (training) · bars: mean over seeds', 'muted'));
   target.append(legend);
 }
 

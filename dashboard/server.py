@@ -459,6 +459,14 @@ def study_progress(runs_root):
                                 for task, runs in (condition.get("evals") or {}).items()}
         if condition.get("dev"):
             condition["dev"]["result"] = eval_result(runs_root, condition["dev"].get("run"))
+        condition["training_status"] = {}
+        for task, runs in (condition.get("training") or {}).items():
+            alive = []
+            for run in runs:
+                status = read_json(runs_root / run / "status.json") if SAFE_ID.fullmatch(str(run)) else None
+                if status and _alive(status):
+                    alive.append({"id": run, "transitions": status.get("transitions"), "budget": status.get("budget")})
+            condition["training_status"][task] = alive
     return study
 
 
