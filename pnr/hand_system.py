@@ -102,10 +102,13 @@ class HandPlannerSystem(ReferenceController):
         else:
             raise error
         self.move_base([-.78, 0.], stage='approach')
-        for lift in (.2, 0.):
-            target = self.rig.wrist_to_joints(wrist + [0., 0., lift, 0., 0., 0.], collision_free=True)
-            self.move_joint(target, stage='pregrasp', include_object=True, step_size=.012 if lift else .006)
-        self.rig.wrist_target = wrist.copy()        # read the reached pose's angles near the planned ones
+        above = wrist + [0., 0., .2, 0., 0., 0.]
+        self.move_joint(self.rig.wrist_to_joints(above, collision_free=True), stage='pregrasp', include_object=True, step_size=.012)
+        self.rig.wrist_target = above.copy()
+        # Straight down in small steps that continue the arm configuration (a fresh collision-free IK
+        # solution at the bottom can sit on another branch with no clear path to it); stop early if blocked.
+        reached = self._cartesian_path(above, wrist, 'pregrasp', steps=8, include_object=True)
+        self.rig.wrist_target = (above + (wrist - above) * reached).copy()   # angle reading near the planned pose
         self.stage_results['hand_pregrasp'] = {'wrist': wrist.tolist(), 'reached': self.rig.wrist().tolist()}
         return wrist
 
@@ -173,6 +176,26 @@ class HandPlannerSystem(ReferenceController):
             info = self.env.evaluate()
         return info
 
+    def _cartesian_path(self, start, goal, stage, steps=8, include_object=False, step_size=.006):
+        """Move the palm from rig wrist pose `start` towards `goal` in `steps` straight-line waypoints, each
+        solved by damped least squares from the current arm configuration and collision-checked (with the
+        held object as payload). Stops at the last waypoint that is reachable in this branch and clear;
+        returns the fraction of the path completed."""
+        done = 0.
+        for t in np.linspace(0, 1, steps + 1)[1:]:
+            wrist = start + (goal - start) * t
+            target = self.env.last_target.copy()
+            target[self.rig._arm] = self.rig._arm_step(wrist, iterations=10)
+            with self.env.query():
+                self.env.set_joint_positions(target)
+                position, _ = self.rig._flange_target(wrist)
+                reachable = np.linalg.norm(self.env.ee_pose()[0] - position) < .01
+            if not reachable or not self.planner.collision_free(target, include_object=include_object):
+                break
+            self.move_joint(target, stage, step_size=step_size, check=False)
+            done = float(t)
+        return done
+
     def _side_carry_posture(self, steps=12, reach=.30, height=1.):
         """Retreat, then move the held object in a straight line, upright and without turning, to `reach`
         in front of the base at `height`. Each waypoint's arm targets continue the current arm
@@ -183,18 +206,7 @@ class HandPlannerSystem(ReferenceController):
         start = self.rig.wrist()
         base = self.base_position()
         shift = np.array([base[0] + reach, base[1], height]) - self.env.observe()['object_pos']
-        reached = 0.
-        for t in np.linspace(0, 1, steps + 1)[1:]:
-            wrist = start + np.r_[shift * t, 0., 0., 0.]
-            target = self.env.last_target.copy()
-            target[self.rig._arm] = self.rig._arm_step(wrist, iterations=10)
-            with self.env.query():
-                self.env.set_joint_positions(target)
-                position, _ = self.rig._flange_target(wrist)
-                if np.linalg.norm(self.env.ee_pose()[0] - position) > .01:
-                    break                                   # no longer reachable in this branch
-            self.move_joint(target, 'carry_posture', step_size=.006)
-            reached = float(t)
+        reached = self._cartesian_path(start, start + np.r_[shift, 0., 0., 0.], 'carry_posture', steps)
         self.hold(50, 'hold')
         self.planner.set_payload()
         self.stage_results['carry_posture'] = {'base_position': self.base_position().tolist(), 'side_grasp': True,

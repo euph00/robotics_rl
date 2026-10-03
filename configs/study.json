@@ -272,8 +272,8 @@
     {
       "key": "wide_task",
       "label": "Wide objects complete the task",
-      "status": "next",
-      "detail": "side-grasp carry posture"
+      "status": "active",
+      "detail": "first chef-can delivery by the RL hand; grasp still training"
     },
     {
       "key": "matrix",
