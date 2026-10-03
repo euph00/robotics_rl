@@ -33,7 +33,7 @@ GOAL_HEIGHT = .90
 ARM_LINKS = ('upperarm_roll_link', 'elbow_flex_link', 'forearm_roll_link', 'wrist_flex_link', 'wrist_roll_link')
 
 
-def plan_tuck(planner, q, base_xy, flange, orientation, held):
+def plan_tuck(planner, q, base_xy, flange, orientation, held, first=False):
     """Carry-posture joint targets for a held object, shared by training (FetchHandRig) and the hand system.
     Candidates: the held object TUCK_AHEAD of the base centre at TUCK_HEIGHTS, the hand turned about the
     vertical by one of TUCK_TURNS (palm tilt kept, so gravity pulls on the grasp as before), the torso at its
@@ -44,7 +44,8 @@ def plan_tuck(planner, q, base_xy, flange, orientation, held):
     is planned for the base's footprint), stopping at the first within TUCK_COMPACT; with no candidate, the search is
     repeated with the torso free (if its remaining range still brings the object to the goal height). At most
     TUCK_BUDGET IK solves once a candidate is found (four times that otherwise); the chosen candidate is in
-    `plan_tuck.last`. None if nothing is found. The planner's fixed tuck (flange 24 cm ahead at 1.05 m, orientation kept) carried some
+    `plan_tuck.last`. `first`: the first candidate that counts, compact or not (training: its carry runs in
+    open space, and its vectorised environments all wait for the slowest one's search). None if nothing is found. The planner's fixed tuck (flange 24 cm ahead at 1.05 m, orientation kept) carried some
     grasps 23 cm above the goal or pressed the object into the robot's head; with the wrist-end mount the
     unturned hand points away from the robot, so few such poses exist close to the base."""
     q = np.asarray(q, dtype=float)
@@ -90,7 +91,7 @@ def plan_tuck(planner, q, base_xy, flange, orientation, held):
                         best = (size, tuck)
                         plan_tuck.last = dict(torso_free=torso is None, height=height, turn=turn, ahead=ahead, seed=k,
                                               extent=round(float(size), 3), solves=solves)
-                        if size <= TUCK_COMPACT:
+                        if first or size <= TUCK_COMPACT:
                             return tuck
         if best[1] is not None:
             return best[1]
@@ -295,7 +296,7 @@ class FetchHandRig:
             flange, orientation = env.ee_pose()
         self.planner.set_payload()                  # the grasp transform, for checking the held object
         try:
-            return plan_tuck(self.planner, q, env.root_position[:2] + q[:2], flange, orientation, held)
+            return plan_tuck(self.planner, q, env.root_position[:2] + q[:2], flange, orientation, held, first=True)
         finally:
             self.planner.payload = None
 
