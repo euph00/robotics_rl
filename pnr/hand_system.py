@@ -165,7 +165,7 @@ class HandPlannerSystem(ReferenceController):
         object at or below the goal's height, hand turned about the vertical, held object kept off the robot's
         body), then a planned joint-space move. If no tuck is found, a straight-line path as far as it reaches."""
         self.planner.set_payload()
-        self.move_base([-1.25, 0], stage='retreat', step_size=.006)
+        self.move_base([-1.25, 0], stage='retreat', step_size=.006, check=False)   # straight back from the table
         position, orientation = self.planner.ee_pose()
         q = plan_tuck(self.planner, self.env.agent_qpos.astype(np.float64), self.base_position(), position, orientation,
                       self.env.observe()['object_pos'])
@@ -208,7 +208,7 @@ class HandPlannerSystem(ReferenceController):
         hand; each step is collision-checked with the object attached."""
         self.planner.set_payload()
         if retreat:
-            self.move_base([-1.25, 0], stage='retreat', step_size=.006)
+            self.move_base([-1.25, 0], stage='retreat', step_size=.006, check=False)   # straight back from the table
         start = self.rig.wrist()
         base = self.base_position()
         shift = np.array([base[0] + reach, base[1], height]) - self.env.observe()['object_pos']
