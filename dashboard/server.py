@@ -448,7 +448,8 @@ def eval_result(runs_root, run_id):
         entry["timed"] += bool(row.get("timed"))
     return {"id": run_id, "status": "running" if _alive(status) else "complete", "cases": len(rows),
             "planned": planned or len(rows), "success": sum(bool(r["success"]) for r in rows),
-            "timed": sum(bool(r.get("timed")) for r in rows), "by_object": by_object}
+            "timed": sum(bool(r.get("timed")) for r in rows), "by_object": by_object,
+            "picked": sum(bool(r.get("pick_hold_ok") or r.get("hand_held")) for r in rows)}
 
 
 def study_progress(runs_root):

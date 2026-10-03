@@ -60,6 +60,7 @@ function aggregate(runs) {
     done, running, byObject,
     rate: done.length ? mean(done.map(r => r.success / r.cases)) : null,
     timed: done.length ? mean(done.map(r => r.timed / r.cases)) : null,
+    picked: done.length ? mean(done.map(r => (r.picked || 0) / r.cases)) : null,
     progress: running.length ? running.map(r => `${r.cases}/${r.planned || '?'}`).join(', ') : null,
   };
 }
@@ -85,7 +86,7 @@ function cellTooltip(condition, task, state) {
   const lines = [[`${condition.system || ''}`, 'tip-title'], [`${task.label}`, 'muted']];
   if (state.kind === 'dev') lines.push([state.note, 'muted']);
   for (const r of state.done || []) {
-    lines.push([`${r.id}: ${r.success}/${r.cases} delivered · ${r.timed} within deadline`]);
+    lines.push([`${r.id}: ${r.success}/${r.cases} delivered · ${r.picked ?? '?'} picked · ${r.timed} within deadline`]);
   }
   const objects = Object.entries(state.byObject || {}).map(([k, v]) => `${OBJECT_NAMES[k] || k} ${Math.round(100 * v.success / v.cases)}%`);
   if (objects.length) lines.push([objects.join(' · '), 'muted']);
@@ -138,7 +139,7 @@ function renderMatrix(study) {
           cell.append(top, resultBar(state.rate, state.timed, SOURCE_OF[ctl.key]));
           const seeds = state.kind === 'done' ? `${state.done.length} seed${state.done.length > 1 ? 's' : ''}` :
                         state.kind === 'dev' ? 'development set' : `${state.progress} cases`;
-          cell.append(el('div', `${percent(state.timed)} in time · ${seeds}`, 'muted small'));
+          cell.append(el('div', `${percent(state.timed)} in time · picked ${percent(state.picked)} · ${seeds}`, 'muted small'));
         }
         hover(cell, () => cellTooltip(condition, task, state));
         grid.append(cell);
