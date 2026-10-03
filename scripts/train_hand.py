@@ -161,6 +161,7 @@ def main():
     parser.add_argument('--finger-kp', type=float, help='Finger position gain (default: Menagerie 1.0)')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--algo', choices=('ppo', 'sac', 'rlpd'), default='ppo')
+    parser.add_argument('--resume', type=int, metavar='STEP', help='Continue this PPO run from its checkpoint at STEP (same run directory)')
     parser.add_argument('--rlpd-demos', type=Path, help='RLPD prior data: hand_teacher_demos.py transitions.npz')
     parser.add_argument('--utd', type=int, default=1, help='RLPD gradient steps per environment transition')
     parser.add_argument('--finger-actions', choices=('delta', 'absolute'), default='delta')
@@ -199,11 +200,14 @@ def main():
     torch.set_num_threads(4)
 
     out = ROOT / 'runs' / args.run_id
-    if out.exists():
+    if out.exists() and args.resume is None:
         parser.error(f'{out} exists')
-    logger = RunLogger(args.run_id, root=ROOT / 'runs', kind='train', name=f'Allegro grasp {args.algo.upper()} · {args.run_id}',
+    if args.resume is not None and args.algo != 'ppo':
+        parser.error('--resume supports PPO runs (an off-policy replay buffer is not saved)')
+    logger = RunLogger(args.run_id, root=ROOT / 'runs', kind='train', name=f'Allegro grasp {args.algo.upper()} · {args.run_id}', resume=args.resume is not None,
                        summary='Grasp, lift and carry ' + ('with the hand on the Fetch' if args.robot == 'fetch' else 'on the hand rig'), budget=args.steps, algorithm=args.algo.upper(), skill='hand_grasp')
-    atomic_json(out / 'config.json', dict({k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}, command=sys.argv))
+    config = dict({k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}, command=sys.argv)
+    atomic_json(out / ('config.json' if args.resume is None else f'config_resume_{args.resume}.json'), config)
     venv = VecMonitor(SubprocVecEnv([make_env(i, args) for i in range(args.envs)], start_method='spawn'))
     eval_env = make_env(10_000, args, evaluation=True)()
     normalize = lambda o: o
@@ -215,6 +219,17 @@ def main():
                     gamma=.99, gae_lambda=.95, clip_range=.2, ent_coef=0., vf_coef=.5, max_grad_norm=1., target_kl=args.target_kl,
                     policy_kwargs=dict(net_arch=dict(pi=[512, 512, 256], vf=[512, 512, 256]), log_std_init=-.5),
                     seed=args.seed, device=args.device, verbose=0)
+        if args.resume is not None:
+            # Continue after an interruption: weights, optimiser state and normalisation statistics of the
+            # run's own checkpoint; the step count carries on (no imitation or value warm-up again).
+            base = out / 'checkpoints' / f'step_{args.resume:08d}'
+            venv = VecNormalize.load(str(base) + '_vecnormalize.pkl', venv.venv)
+            venv.training = True
+            normalize = lambda o: venv.normalize_obs(o)
+            model = PPO.load(str(base) + '.zip', env=venv, device=args.device)
+            model.num_timesteps = args.resume
+            args.bc_demos, args.critic_warmup = None, 0
+            logger.event(f'Resumed from step {args.resume}')
         if args.init_from:
             warm_start(model, venv, args.init_from)
         if args.bc_demos:
@@ -255,7 +270,9 @@ def main():
     class Progress(BaseCallback):
         def __init__(self):
             super().__init__()
-            self.next_eval, self.started, self.recent = args.eval_every, time.monotonic(), []
+            start = args.resume or 0
+            self.next_eval, self.started, self.recent = (start // args.eval_every + 1) * args.eval_every, time.monotonic(), []
+            self.start_steps = start
             self.stage, self.stage_start = 0, 0
             if stages:
                 apply_stage(0)
@@ -273,7 +290,7 @@ def main():
                            carry_entered=float(np.mean([r['entered_carry'] for r in rows])),
                            carry_success_rate=float(np.mean([r['carried'] for r in rows])),
                            train_success_rate=float(np.mean(self.recent[-200:])) if self.recent else 0.,
-                           steps_per_second=self.num_timesteps / (time.monotonic() - self.started))
+                           steps_per_second=(self.num_timesteps - self.start_steps) / (time.monotonic() - self.started))
             if stages:
                 stage = stages[self.stage]
                 stage_success = float(np.mean([r['success'] for r in rows if r['object_idx'] in stage['objects']]))
@@ -312,7 +329,7 @@ def main():
             return True
 
     try:
-        model.learn(total_timesteps=args.steps, callback=Progress())
+        model.learn(total_timesteps=args.steps - (args.resume or 0), callback=Progress(), reset_num_timesteps=args.resume is None)
         model.save(out / 'checkpoints' / 'final')
         if isinstance(venv, VecNormalize):
             venv.save(str(out / 'checkpoints' / 'final_vecnormalize.pkl'))
