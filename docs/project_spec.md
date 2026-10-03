@@ -45,11 +45,11 @@ end (`hand_mount='wrist'`), as Allegro hands are mounted on arms.
 | Tasks | **Standard**: the course's five objects (foam brick, banana, soup can, apple, mug). **Wide**: master chef can and soup can ×1.6 (wide, heavy cylinders at the gripper's limit) |
 | Cases | Hold-out bank: 20 unseen mazes × the task's objects (standard 100, wide 40) |
 | Object start | Seeded random offset (±8 cm, ±12 cm) and yaw per case (`--random-object-pose`); the course always starts objects in one pose |
-| Physics and speeds | Realistic; planned motions at speed 3 (holding 2); hand grasp ≤ 300 decisions |
+| Physics and speeds | Realistic; planned motions at speed 3 (holding 2); hand grasp ≤ 300 decisions; one settle rule for all systems (base/torso 5 mm, arm 0.02 rad, < 0.15 rad/s) |
 | Primary metrics | Delivered (`complete_task_success`); delivered within 15,000 physics ticks including settling |
 | Secondary | Course rubric estimate per trial; failures by stage; median ticks |
 | Seeds | 3 independently trained systems per learned condition; scripted conditions run once (deterministic) |
-| Checkpoints | Chosen on development evaluations only (training-time evaluations, course set), never on the hold-out bank |
+| Checkpoints | Chosen on development evaluations only, never on the hold-out bank. Hand: imitation = the cloned policy (step 0); imitation + RL = best training-time evaluation (lift and carry, 12 episodes per object) within 10M PPO steps. Gripper: the grasp trainer's own validation choice |
 | Sealed | `reserve` bank stays unused |
 
 ## Algorithms

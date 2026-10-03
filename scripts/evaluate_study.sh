@@ -26,4 +26,22 @@ done
 # Hand: scripted grasp (deterministic), then the learned hand policies as they become available.
 evh p_hand_scripted_standard --policy teacher --objects $STANDARD
 evh p_hand_scripted_wide --policy teacher --objects $WIDE
+# Learned hand grasps, per seed (train_hand.py: Fetch demos -> BC -> PPO). Imitation = the cloned policy
+# (step 0); imitation + RL = the best training-time evaluation (lift and carry) within BUDGET steps,
+# chosen once the run has passed the budget. Development evaluations only, never the hold-out bank.
+BUDGET=10000000
+best() { python3 - "$1" "$BUDGET" <<'PY'
+import json, sys
+rows = [json.loads(l) for l in open(f'runs/{sys.argv[1]}/metrics.jsonl') if '"evaluation"' in l]
+done = [r for r in rows if r['transitions'] <= int(sys.argv[2])]
+if not rows or rows[-1]['transitions'] < int(sys.argv[2]) - 100:
+    sys.exit(1)                                   # budget not reached yet
+print(max(done, key=lambda r: (r['carry_success_rate'], r['transitions']))['transitions'])
+PY
+}
+for s in 0 1 2; do
+  R=hand_wbc_std_s$s
+  [ -e runs/$R/checkpoints/step_00000000.zip ] && evh p_hand_bc_standard_s$s --policy $R --step 0 --objects $STANDARD
+  step=$(best $R 2>/dev/null) && evh p_hand_bcrl_standard_s$s --policy $R --step $step --objects $STANDARD
+done
 echo "Study evaluations done"

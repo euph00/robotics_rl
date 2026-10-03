@@ -267,7 +267,7 @@
       "key": "hand_fetch",
       "label": "Hand trained on the Fetch",
       "status": "active",
-      "detail": "wrist-end mount, five objects + chef can"
+      "detail": "wrist-end mount; imitation 47% → PPO training; wide objects training"
     },
     {
       "key": "wide_task",
@@ -279,7 +279,7 @@
       "key": "matrix",
       "label": "Matrix filled, 1 seed",
       "status": "active",
-      "detail": "both tasks, every condition"
+      "detail": "8 of 13 cells have a first result"
     },
     {
       "key": "seeds",
