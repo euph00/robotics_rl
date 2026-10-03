@@ -234,7 +234,9 @@
           "hand_wbc_std_s2"
         ],
         "wide": [
-          "hand_w_wide01"
+          "hand_w_wide01",
+          "hand_w_wide_s1",
+          "hand_w_wide_s2"
         ]
       }
     },

@@ -44,4 +44,10 @@ for s in 0 1 2; do
   [ -e runs/$R/checkpoints/step_00000000.zip ] && evh p_hand_bc_standard_s$s --policy $R --step 0 --objects $STANDARD
   step=$(best $R 2>/dev/null) && evh p_hand_bcrl_standard_s$s --policy $R --step $step --objects $STANDARD
 done
+# Wide objects: no scripted side-grasp demos on the Fetch; seeds fine-tune the same side-grasp policy
+# (rig imitation and RL, then the old-mount Fetch fine-tune, hand_f_chefcan02 at 12M) on the Fetch.
+for s in 0 1 2; do
+  R=$([ $s = 0 ] && echo hand_w_wide01 || echo hand_w_wide_s$s)
+  step=$(best $R 2>/dev/null) && evh p_hand_bcrl_wide_s$s --policy $R --step $step --objects $WIDE
+done
 echo "Study evaluations done"
