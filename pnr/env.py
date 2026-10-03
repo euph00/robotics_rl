@@ -466,6 +466,7 @@ class PickNavReachEnv:
         clear_of = ('hand/', 'fetch/wrist_roll_link', 'fetch/wrist_flex_link')
         self._body_geom = np.array([self.effector == 'allegro' and self._group[g] == 'robot'
                                     and not names[int(m.geom_bodyid[g])].startswith(clear_of) for g in range(m.ngeom)])
+        self._body_exempt = np.zeros(m.ngeom, dtype=bool)   # body geoms that are part of the current grasp
         # MuJoCo stores mesh vertices in each geom's frame; world vertices use geom poses.
         self._object_geoms = [g for g in range(m.ngeom) if self._group[g] == 'object']
         self._gain = np.asarray(GAINS)[:len(self.joint_names)]   # the two jaw joints come last
@@ -755,6 +756,27 @@ class PickNavReachEnv:
     def touching(self, a, b):
         return any(self._normal_force(i) > 0 for i, *_ in self._contacts(self.data, a, b))
 
+    def exempt_grasp_body(self, distance=.02):
+        """Exempt from the ('object', 'body') test the body geoms within `distance` of the object now: a wide
+        side-grasped object rests against the forearm as part of the grasp."""
+        data = self._query
+        if not getattr(self, '_query_depth', 0):
+            data.qpos[:] = self.data.qpos
+            mujoco.mj_kinematics(self.model, data)
+        m = self.model
+        saved_margin = m.geom_margin.copy()
+        self._body_exempt[:] = False
+        try:
+            m.geom_margin[:] = distance
+            mujoco.mj_collision(m, data)
+            for i in range(data.ncon):
+                c = data.contact[i]
+                if c.dist < distance and 'object' in (self._group[c.geom1], self._group[c.geom2]):
+                    for g in (c.geom1, c.geom2):
+                        self._body_exempt[g] |= bool(self._body_geom[g])
+        finally:
+            m.geom_margin[:] = saved_margin
+
     def any_within(self, pairs, margin):
         """Closest-distance test via MuJoCo's collision pipeline, always on the scratch query data."""
         data = self._query
@@ -767,7 +789,7 @@ class PickNavReachEnv:
         try:
             m.geom_margin[:] = max(margin, 0.) + 1e-4
             mujoco.mj_collision(m, data)
-            labels = lambda g: (self._group[g], 'body') if self._body_geom[g] else (self._group[g],)
+            labels = lambda g: (self._group[g], 'body') if self._body_geom[g] and not self._body_exempt[g] else (self._group[g],)
             for i in range(data.ncon):
                 c = data.contact[i]
                 if c.dist < margin and any(frozenset((a, b)) in wanted for a in labels(c.geom1) for b in labels(c.geom2)):

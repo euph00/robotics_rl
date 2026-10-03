@@ -125,6 +125,7 @@ class JointPlanner:
         rotation = Rotation.from_quat(quat)
         self.payload = (rotation.inv().apply(np.asarray(obj_pos)-pos),
                         rotation.inv()*Rotation.from_quat(obj_quat))
+        self.env.exempt_grasp_body()
 
     def _put(self, q):
         self.env.set_joint_positions(q)
