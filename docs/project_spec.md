@@ -53,7 +53,7 @@ end (`hand_mount='wrist'`), as Allegro hands are mounted on arms.
 | Primary metrics | Delivered (`complete_task_success`); delivered within 15,000 physics ticks including settling. Diagnostic: the stage where each failure happens (picked, then delivered given picked) |
 | Secondary | Course rubric estimate per trial; failures by stage; median ticks |
 | Seeds | 3 independently trained systems per learned condition; scripted conditions run once (deterministic) |
-| Checkpoints | Chosen on development evaluations only, never on the hold-out bank. Hand: imitation = the cloned policy (step 0); imitation + RL = BC, then 10M PPO steps, then a fine-tune whose carry phase is the full task's retreat, tuck and base carry, from the protocol's object-start range (3M steps standard, 4M wide; `scripts/study_finetune.sh`): best training-time evaluation (lift and carry) within each stage's budget. Gripper: the grasp trainer's own validation choice |
+| Checkpoints | Chosen on development evaluations only, never on the hold-out bank. Hand: imitation = the cloned policy (step 0); imitation + RL = BC, then 10M PPO steps, then a fine-tune whose carry phase is the full task's retreat, tuck and base carry, from the protocol's object-start range (3M steps standard with 16 environments, 4M wide with 22; `scripts/study_finetune.sh`): best training-time evaluation (lift and carry) within each stage's budget. Gripper: the grasp trainer's own validation choice |
 | Sealed | `reserve` bank stays unused |
 
 ## Algorithms
