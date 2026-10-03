@@ -160,7 +160,9 @@ def main():
     parser.add_argument('--friction', type=float, help='Hand geom friction (default: course 0.25)')
     parser.add_argument('--finger-kp', type=float, help='Finger position gain (default: Menagerie 1.0)')
     parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--algo', choices=('ppo', 'sac'), default='ppo')
+    parser.add_argument('--algo', choices=('ppo', 'sac', 'rlpd'), default='ppo')
+    parser.add_argument('--rlpd-demos', type=Path, help='RLPD prior data: hand_teacher_demos.py transitions.npz')
+    parser.add_argument('--utd', type=int, default=1, help='RLPD gradient steps per environment transition')
     parser.add_argument('--finger-actions', choices=('delta', 'absolute'), default='delta')
     parser.add_argument('--near-start', type=float, default=0., help='Fraction of curriculum starts near a grasp')
     parser.add_argument('--wrist-lag', type=float, default=.02, help='Max wrist target lead (m)')
@@ -221,6 +223,21 @@ def main():
             print(json.dumps({'behaviour_cloning': clone}), flush=True)
         if args.critic_warmup:
             set_actor_trainable(model, False)
+    elif args.algo == 'rlpd':
+        # RLPD: SAC with layer-normalised critics, prior (demonstration) transitions in half of every batch,
+        # and args.utd gradient steps per environment transition. Observation normalisation is frozen at the
+        # demonstrations' statistics so prior and online data share it.
+        from pnr.rlpd import DemoMixReplayBuffer, LayerNormSACPolicy
+        prior = np.load(args.rlpd_demos)
+        venv = VecNormalize(venv, norm_obs=True, norm_reward=False, clip_obs=10., gamma=.99, training=False)
+        venv.obs_rms.mean = prior['observations'].mean(0).astype(np.float64)
+        venv.obs_rms.var = prior['observations'].var(0).astype(np.float64) + 1e-6
+        venv.obs_rms.count = float(len(prior['observations']))
+        normalize = lambda o: venv.normalize_obs(o)
+        model = SAC(LayerNormSACPolicy, venv, learning_rate=args.learning_rate, buffer_size=2_000_000, batch_size=args.batch_size,
+                    learning_starts=args.batch_size, gamma=.99, tau=.005, train_freq=1, gradient_steps=args.utd * args.envs,
+                    replay_buffer_class=DemoMixReplayBuffer, replay_buffer_kwargs=dict(demos=str(args.rlpd_demos), demo_ratio=.5),
+                    policy_kwargs=dict(net_arch=[512, 512, 256]), seed=args.seed, device=args.device, verbose=0)
     else:
         model = SAC('MlpPolicy', venv, learning_rate=args.learning_rate, buffer_size=2_000_000, batch_size=args.batch_size,
                     learning_starts=20_000, gamma=.99, tau=.005, train_freq=1, gradient_steps=args.gradient_steps,

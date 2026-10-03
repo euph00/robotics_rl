@@ -58,7 +58,7 @@ end (`hand_mount='wrist'`), as Allegro hands are mounted on arms.
 |---|---|---|
 | Gripper grasp | BC of the planner's grasp, then demonstration-regularised SAC+HER | Low-dimensional actions; the course-task study's recipe, now from random object starts (`scripts/train_gripper_grasp.sh`) |
 | Hand grasp | BC from scripted demos, then PPO (rig pretraining, then Fetch fine-tuning) | 22-D actions, dense reward, cheap parallel simulation: the standard dexterous-manipulation recipe; SAC ran ~10× slower per wall-clock second here |
-| Hand algorithm comparison | PPO vs RLPD (SAC with demonstrations in every batch, high update ratio) on the chef can, equal wall-clock | Tests whether a demonstration-driven off-policy method beats PPO where environment steps are expensive |
+| Hand algorithm comparison | PPO (BC, then PPO) vs RLPD (SAC with layer-normalised critics, the same 243 Fetch demonstrations in half of every batch, one update per transition) on the standard objects, reported per environment step and per wall-clock hour (`--algo rlpd`, `pnr/rlpd.py`) | Tests whether a demonstration-driven off-policy method beats PPO where environment steps are expensive. Moved from the chef can: the scripted side grasp yields no Fetch demonstrations to learn from |
 
 TD3+HER is dropped: same family as SAC, and on the gripper RL is not the bottleneck.
 
@@ -69,7 +69,7 @@ TD3+HER is dropped: same family as SAC, and on the gripper RL is not the bottlen
 3. Wide objects complete the full task with the hand (side-grasp carry posture).
 4. Matrix filled with one seed per condition, both tasks.
 5. Three seeds per learned condition.
-6. Algorithm comparison on the hand (PPO vs RLPD) and ablations (imitation only, RL from scratch).
+6. Algorithm comparison on the hand (PPO vs RLPD, standard objects) and ablations (imitation only, RL from scratch).
 7. Report (5–8 page NeurIPS-style) and presentation material (figures, clips from the dashboard).
 
 **Stretch, only after milestones 1–6 give a complete set of results:** orientation-constrained

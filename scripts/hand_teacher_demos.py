@@ -33,19 +33,24 @@ def collect(job):
         teacher = Teacher(env, rng=np.random.default_rng(int(seed)))
         rng = np.random.default_rng(int(seed) + 1)
         observations, labels, success, carried = [], [], False, False
+        executed_actions, rewards, next_observations, dones = [], [], [], []
         while True:
             label = teacher.act()
             executed = np.clip(label + rng.normal(0, noise, label.shape), -1, 1).astype(np.float32) if noise else label
             observations.append(obs)
             labels.append(label)
             obs, reward, terminated, truncated, info = env.step(executed)
+            executed_actions.append(executed); rewards.append(reward); next_observations.append(obs)
+            dones.append(float(terminated))       # truncation is not a terminal for bootstrapping
             success |= bool(info.get('success'))
             carried |= bool(info.get('carried'))
             if terminated or truncated:
                 break
         episodes.append({'object_idx': idx, 'seed': int(seed), 'noise': float(noise), 'lifted': success,
                          'carried': carried, 'observations': np.asarray(observations, np.float32),
-                         'actions': np.asarray(labels, np.float32)})
+                         'actions': np.asarray(labels, np.float32),
+                         'executed': np.asarray(executed_actions, np.float32), 'rewards': np.asarray(rewards, np.float32),
+                         'next_observations': np.asarray(next_observations, np.float32), 'dones': np.asarray(dones, np.float32)})
     return episodes
 
 
@@ -78,6 +83,14 @@ def main():
                         observations=np.concatenate([e['observations'] for e in keep]),
                         actions=np.concatenate([e['actions'] for e in keep]),
                         object_idx=np.concatenate([[e['object_idx']] * len(e['actions']) for e in keep]))
+    # Full transitions of the same episodes (executed actions, rewards), e.g. as RLPD prior data.
+    np.savez_compressed(args.output / 'transitions.npz',
+                        observations=np.concatenate([e['observations'] for e in keep]),
+                        actions=np.concatenate([e['executed'] for e in keep]),
+                        rewards=np.concatenate([e['rewards'] for e in keep]),
+                        next_observations=np.concatenate([e['next_observations'] for e in keep]),
+                        dones=np.concatenate([e['dones'] for e in keep]),
+                        object_idx=np.concatenate([[e['object_idx']] * len(e['rewards']) for e in keep]))
     summary = {'config': {k: (str(v) if isinstance(v, Path) else v) for k, v in vars(args).items()},
                'episodes': len(episodes), 'kept': len(keep), 'transitions': int(sum(len(e['actions']) for e in keep)),
                'per_object': {str(i): {'lifted': sum(e['lifted'] for e in episodes if e['object_idx'] == i),

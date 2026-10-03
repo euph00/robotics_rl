@@ -286,8 +286,8 @@
     {
       "key": "algorithms",
       "label": "PPO vs RLPD",
-      "status": "next",
-      "detail": "hand, chef can, equal compute"
+      "status": "active",
+      "detail": "standard objects, same 243 demos; RLPD seed 0 training"
     },
     {
       "key": "report",

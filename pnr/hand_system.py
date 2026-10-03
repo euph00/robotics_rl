@@ -31,9 +31,12 @@ class HandPolicy:
     """A train_hand.py PPO checkpoint with its observation normalisation."""
 
     def __init__(self, run_dir, step):
-        from stable_baselines3 import PPO
+        import json
+        from stable_baselines3 import PPO, SAC
+        config = json.loads((Path(run_dir) / 'config.json').read_text()) if (Path(run_dir) / 'config.json').is_file() else {}
+        algorithm = SAC if config.get('algo') in ('sac', 'rlpd') else PPO
         base = Path(run_dir) / 'checkpoints' / f'step_{int(step):08d}'
-        self.model = PPO.load(str(base) + '.zip', device='cpu')
+        self.model = algorithm.load(str(base) + '.zip', device='cpu')
         stats = pickle.loads(Path(str(base) + '_vecnormalize.pkl').read_bytes())
         self.mean, self.std, self.clip = stats.obs_rms.mean, np.sqrt(stats.obs_rms.var + stats.epsilon), stats.clip_obs
         self.source = f'{Path(run_dir).name}/{int(step)}'
