@@ -313,7 +313,7 @@ Later on 2026-10-02:
   | Gripper · imitation, seeds 0/1/2 | 79/79/79 (33/32/32) | 80/80/80 | 99% |
   | Gripper · imitation + SAC, seeds 0/1/2 | 77/80/80 (33/32/31) | 78/81/81 | 99% |
   | Hand · scripted | 44 (16) | 47 | 94% |
-  | Hand · imitation, seeds 0/1/2 | 53/50/48 (19/17/16) | 54/54/49 | 96% |
+  | Hand · imitation, seeds 0/1/2 | 53/51/48 (19/17/16) | 54/54/49 | 97% |
   | Hand · BC → PPO 8M, seed 0 (development; before the task-carry fine-tune) | 71 (21) | 87 | 82% |
 
   Wide objects (40 cases): gripper planner 12 (0 in time); scripted hand 0 (the side grasp fails).
@@ -327,7 +327,7 @@ Later on 2026-10-02:
   height, the hand turned about the vertical (the unturned hand points away from the robot, so the
   forearm would have to pass through the body), torso lowest, arm compact along x and y (the first
   version swung the elbow into maze walls), the move to it clear of table, maze and body. Scripted
-  hand 23 → 44 delivered, hand imitation 11/17/11 → 53/50/48 (before the fix also a multi-seed tuck:
+  hand 23 → 44 delivered, hand imitation 11/17/11 → 53/51/48 (before the fix also a multi-seed tuck:
   12 → 23 scripted). The hand now loses objects mainly at the grasp, where RL helps (picked 54 → 87).
 - Task-carry fine-tunes (`scripts/study_finetune.sh`) train the policy's hold through this real
   retreat, tuck and carry from the protocol's object-start range; they start after the PPO seeds

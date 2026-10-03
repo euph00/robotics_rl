@@ -33,7 +33,7 @@ per run; delivered (within 15k ticks) · picked · delivered given picked:
 | Gripper · imitation, 3 seeds | 79/79/79 (33/32/32) | 80/80/80 | 99% |
 | Gripper · imitation + SAC, 3 seeds | 77/80/80 (33/32/31) | 78/81/81 | 99% |
 | Hand · scripted | 44 (16) | 47 | 94% |
-| Hand · imitation, 3 seeds | 53/50/48 (19/17/16) | 54/54/49 | 96% |
+| Hand · imitation, 3 seeds | 53/51/48 (19/17/16) | 54/54/49 | 97% |
 | Hand · imitation + PPO | after the fine-tunes; development check (seed 0, 8M, before the fine-tune): 71 (21) | 87 | 82% |
 
 Wide objects (master chef can, soup can ×1.6), 40 cases: gripper planner 12 (none in time); scripted
