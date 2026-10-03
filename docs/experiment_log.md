@@ -276,3 +276,28 @@ Later on 2026-10-02:
   grasp with the back-of-palm mount holds the object well in front of the robot. Retraining the
   chef can on the corrected geometry: `hand_f_chefcan02`.
 
+## 2026-10-03: wrist-end mount; which objects suit the hand (survey with randomised starts)
+
+- The Allegro is now mounted on the Fetch by its wrist end (`hand_mount='wrist'`), as on real
+  arms. IK check: both mounts reach side pregrasps and compact side-grasp carry postures; the
+  wrist-end mount needs top-down fingers within ~90 deg of pointing away from the robot.
+  Fetch fine-tunes restarted on it (`hand_w_01`, `hand_w_chefcan01`).
+- Enlarged variants (same density, ~11 cm across): 102 soup can x1.6 (1.31 kg), 107 apple x1.45
+  (0.75 kg), 110 mug x1.35 (0.34 kg).
+- Survey, randomised starts, 6 trials (gripper: the planner's pick; hand: scripted grasps on the rig):
+
+  | Object | Gripper | Hand top-down | Hand side |
+  |---|---:|---:|---:|
+  | Master chef can | 4 | 2 | 5 |
+  | Bleach bottle | 5 | 0 | 0 |
+  | Bowl | 0 | 0 | 0 |
+  | Soup can x1.6 | 2 | 0 | 1 |
+  | Apple x1.45 | 6 | 0 | 0 |
+  | Mug x1.35 | 6 | 3 | 0 |
+  | Soup can / apple / mug | 6/6/6 | 6/6/4 | – |
+
+  With rubber pads (μ 1.0) and ~240 N per jaw, the gripper holds objects wider than its 9.8 cm
+  opening by closing above their widest line on the sloped surface (apple x1.45: 9.7 cm chord
+  3.4 cm above the centre, 477 N total normal force). The bleach bottle's 0/6 at the course pose
+  was its fixed yaw. Width alone separates the end effectors only for wide, heavy cylinders.
+
