@@ -76,14 +76,20 @@ class ReferenceController:
         return self.env.observe()
 
     def settle(self,target,stage=None,minimum=8,limit=400):
-        """Hold the final target until the robot has converged (rate-limited joints lag the commands)."""
+        """Hold the final target until the rate-limited joints have caught up: base and torso within 5 mm,
+        arm and head joints within 0.02 rad, all slower than 0.15 rad/s (fingers excluded). Since
+        2026-10-03; before, 2 mm and 0.02 /s on every joint, which a held load's steady joint offset (the
+        object is not in the arm's model; the motor law has no integral term) never met, so waypoints
+        waited out the full limit."""
         target = np.asarray(target,dtype=float)
         arm = np.setdiff1d(np.arange(len(target)),self.finger_slots)
+        tolerance = np.full(len(target),.02)
+        tolerance[:4] = .005                                 # base x, y, yaw and torso
         for k in range(limit):
             self.tick(target,stage)
             if k+1 >= minimum:
                 error = np.abs(self.env.agent_qpos[arm]-target[arm])
-                if error.max() < 2e-3 and np.abs(self.env.observe()['qvel'][arm]).max() < .02:
+                if (error < tolerance[arm]).all() and np.abs(self.env.observe()['qvel'][arm]).max() < .15:
                     break
 
     def move_ee(self,position,quaternion,stage=None,closed=None,check=True,step_size=.018):
