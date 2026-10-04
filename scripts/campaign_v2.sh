@@ -1,8 +1,12 @@
 #!/bin/bash
-# Redesigned study (docs/project_spec.md, 2026-10-04): the standard-object training campaign.
-# One recipe for both end effectors: demonstrations from each end effector's hand-written grasp
-# (100 attempted episodes per object, protocol start range, 300-decision horizon, carried) ->
-# BC -> PPO; and PPO from scratch. Same PPO settings, 22 workers, 10M steps, 5 seeds.
+# Redesigned study (docs/project_spec.md, 2026-10-04): the training campaign.
+# One recipe for both end effectors: demonstrations from each end effector's hand-written grasp on the
+# standard objects (100 attempted episodes per object, protocol start range, 300-decision horizon,
+# carried) -> BC -> PPO; and PPO from scratch. Same PPO settings, 22 workers, 10M steps, 5 seeds.
+# Wide task: no hand-written grasp handles the wide cylinders (gripper teacher 0-1/12, hand script
+# 1/12), so both end effectors clone their standard-object demonstrations and PPO trains on the wide
+# objects (step 0 = the imitation cell); and PPO from scratch.
+# Queue order: standard BC -> PPO, wide BC -> PPO, standard from scratch, wide from scratch.
 # A queue keeps at most MAX_RUNS runs alive and launches only with MIN_FREE_GB available.
 # Idempotent: existing demonstration sets and runs are skipped (resume a stopped run with
 # train_hand.py --resume STEP).
@@ -12,6 +16,8 @@ PY=.venv/bin/python
 MAX_RUNS=${MAX_RUNS:-5}
 MIN_FREE_GB=${MIN_FREE_GB:-45}
 STANDARD="14 5 2 7 10"
+WIDE="0 102"
+declare -A OBJECTS=([std]="$STANDARD" [wide]="$WIDE")
 COMMON=(--algo ppo --physics realistic --wrist-box .08 .5 --carry --horizon 300 --start-shift .08 .12
         --steps 10000000 --envs 22 --eval-every 500000 --eval-episodes 12)
 declare -A ROBOT=([gripper]="--robot fetch-gripper" [hand]="--robot fetch --hand-mount wrist")
@@ -28,19 +34,20 @@ demos gripper fetch-gripper
 demos hand fetch
 
 QUEUE=()
-for s in 0 1 2 3 4; do for e in gripper hand; do QUEUE+=("v2_${e}_bcppo_std_s$s $e bc $s"); done; done
-for s in 0 1 2 3 4; do for e in gripper hand; do QUEUE+=("v2_${e}_ppo_std_s$s $e scratch $s"); done; done
+for recipe in bcppo ppo; do for task in std wide; do for s in 0 1 2 3 4; do for e in gripper hand; do
+  QUEUE+=("v2_${e}_${recipe}_${task}_s$s $e $recipe $s $task")
+done; done; done; done
 
 alive_runs() { pgrep -fc "[t]rain_hand.py --run-id v2_" ; }
 free_gb() { awk '/MemAvailable/ {print int($2 / 1048576)}' /proc/meminfo; }
 for item in "${QUEUE[@]}"; do
-  set -- $item; R=$1; E=$2; KIND=$3; SEED=$4
+  set -- $item; R=$1; E=$2; KIND=$3; SEED=$4; TASK=$5
   [ -e runs/$R/config.json ] && continue
   while [ "$(alive_runs)" -ge $MAX_RUNS ] || [ "$(free_gb)" -lt $MIN_FREE_GB ]; do sleep 120; done
   EXTRA=()
-  [ $KIND = bc ] && EXTRA=(--bc-demos runs/v2_demos_${E}_std/demonstrations.npz --bc-updates 40000 --critic-warmup 1000000)
+  [ $KIND = bcppo ] && EXTRA=(--bc-demos runs/v2_demos_${E}_std/demonstrations.npz --bc-updates 40000 --critic-warmup 1000000)
   echo "$(date +%H:%M) launch $R"
-  setsid nohup $PY scripts/train_hand.py --run-id $R --seed $SEED ${ROBOT[$E]} --objects $STANDARD "${COMMON[@]}" "${EXTRA[@]}" \
+  setsid nohup $PY scripts/train_hand.py --run-id $R --seed $SEED ${ROBOT[$E]} --objects ${OBJECTS[$TASK]} "${COMMON[@]}" "${EXTRA[@]}" \
       > runs/$R.log 2>&1 < /dev/null &
   sleep 300      # let it build its environments before measuring free memory again
 done

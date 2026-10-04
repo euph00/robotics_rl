@@ -55,9 +55,10 @@ after the grasp are set per end effector and task on development data and declar
 
 | Control | Setting |
 |---|---|
-| Learning recipe | Both end effectors through one trainer and environment interface (`scripts/train_hand.py` generalised): demonstrations from the end effector's hand-written grasp → BC → PPO, same reward structure, network, PPO settings, 22 environment workers, equal environment-step budget |
+| Learning recipe | Both end effectors through one trainer and environment interface (`scripts/train_hand.py`, `--robot fetch` / `fetch-gripper`): demonstrations from the end effector's hand-written grasp (100 attempted episodes per object) → BC → PPO, same reward structure, network, PPO settings, 22 environment workers, 300-decision grasp horizon (the deployed budget), 10M environment steps (`scripts/campaign_v2.sh`) |
 | Training distribution | The protocol's object-start range (±8 cm, ±12 cm, random yaw) for every learned grasp |
-| RL from scratch | Same trainer and budget, no demonstrations, both end effectors |
+| Wide-task recipe | Neither hand-written grasp handles the wide cylinders on the Fetch (development check: gripper teacher 0–1/12, hand side-grasp script 1/12, it slides up the can), so both end effectors clone their **standard-object** demonstrations and PPO trains on the wide objects; step 0 is the wide imitation cell |
+| RL from scratch | Same trainer and budget, no demonstrations, both end effectors, both tasks |
 | PPO vs RLPD | Both start from the same BC policy and demonstrations; same workers; the GPU to themselves (runs in turn); fixed step budget; both end effectors |
 | Checkpoints | The best development evaluation within the budget; never the hold-out or reserve banks |
 | Seeds | 5 per learned cell |

@@ -136,6 +136,9 @@ class SideGraspTeacher(PowerGraspTeacher):
 
     def reset(self):
         rig = self.env.rig
+        # The Fetch arm settles ~1-2 cm / 0.05 rad off its targets (the rig's wrist within 1 mm): looser
+        # hand-over tolerances there (position, angle).
+        self.tolerance = (.012, .06) if hasattr(rig, 'env') else (.006, .006)
         # Approach from the side the hand already faces; the grasp side points at the object.
         self.yaw = float(rig.wrist()[3])
         self.grip_point, self.contact_depth, self.top = side_grasp_geometry(rig, self.yaw, self.gap, self.height_fraction)
@@ -146,6 +149,10 @@ class SideGraspTeacher(PowerGraspTeacher):
     def _goal(self, depth, z_shift=0.):
         point = self.grip_point + [0., 0., z_shift]
         return wrist_for(point, np.array([depth, 0., self.along]), self.yaw, 0., np.pi / 2)
+
+    def _reached(self, goal, scale):
+        error = np.abs(goal - self.env.rig.wrist())
+        return (error[:3] < scale * self.tolerance[0]).all() and (error[3:] < scale * self.tolerance[1]).all()
 
     def act(self):
         rig, env = self.env.rig, self.env
@@ -166,25 +173,27 @@ class SideGraspTeacher(PowerGraspTeacher):
                 self.phase = 'lower'
         elif self.phase == 'lower':
             goal = self._goal(self.clear_depth)
-            if np.abs(goal - rig.wrist()).max() < .008:
+            if self._reached(goal, 1.3):
                 self.phase = 'approach'
         elif self.phase == 'approach':
             goal = self._goal(self.contact_depth)
-            if np.abs(goal - rig.wrist()).max() < .006:
+            if self._reached(goal, 1.):
                 self.phase = 'close'
         elif self.phase == 'close':
             goal = self._goal(self.contact_depth)
             finger_goal = self._closed()
             self.ticks += 1
             if self.ticks > 25:
-                self.phase, self.lift_start = 'lift', rig.wrist()[2]
+                self.phase, self.lift_start, self.raised = 'lift', rig.wrist()[2], 0.
         else:
-            goal = wrist.copy()
+            # Raise the grasp pose itself (yaw and the palm's vertical roll kept): following the drifting
+            # target let a heavy object twist the wrist and roll out of the hand.
             finger_goal = self._closed()
             if self.phase == 'lift':
-                goal[2] = min(wrist[2] + WRIST_STEP[2], self.lift_start + self.lift)
+                self.raised = min(self.raised + WRIST_STEP[2], self.lift)
                 if rig.wrist()[2] >= self.lift_start + self.lift - .005:
                     self.phase = 'hold'
+            goal = self._goal(self.contact_depth, self.raised)
         action = np.zeros(22)
         delta = goal - wrist
         action[:6] = np.clip(delta / WRIST_STEP, -1, 1)

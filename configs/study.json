@@ -132,7 +132,7 @@
           "p_gripper_bc_standard_s1",
           "p_gripper_bc_standard_s2"
         ],
-        "wide": null
+        "wide": []
       }
     },
     {
@@ -152,7 +152,7 @@
           "p_gripper_bcrl_standard_s1",
           "p_gripper_bcrl_standard_s2"
         ],
-        "wide": null
+        "wide": []
       },
       "note": "first study: BC → SAC; redesign: BC → PPO in the shared trainer"
     },
@@ -162,7 +162,7 @@
       "pipeline": null,
       "evals": {
         "standard": [],
-        "wide": null
+        "wide": []
       },
       "system": "PPO from scratch (planned)",
       "note": "planned: PPO from scratch, same trainer and budget as the other learned cells"
@@ -204,7 +204,7 @@
           "p_hand_bc_standard_s1",
           "p_hand_bc_standard_s2"
         ],
-        "wide": null
+        "wide": []
       },
       "note": "no wide-object demos: the scripted side grasp fails on the Fetch"
     },
@@ -282,8 +282,8 @@
     {
       "key": "retrain",
       "label": "All learned cells retrained",
-      "status": "next",
-      "detail": "both end effectors, protocol start range, 5 seeds"
+      "status": "active",
+      "detail": "40 runs queued: 2 effectors × (BC → PPO, scratch) × 2 tasks × 5 seeds"
     },
     {
       "key": "wide_hold",
