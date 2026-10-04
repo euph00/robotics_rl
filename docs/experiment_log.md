@@ -395,3 +395,18 @@ Later on 2026-10-02:
   ~50% standard (brick 0/12, soup can 12/12), 0-1 wide. A straight-down grasp at the far end of the
   start range is beyond the Fetch's reach from the planner's base position; the teacher, like the
   planner, takes the first reachable candidate.
+
+## 2026-10-04 (afternoon): first campaign results (untuned recipe); tuning sweep
+
+- Standard objects, BC -> PPO, training-time lift and carry (60 episodes), 10M steps: hand seeds
+  0.35/0.40/0.43/0.42 -> 0.82/0.78/0.72 (7.5M)/0.88 (8M); gripper 0.47/0.43/0.47/0.52/0.62 -> flat
+  0.38-0.55. The gripper lifts ~50% throughout (its teacher ~88% in the same environment) and carries
+  what it lifts; failures at 10M: one pad first (misaligned jaws) 12/60, both pads but no lift 11/60.
+  A flat curve 40 points under its own teacher reads as a pipeline problem, not a finding, so the
+  campaign queue is paused for an equal-budget tuning sweep (scripts/tune_v2.sh; spec: Tuning).
+  Untuned hand seed 4 stopped at 2M (resumable).
+- Wide cylinders, gripper BC -> PPO (untuned): 0.21-0.33 lift and carry at 1.5-3M, although the
+  planner and the teacher manage ~0. The learned gripper pinches the can's top rim with the jaws tilted
+  0.5 rad (the training workspace's tilt limit) instead of approaching straight down. RL adds value to
+  the gripper exactly where its hand-written controller fails; C2 must compare the RL hand with the RL
+  gripper, not only with the planner.
