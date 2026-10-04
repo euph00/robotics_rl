@@ -30,7 +30,8 @@ def make_env(rank, args, evaluation=False):
                             near_start=0. if evaluation else args.near_start, wrist_lag=args.wrist_lag,
                             carry=args.carry, carry_calls=args.carry_calls, physics=args.physics,
                             robot=args.robot, wrist_box=args.wrist_box, hand_mount=args.hand_mount,
-                            task_carry=args.task_carry, start_shift=tuple(args.start_shift))
+                            task_carry=args.task_carry, start_shift=tuple(args.start_shift),
+                            **({} if args.side_grasp_objects is None else {'side_objects': args.side_grasp_objects}))
     return thunk
 
 
@@ -172,6 +173,8 @@ def main():
     parser.add_argument('--hand-mount', choices=('wrist', 'dorsal'), default='wrist', help='Allegro mount on the Fetch')
     parser.add_argument('--task-carry', action='store_true', help='Fetch: carry phase = the full task\'s retreat, tuck and base carry')
     parser.add_argument('--start-shift', type=float, nargs=2, default=[.03, .03], metavar=('X', 'Y'), help='Object start offset range (m)')
+    parser.add_argument('--side-grasp-objects', type=int, nargs='*',
+                        help='Hand: objects whose episodes start in the side pregrasp (default 0 102; none: top-down for all)')
     parser.add_argument('--wrist-box', type=float, nargs=2, metavar=('XY', 'TILT'),
                         help='Keep the wrist within XY m of the pregrasp and its pitch/roll within TILT rad')
     parser.add_argument('--robot', choices=('rig', 'fetch', 'fetch-gripper'), default='rig',

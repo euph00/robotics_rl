@@ -19,7 +19,8 @@ STANDARD="14 5 2 7 10"
 WIDE="0 102"
 declare -A OBJECTS=([std]="$STANDARD" [wide]="$WIDE")
 COMMON=(--algo ppo --physics realistic --wrist-box .08 .5 --carry --horizon 300 --start-shift .08 .12
-        --steps 10000000 --envs 22 --eval-every 500000 --eval-episodes 12)
+        --steps 10000000 --envs 22 --eval-every 500000 --eval-episodes 12
+        --side-grasp-objects)     # every object starts top-down (the cloned demonstrations' pregrasp)
 declare -A ROBOT=([gripper]="--robot fetch-gripper" [hand]="--robot fetch --hand-mount wrist")
 
 demos() {   # effector robot

@@ -410,3 +410,11 @@ Later on 2026-10-02:
   0.5 rad (the training workspace's tilt limit) instead of approaching straight down. RL adds value to
   the gripper exactly where its hand-written controller fails; C2 must compare the RL hand with the RL
   gripper, not only with the planner.
+- Invalid run: v2_hand_bcppo_wide_s0 started its wide-object episodes in the old side pregrasp (palm
+  vertical beside the can) while cloning top-down standard demonstrations: 0.00 lift and carry for 8.5M
+  steps. Fixed with train_hand.py --side-grasp-objects (none: every object starts top-down); the
+  full-task evaluation reads the setting from the policy's training config. Archived in
+  runs/archive_invalid/v2_side_start/. The gripper's wide run is unaffected (always top-down): best 0.42.
+- Tuning sweep, first four gripper configurations (score = mean of the last three evaluations):
+  untuned 0.44; learning rate 1e-4 + exploration log-std -0.7 0.68 (0.47 -> 0.72); interleaved cloning
+  collapses the gripper (0.07, 0.11). The gripper's flat curve was a tuning problem.

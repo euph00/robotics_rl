@@ -36,7 +36,7 @@ def initialize_worker(policy, step):
 
 
 def evaluate_case(case, speed_scale, holding_speed_scale, horizon, fingers='frozen', hand_mount='wrist', cradle=False,
-                  effector='allegro'):
+                  effector='allegro', side_grasp_objects=None):
     started, env, first = time.monotonic(), None, {'reach': None}
 
     def on_step(controller, observation, info):
@@ -46,7 +46,8 @@ def evaluate_case(case, speed_scale, holding_speed_scale, horizon, fingers='froz
         mount = {'hand_mount': hand_mount} if effector == 'allegro' else {}
         env = PickNavReachEnv(**case['env_kwargs'], physics='realistic', effector=effector, **mount)
         system = HandPlannerSystem(env, _POLICY, horizon=horizon, on_step=on_step, seed=env.seed, speed_scale=speed_scale,
-                                   holding_speed_scale=holding_speed_scale, fingers_after_grasp=fingers, cradle=cradle)
+                                   holding_speed_scale=holding_speed_scale, fingers_after_grasp=fingers, cradle=cradle,
+                                   **({} if side_grasp_objects is None else {'side_grasp_objects': side_grasp_objects}))
         result = system.run()
     except Exception as exc:  # construction or unexpected errors count as failures
         result = {'success': False, 'failed_stage': 'environment_setup' if env is None else 'unexpected',
@@ -110,11 +111,14 @@ def main():
         parser.error(f'{args.output} exists')
     cases = E.select_cases(args.set, objects=args.objects, layout_limit=args.layout_limit,
                            random_object_pose=args.random_object_pose)
+    # The pregrasp the policy trained from: its run's side-grasp objects (None: the default 0, 102).
+    trained = {} if args.policy == 'teacher' else json.loads((ROOT / 'runs' / args.policy / 'config.json').read_text())
+    side = trained.get('side_grasp_objects')
     args.output.mkdir(parents=True)
     atomic_json(args.output / 'config.json', {'set': args.set, 'cases': len(cases), 'label': f'hand · {args.policy}',
                                               'controller': 'hand', 'policy': args.policy, 'step': args.step,
                                               'objects': args.objects, 'random_object_pose': args.random_object_pose,
-                                              'hand_mount': args.hand_mount, 'fingers_after_grasp': args.fingers_after_grasp, 'effector': args.effector,
+                                              'hand_mount': args.hand_mount, 'fingers_after_grasp': args.fingers_after_grasp, 'effector': args.effector, 'side_grasp_objects': side,
                                               'carry_posture': args.carry_posture,
                                               'command': sys.argv})
     source = 'scripted teacher' if args.policy == 'teacher' else f'{args.policy}/{args.step}'
@@ -124,7 +128,7 @@ def main():
     with ProcessPoolExecutor(max_workers=min(args.workers, len(cases)), mp_context=mp.get_context('spawn'),
                              initializer=initialize_worker, initargs=(args.policy, args.step)) as pool:
         futures = [pool.submit(evaluate_case, case, args.speed_scale, args.holding_speed_scale, args.horizon, args.fingers_after_grasp,
-                               args.hand_mount, args.carry_posture == 'cradle', args.effector) for case in cases]
+                               args.hand_mount, args.carry_posture == 'cradle', args.effector, side) for case in cases]
         with (args.output / 'results.jsonl').open('w') as stream:
             for future in as_completed(futures):
                 row = future.result()

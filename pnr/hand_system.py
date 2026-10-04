@@ -70,7 +70,8 @@ class HandPlannerSystem(ReferenceController):
     Either end effector (env.effector 'allegro' or 'gripper', the shared trainer's two rigs); the gripper
     carries in the planner's own tuck pose."""
 
-    def __init__(self, env, policy, horizon=300, clearance=.045, wrist_box=(.08, .5), fingers_after_grasp='frozen', cradle=False, **kwargs):
+    def __init__(self, env, policy, horizon=300, clearance=.045, wrist_box=(.08, .5), fingers_after_grasp='frozen', cradle=False,
+                 side_grasp_objects=SIDE_GRASP_OBJECTS, **kwargs):
         if getattr(env, 'effector', 'gripper') not in ('allegro', 'gripper'):
             raise ValueError('HandPlannerSystem needs effector "allegro" or "gripper"')
         super().__init__(env, **kwargs)
@@ -80,6 +81,7 @@ class HandPlannerSystem(ReferenceController):
         self.wrist_box = wrist_box
         self.fingers_after_grasp = fingers_after_grasp     # 'policy' or 'frozen' (servo targets fixed)
         self.cradle = cradle                               # carry palm-up under the object (plan_tuck)
+        self.side_grasp_objects = tuple(side_grasp_objects)   # hand pregrasp beside these (as the policy trained)
         self.rig = None
 
     def hand_pregrasp(self):
@@ -95,7 +97,7 @@ class HandPlannerSystem(ReferenceController):
             yaw = (yaw + np.pi / 2) % np.pi - np.pi / 2
             top, centre = points[:, 2].max(), rig.object_pose()[0]
             return rig.pregrasp(yaw, top + self.clearance + PAD_HALF_LENGTH - centre[2])
-        if self.env.object_idx in SIDE_GRASP_OBJECTS:
+        if self.env.object_idx in self.side_grasp_objects:
             yaw = -np.pi / 2                       # palm +x (towards the object) along world +x
             grip, depth, _ = side_grasp_geometry(rig, yaw)
             return wrist_for(grip, np.array([depth + .06, 0., .03]), yaw, 0., np.pi / 2)
