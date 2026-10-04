@@ -374,3 +374,24 @@ Later on 2026-10-02:
   reached ~70% within 2M steps (about an hour). Per environment step below 1M the two are similar
   (PPO dips after cloning, 10–18% at 1M), so the demonstrations in RLPD's batches did not buy the
   expected head start here.
+
+## 2026-10-04: redesign probes; one trainer for both end effectors
+
+- Redesign (docs/project_spec.md): one learning recipe for both end effectors, wide objects by a
+  physical rule, 5 seeds, final evaluation once on the sealed reserve bank.
+- Object survey, gripper planner, 52 dev cases per object, random starts (picked): bowl 0, plate 0,
+  large marker 2, soup can x1.6 6, master chef can 26, sugar box 35, mustard 36, bleach 37, potted meat 39,
+  mug x1.35 39, apple 42, mug 43, apple x1.45 47, strawberry 48, foam brick 48, hammer 50, soup can 52,
+  banana 52. Bowl, plate and marker fail for lack of jaw clearance in our planner (not physical); the
+  wide cylinders (10.2-10.6 cm, wider than the 9.8 cm opening) slip on the lift: the wide set.
+- Speed sweep, 120 dev cases, standard objects, holding speed 2/3/4: gripper 107/108/108 delivered
+  (21/31/31 in time, 0 carry drops); hand (PPO seed 2) 102/105/101 (34/61/60 in time, 1 drop). Neither
+  drops at speed; the hand finishes ~1,000 ticks sooner; speed saturates at 3 (joint rate limits).
+- Palm-up cradle carry: the object falls out mid-roll with the current policies or a frozen grip; off
+  by default until a policy is trained to roll it into the palm.
+- Gripper in the hand trainer (FetchGripperRig, GripperPlannerTeacher). Demonstrators at a 300-decision
+  horizon (the deployed grasp budget; 200 cut lifts short: the arm lifts ~2.5 mm per decision) and the
+  protocol's start range, 12 episodes per object: gripper ~88% per standard object, 0-1 wide; hand
+  ~50% standard (brick 0/12, soup can 12/12), 0-1 wide. A straight-down grasp at the far end of the
+  start range is beyond the Fetch's reach from the planner's base position; the teacher, like the
+  planner, takes the first reachable candidate.

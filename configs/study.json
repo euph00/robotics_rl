@@ -277,7 +277,7 @@
       "key": "unified",
       "label": "Gripper in the shared trainer",
       "status": "active",
-      "detail": "gripper rig, planner-grasp teacher, BC → PPO"
+      "detail": "gripper rig, teacher, BC → PPO working; full-task deployment next"
     },
     {
       "key": "retrain",
