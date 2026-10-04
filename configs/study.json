@@ -1,18 +1,20 @@
 {
   "title": "Where does RL add value in mobile manipulation?",
   "question": "How much does RL add to a mobile manipulator's grasp, and how does that depend on the end effector's complexity?",
-  "claim": "RL adds little to a two-finger gripper that a planner already handles; for a 16-joint dexterous hand it is what makes the hand usable.",
+  "claim": "RL's gain over the best hand-written grasp grows with end-effector complexity, and the RL hand delivers objects wider than the gripper's opening.",
   "spec": "docs/project_spec.md",
   "protocol": {
-    "frozen": "2026-10-03",
+    "frozen": null,
     "set": "holdout",
     "random_object_pose": true,
     "physics": "realistic",
     "planned_speed_scale": 3.0,
     "holding_speed_scale": 2.0,
     "deadline_physics_ticks": 15000,
-    "seeds": 3,
-    "summary": "20 unseen mazes · random object start · realistic physics · 3 training seeds"
+    "seeds": 5,
+    "summary": "Redesign 2026-10-04 · one learning recipe for both end effectors · final: sealed reserve bank, 5 seeds · results shown: first study (hold-out bank, now development evidence)",
+    "redesigned": "2026-10-04",
+    "final_set": "reserve"
   },
   "tasks": [
     {
@@ -151,17 +153,19 @@
           "p_gripper_bcrl_standard_s2"
         ],
         "wide": null
-      }
+      },
+      "note": "first study: BC → SAC; redesign: BC → PPO in the shared trainer"
     },
     {
       "effector": "gripper",
       "controller": "rl",
-      "na": "not studied",
       "pipeline": null,
       "evals": {
-        "standard": null,
+        "standard": [],
         "wide": null
-      }
+      },
+      "system": "PPO from scratch (planned)",
+      "note": "planned: PPO from scratch, same trainer and budget as the other learned cells"
     },
     {
       "effector": "hand",
@@ -250,54 +254,60 @@
       "system": "PPO from scratch (rig ablation)",
       "pipeline": null,
       "evals": {
-        "standard": null,
-        "wide": null
+        "standard": [],
+        "wide": []
       },
-      "note": "0% lifted on the rig after 24M steps"
+      "note": "planned: PPO from scratch, same trainer and budget as the other learned cells"
     }
   ],
   "milestones": [
     {
-      "key": "protocol",
-      "label": "Protocol frozen",
+      "key": "first_study",
+      "label": "First study",
       "status": "done",
-      "detail": "this plan, 2026-10-03"
+      "detail": "hold-out results, now development evidence"
     },
     {
-      "key": "hand_fetch",
-      "label": "Hand trained on the Fetch",
+      "key": "redesign",
+      "label": "Redesign",
       "status": "done",
-      "detail": "BC → PPO 10M → task-carry fine-tune, 3 seeds per task"
+      "detail": "fair recipe, wide-object rule, reserve bank"
     },
     {
-      "key": "wide_task",
-      "label": "Wide objects complete the task",
-      "status": "done",
-      "detail": "hand 14/10/14 of 40, gripper 12/40"
+      "key": "unified",
+      "label": "Gripper in the shared trainer",
+      "status": "active",
+      "detail": "gripper rig, planner-grasp teacher, BC → PPO"
     },
     {
-      "key": "matrix",
-      "label": "Matrix filled, 1 seed",
-      "status": "done",
-      "detail": "every studied cell evaluated"
+      "key": "retrain",
+      "label": "All learned cells retrained",
+      "status": "next",
+      "detail": "both end effectors, protocol start range, 5 seeds"
     },
     {
-      "key": "seeds",
-      "label": "3 seeds",
-      "status": "done",
-      "detail": "every learned condition"
+      "key": "wide_hold",
+      "label": "Wide-object hold",
+      "status": "next",
+      "detail": "learned hold through the carry or palm-up cradle"
     },
     {
       "key": "algorithms",
-      "label": "PPO vs RLPD",
-      "status": "done",
-      "detail": "RLPD 3–12% after 6 h; PPO ~70% within 1 h"
+      "label": "Fair PPO vs RLPD",
+      "status": "next",
+      "detail": "equal start, workers, GPU, budget"
+    },
+    {
+      "key": "final",
+      "label": "Freeze + reserve evaluation",
+      "status": "next",
+      "detail": "one run per frozen system"
     },
     {
       "key": "report",
       "label": "Report",
-      "status": "active",
-      "detail": "figures ready; text and clips next"
+      "status": "next",
+      "detail": "figures, clips, write-up"
     },
     {
       "key": "stretch",
