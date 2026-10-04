@@ -60,6 +60,7 @@ after the grasp are set per end effector and task on development data and declar
 | Wide-task recipe | Neither hand-written grasp handles the wide cylinders on the Fetch (development check: gripper teacher 0–1/12, hand side-grasp script 1/12, it slides up the can), so both end effectors clone their **standard-object** demonstrations and PPO trains on the wide objects; step 0 is the wide imitation cell |
 | RL from scratch | Same trainer and budget, no demonstrations, both end effectors, both tasks |
 | PPO vs RLPD | Both start from the same BC policy and demonstrations; same workers; the GPU to themselves (runs in turn); fixed step budget; both end effectors |
+| Tuning | Equal budget per end effector on development data (`scripts/tune_v2.sh`): a 2^(4-1) fractional factorial over learning rate, exploration noise after cloning, demonstrations per object (100 / 300) and interleaved cloning during RL; 8 configurations × 4M steps each; per factor the level with the higher mean score (last three training-time evaluations), per end effector (`scripts/tune_v2_report.py`). Prompted by the untuned recipe: the gripper stayed at its cloned level (~50% lifted) while its teacher lifts ~88% |
 | Checkpoints | The best development evaluation within the budget; never the hold-out or reserve banks |
 | Seeds | 5 per learned cell |
 
