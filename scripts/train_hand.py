@@ -174,7 +174,7 @@ def main():
     parser.add_argument('--start-shift', type=float, nargs=2, default=[.03, .03], metavar=('X', 'Y'), help='Object start offset range (m)')
     parser.add_argument('--wrist-box', type=float, nargs=2, metavar=('XY', 'TILT'),
                         help='Keep the wrist within XY m of the pregrasp and its pitch/roll within TILT rad')
-    parser.add_argument('--robot', choices=('rig', 'fetch'), default='rig',
+    parser.add_argument('--robot', choices=('rig', 'fetch', 'fetch-gripper'), default='rig',
                         help='rig: the hand on an idealised six-axis wrist; fetch: on the Fetch arm and base (pnr/fetch_hand.py)')
     parser.add_argument('--carry', action='store_true', help='Carry phase after a held lift')
     parser.add_argument('--carry-calls', type=int, default=200)

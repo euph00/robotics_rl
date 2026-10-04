@@ -32,7 +32,8 @@ import mujoco
 import numpy as np
 from gymnasium import spaces
 
-from .hand import GRASP_POINT, TABLE_TOP, HandRig, pregrasp_wrist, side_grasp_geometry, wrist_for
+from .fetch_gripper import PAD_HALF_LENGTH
+from .hand import TABLE_TOP, HandRig, pregrasp_wrist, side_grasp_geometry, wrist_for
 
 POINTS = 32
 WRIST_STEP = np.array([.01, .01, .01, .05, .05, .05])
@@ -131,6 +132,9 @@ class HandGraspEnv(gym.Env):
             self.rigs = {idx: FetchHandRig(idx, physics=physics, hand_mount=hand_mount) for idx in self.objects}
             for rig in self.rigs.values():   # carry phase = the full task's retreat, tuck and base carry
                 rig.task_carry = bool(task_carry)
+        elif robot == 'fetch-gripper':   # the Fetch's own parallel gripper (pnr/fetch_gripper.py)
+            from .fetch_gripper import FetchGripperRig
+            self.rigs = {idx: FetchGripperRig(idx, physics=physics) for idx in self.objects}
         else:
             self.rigs = {idx: HandRig(idx, physics=physics) for idx in self.objects}
         for rig in self.rigs.values():
@@ -143,7 +147,10 @@ class HandGraspEnv(gym.Env):
                     if m.geom_bodyid[g] in rig._hand_bodies and m.geom_contype[g]:
                         m.geom_friction[g, 0] = friction
         self.np_random = np.random.default_rng(seed)
-        self.action_space = spaces.Box(-1., 1., shape=(22,), dtype=np.float32)
+        sample = next(iter(self.rigs.values()))
+        self.n_fingers, self.n_tips = len(sample.finger_low), getattr(sample, 'n_tips', 4)
+        self.gripper = robot == 'fetch-gripper'
+        self.action_space = spaces.Box(-1., 1., shape=(6 + self.n_fingers,), dtype=np.float32)
         self.observation_space = spaces.Box(-np.inf, np.inf, shape=(self._observation_size(),), dtype=np.float32)
         self.rig = None
 
@@ -158,9 +165,9 @@ class HandGraspEnv(gym.Env):
             self.near_start = float(near_start)
         return self.objects, self.near_start
 
-    @staticmethod
-    def _observation_size():
-        return 3 + 6 + 6 + 3 * POINTS + 16 + 16 + 16 + 3 + 12 + 5 + 1 + 1 + 22 + 4
+    def _observation_size(self):
+        f, t = self.n_fingers, self.n_tips
+        return 3 + 6 + 6 + 3 * POINTS + 3 * f + 3 + 3 * t + t + 1 + 1 + 1 + 6 + f + 4
 
     # ---------------- episode ----------------
     def reset(self, *, seed=None, options=None):
@@ -187,13 +194,18 @@ class HandGraspEnv(gym.Env):
         centre = rig.object_pose()[0]
         clearance = rng.uniform(.03, .06)    # palm surface above the object's top
         height = (top + .011 + clearance - .05) - centre[2]
-        if idx in self.side_objects:
+        if idx in self.side_objects and not self.gripper:
             # Palm vertical, facing the object from a random side, 4-8 cm out at about mid-height. On the
             # Fetch only from the robot's half (palm facing +x within 45 deg): the arm cannot reach round.
             yaw = rng.uniform(-np.pi, np.pi) if self.robot == 'rig' else -np.pi / 2 + rng.uniform(-np.pi / 4, np.pi / 4)
             grip, depth, _ = side_grasp_geometry(rig, yaw)
             offset = [depth + rng.uniform(.04, .08), rng.uniform(-.01, .01), .03 + rng.uniform(-.01, .01)]
             wrist = wrist_for(grip + [0., 0., rng.uniform(-.01, .01)], np.array(offset), yaw, 0., np.pi / 2)
+        elif self.gripper:
+            # Approach straight down, pads clearing the object's top by the clearance; the jaws are
+            # symmetric, so half a turn of yaw covers every closing direction.
+            yaw = rng.uniform(-np.pi / 2, np.pi / 2)
+            wrist = rig.pregrasp(yaw, top + clearance + PAD_HALF_LENGTH - centre[2], offset=rng.uniform(-.02, .02, 2))
         else:
             # On the Fetch with the wrist-end mount the fingers must point away from the robot (+x) within
             # ~90 deg for the arm to reach over the table; the rig and the dorsal mount take any yaw.
@@ -203,9 +215,10 @@ class HandGraspEnv(gym.Env):
         rig.set_wrist(wrist)
         self.wrist_home = wrist.copy()
         self.finger_target = rig.finger_open.copy()
-        rig.data.ctrl[:] = self.finger_target
+        if rig.model.nu:
+            rig.data.ctrl[:] = self.finger_target
         mujoco.mj_forward(rig.model, d)
-        if rng.random() < self.near_start and idx not in self.side_objects:
+        if rng.random() < self.near_start and idx not in self.side_objects and not self.gripper:
             low = (top + .011 + rng.uniform(.0, .015) - .05) - centre[2]
             wrist = pregrasp_wrist(rig, wrist[3], height=low, offset=rng.uniform(-.015, .015, 2))
             rig.set_wrist(wrist)
@@ -215,7 +228,7 @@ class HandGraspEnv(gym.Env):
             mujoco.mj_forward(rig.model, d)
             for _ in range(8):
                 rig.step(wrist, self.finger_target)
-        self.steps, self.previous_action = 0, np.zeros(22)
+        self.steps, self.previous_action = 0, np.zeros(6 + self.n_fingers)
         self.ever_success = False
         self.phase, self.held, self.carry_step, self.carried = 'grasp', 0, 0, False
         return self._observation(), {'object_idx': idx}
@@ -226,8 +239,9 @@ class HandGraspEnv(gym.Env):
         self.rig = rig
         rig.wrist_target = rig.wrist()
         self.wrist_home = rig.wrist_target.copy()
-        self.finger_target = np.clip(rig.data.ctrl.copy(), rig.finger_low, rig.finger_high)
-        self.steps, self.previous_action = 0, np.zeros(22)
+        current = rig.env.last_target[rig._fingers] if self.gripper else rig.data.ctrl
+        self.finger_target = np.clip(np.array(current, dtype=np.float64), rig.finger_low, rig.finger_high)
+        self.steps, self.previous_action = 0, np.zeros(6 + self.n_fingers)
         self.ever_success = False
         self.phase, self.held, self.carry_step, self.carried = 'grasp', 0, 0, False
         return self._observation()
@@ -248,7 +262,8 @@ class HandGraspEnv(gym.Env):
             target = self.carry_origin + [dx, dy, 0., 0., 0., 0.]
             self.carry_step += 1
         if self.finger_actions == 'delta':
-            self.finger_target = np.clip(self.finger_target + action[6:] * FINGER_STEP, rig.finger_low, rig.finger_high)
+            self.finger_target = np.clip(self.finger_target + action[6:] * getattr(rig, 'finger_step', FINGER_STEP),
+                                         rig.finger_low, rig.finger_high)
         else:
             self.finger_target = rig.finger_low + (action[6:] + 1) / 2 * (rig.finger_high - rig.finger_low)
         unstable = rig.data.warning[mujoco.mjtWarning.mjWARN_BADQACC].number
@@ -295,13 +310,13 @@ class HandGraspEnv(gym.Env):
         tips = rig.fingertips()
         tip_gaps = np.min(np.linalg.norm(tips[:, None, :] - points[None], axis=2), axis=1)
         fingers, palm, table, depth = rig.contacts()
-        grasped = bool(fingers[3] and fingers[:3].any())
+        grasped = rig.grasped(fingers) if self.gripper else bool(fingers[3] and fingers[:3].any())
         holding = int(fingers.sum()) + int(palm) >= 2
         lift = float(np.clip(centre[2] - rig.rest_height, 0., .2))
         success = grasped and lift >= SUCCESS_LIFT
         fell = centre[2] < TABLE_TOP - .05
         reward = (.5 * (1 - np.tanh(10 * grasp_gap)) + .5 * (1 - np.tanh(10 * tip_gaps.mean()))
-                  + .1 * fingers.sum() / 4 + .25 * grasped + 50 * lift * holding + 5 * success - 5 * fell)
+                  + .1 * fingers.sum() / len(fingers) + .25 * grasped + 50 * lift * holding + 5 * success - 5 * fell)
         self.ever_success |= success
         info = {'success': success, 'ever_success': self.ever_success, 'lift': lift, 'grasped': grasped,
                 'contacts': int(fingers.sum()), 'palm_contact': bool(palm), 'table_contact': bool(table),
@@ -312,7 +327,7 @@ class HandGraspEnv(gym.Env):
     def _observation(self):
         rig = self.rig
         palm, rotation = rig.palm_pose()
-        anchor = palm + rotation @ GRASP_POINT
+        anchor = rig.grasp_point()
         centre, object_rotation = rig.object_pose()
         local = lambda v: v @ rotation        # world vectors -> palm frame
         velocity = rig.object_velocity()

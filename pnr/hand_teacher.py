@@ -9,6 +9,7 @@ its actions are wrist and finger deltas, the same interface the learned policy u
 from __future__ import annotations
 
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 from .hand import GRASP_POINT, TABLE_TOP, palm_rotation, pregrasp_wrist, side_grasp_geometry, wrist_for  # noqa: F401
 from .hand_env import FINGER_STEP, WRIST_STEP
@@ -193,7 +194,93 @@ class SideGraspTeacher(PowerGraspTeacher):
         return action.astype(np.float32)
 
 
-TEACHERS = {'power': PowerGraspTeacher, 'side': SideGraspTeacher}
+class GripperPlannerTeacher:
+    """The gripper planner's grasp (pnr/planning.py antipodal_grasps on the object's point cloud, the
+    top-ranked candidate, as ReferenceController picks it) executed in HandGraspEnv's action space with
+    FetchGripperRig: align the grasp centre 6 cm above the grasp with the closing direction, descend,
+    close the jaws, lift, hold. Falls back to the object centre and its narrow axis when the cloud
+    yields no antipodal pair. Training data only, as the hand's teachers."""
+
+    def __init__(self, env, lift=.2, noise=0., rng=None, close_steps=50):
+        self.env, self.lift, self.noise, self.close_steps = env, lift, noise, close_steps
+        self.rng = rng or np.random.default_rng(0)
+        self.reset()
+
+    def reset(self):
+        from .planning import antipodal_grasps
+        rig = self.env.rig
+        observation = rig.env.observe()
+        current = rig.wrist()[3]
+        self.target, self.yaw = None, None
+        # As ReferenceController.prepare_grasp: the first candidate in rank order whose grasp and the pose
+        # above it are within the arm's reach (planner IK, torso included). Of the two equivalent jaw yaws,
+        # the one nearer the current wrist yaw (the jaws are symmetric).
+        for grasp in antipodal_grasps(observation['object_pc'], observation['object_normals'],
+                                      table_height=rig.env.table_height):
+            closing = Rotation.from_quat(grasp.quaternion).as_matrix()[:, 1]
+            yaw = float(np.arctan2(-closing[0], closing[1]))
+            yaw = current + (yaw - current + np.pi / 2) % np.pi - np.pi / 2
+            quaternion = Rotation.from_matrix(palm_rotation(yaw, 0., 0.)).as_quat()
+            try:
+                q = rig.planner.ik(np.asarray(grasp.position) + [0., 0., .06], quaternion)
+                rig.planner.ik(grasp.position, quaternion, seed=q)
+            except ValueError:
+                continue
+            self.target, self.yaw = np.asarray(grasp.position, dtype=float), yaw
+            break
+        if self.target is None:                       # nothing reachable: aim at the centre (fails, as the planner)
+            self.target = rig.object_pose()[0].copy()
+            self.target[2] = max(self.target[2], rig.env.table_height + .037)
+            yaw = narrow_axis_yaw(rig.object_points_world(), current) + np.pi / 2
+            self.yaw = current + (yaw - current + np.pi / 2) % np.pi - np.pi / 2
+        self.phase, self.ticks = 'align', 0
+
+    def _goal(self, height):
+        return np.array([self.target[0], self.target[1], self.target[2] + height, self.yaw, 0., 0.])
+
+    def act(self):
+        rig, env = self.env.rig, self.env
+        wrist, fingers = rig.wrist_target, env.finger_target
+        measured = rig.wrist()
+        finger_goal = rig.finger_open.copy()
+        if self.phase == 'align':
+            goal = self._goal(.06)
+            # Position and yaw only: the arm holds pitch and roll within ~0.05 rad of level and settles
+            # 1-2 cm off its target (the Fetch motor law has no integral term).
+            yaw_error = abs(measured[3] - self.yaw)
+            if (np.abs(goal[:2] - measured[:2]) < .015).all() and abs(goal[2] - measured[2]) < .02 and yaw_error < .1:
+                self.phase = 'descend'
+        elif self.phase == 'descend':
+            goal = self._goal(0.)
+            touching, palm, table, _ = rig.contacts()
+            if abs(self.target[2] - measured[2]) < .01 or table or palm:
+                self.phase = 'close'
+        elif self.phase == 'close':
+            # Close and wait for the rate-limited jaws: both pads on the object and the jaws at rest, as the
+            # planner waits for its grip before lifting.
+            goal = self._goal(0.)
+            finger_goal = rig.finger_low.copy()
+            self.ticks += 1
+            touching, _, _, _ = rig.contacts()
+            settled = np.abs(rig.fingers()[1]).max() < .005
+            if (self.ticks > 8 and touching.all() and settled) or self.ticks > self.close_steps:
+                self.phase, self.lift_start = 'lift', measured[2]
+        else:
+            goal = wrist.copy()
+            finger_goal = rig.finger_low.copy()
+            if self.phase == 'lift':
+                goal[2] = min(wrist[2] + WRIST_STEP[2], self.lift_start + self.lift)
+                if measured[2] >= self.lift_start + self.lift - .005:
+                    self.phase = 'hold'
+        action = np.zeros(6 + len(fingers))
+        action[:6] = np.clip((goal - wrist) / WRIST_STEP, -1, 1)
+        action[6:] = np.clip((finger_goal - fingers) / rig.finger_step, -1, 1)
+        if self.noise:
+            action = np.clip(action + self.rng.normal(0, self.noise, action.shape), -1, 1)
+        return action.astype(np.float32)
+
+
+TEACHERS = {'power': PowerGraspTeacher, 'side': SideGraspTeacher, 'gripper': GripperPlannerTeacher}
 
 
 def teacher_label(env, clearance=.008, lift=.2):
