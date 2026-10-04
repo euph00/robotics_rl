@@ -147,9 +147,9 @@ class HandGraspEnv(gym.Env):
                     if m.geom_bodyid[g] in rig._hand_bodies and m.geom_contype[g]:
                         m.geom_friction[g, 0] = friction
         self.np_random = np.random.default_rng(seed)
-        sample = next(iter(self.rigs.values()))
-        self.n_fingers, self.n_tips = len(sample.finger_low), getattr(sample, 'n_tips', 4)
         self.gripper = robot == 'fetch-gripper'
+        # Sizes by end effector (also for objects=[]: a task's rig attached later, pnr/hand_system.py).
+        self.n_fingers, self.n_tips = (2, 2) if self.gripper else (16, 4)
         self.action_space = spaces.Box(-1., 1., shape=(6 + self.n_fingers,), dtype=np.float32)
         self.observation_space = spaces.Box(-np.inf, np.inf, shape=(self._observation_size(),), dtype=np.float32)
         self.rig = None
