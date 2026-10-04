@@ -64,7 +64,7 @@ class TeacherPolicy:
 
 
 class HandPlannerSystem(ReferenceController):
-    def __init__(self, env, policy, horizon=300, clearance=.045, wrist_box=(.08, .5), fingers_after_grasp='frozen', **kwargs):
+    def __init__(self, env, policy, horizon=300, clearance=.045, wrist_box=(.08, .5), fingers_after_grasp='frozen', cradle=False, **kwargs):
         if getattr(env, 'effector', 'gripper') != 'allegro':
             raise ValueError('HandPlannerSystem needs an environment with effector="allegro"')
         super().__init__(env, **kwargs)
@@ -72,6 +72,7 @@ class HandPlannerSystem(ReferenceController):
         self._holding = None          # the grasp's HandGraspEnv once it holds the object
         self.wrist_box = wrist_box
         self.fingers_after_grasp = fingers_after_grasp     # 'policy' or 'frozen' (servo targets fixed)
+        self.cradle = cradle                               # carry palm-up under the object (plan_tuck)
         self.rig = None
 
     def hand_pregrasp(self):
@@ -169,7 +170,7 @@ class HandPlannerSystem(ReferenceController):
         self.move_base([-1.25, 0], stage='retreat', step_size=.006, check=False)   # straight back from the table
         position, orientation = self.planner.ee_pose()
         q = plan_tuck(self.planner, self.env.agent_qpos.astype(np.float64), self.base_position(), position, orientation,
-                      self.env.observe()['object_pos'])
+                      self.env.observe()['object_pos'], cradle=self.cradle)
         try:
             if q is None:
                 raise RuntimeError('no tuck')

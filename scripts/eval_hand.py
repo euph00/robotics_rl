@@ -35,7 +35,7 @@ def initialize_worker(policy, step):
     _POLICY = TeacherPolicy() if policy == 'teacher' else HandPolicy(ROOT / 'runs' / policy, step)
 
 
-def evaluate_case(case, speed_scale, holding_speed_scale, horizon, fingers='frozen', hand_mount='wrist'):
+def evaluate_case(case, speed_scale, holding_speed_scale, horizon, fingers='frozen', hand_mount='wrist', cradle=False):
     started, env, first = time.monotonic(), None, {'reach': None}
 
     def on_step(controller, observation, info):
@@ -44,7 +44,7 @@ def evaluate_case(case, speed_scale, holding_speed_scale, horizon, fingers='froz
     try:
         env = PickNavReachEnv(**case['env_kwargs'], physics='realistic', effector='allegro', hand_mount=hand_mount)
         system = HandPlannerSystem(env, _POLICY, horizon=horizon, on_step=on_step, seed=env.seed, speed_scale=speed_scale,
-                                   holding_speed_scale=holding_speed_scale, fingers_after_grasp=fingers)
+                                   holding_speed_scale=holding_speed_scale, fingers_after_grasp=fingers, cradle=cradle)
         result = system.run()
     except Exception as exc:  # construction or unexpected errors count as failures
         result = {'success': False, 'failed_stage': 'environment_setup' if env is None else 'unexpected',
@@ -94,9 +94,14 @@ def main():
     parser.add_argument('--fingers-after-grasp', choices=('policy', 'frozen'), default='frozen',
                         help='After the grasp: servo targets fixed, or the hand policy keeps setting them')
     parser.add_argument('--hand-mount', choices=('wrist', 'dorsal'), default='wrist')
+    parser.add_argument('--carry-posture', choices=('cradle', 'upright'), default='upright',
+                        help='Carry with the grasp orientation kept, or palm-up under the object (needs a policy trained to roll it there)')
+    parser.add_argument('--allow-reserve', action='store_true')
     parser.add_argument('--workers', type=int, default=8)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
+    if args.set == 'reserve' and not args.allow_reserve:
+        parser.error('The final reserve is sealed; pass --allow-reserve only for a final claim')
     if args.output.exists():
         parser.error(f'{args.output} exists')
     cases = E.select_cases(args.set, objects=args.objects, layout_limit=args.layout_limit,
@@ -106,6 +111,7 @@ def main():
                                               'controller': 'hand', 'policy': args.policy, 'step': args.step,
                                               'objects': args.objects, 'random_object_pose': args.random_object_pose,
                                               'hand_mount': args.hand_mount, 'fingers_after_grasp': args.fingers_after_grasp,
+                                              'carry_posture': args.carry_posture,
                                               'command': sys.argv})
     source = 'scripted teacher' if args.policy == 'teacher' else f'{args.policy}/{args.step}'
     logger = RunLogger(args.output.name, root=args.output.parent, kind='evaluation',
@@ -114,7 +120,7 @@ def main():
     with ProcessPoolExecutor(max_workers=min(args.workers, len(cases)), mp_context=mp.get_context('spawn'),
                              initializer=initialize_worker, initargs=(args.policy, args.step)) as pool:
         futures = [pool.submit(evaluate_case, case, args.speed_scale, args.holding_speed_scale, args.horizon, args.fingers_after_grasp,
-                               args.hand_mount) for case in cases]
+                               args.hand_mount, args.carry_posture == 'cradle') for case in cases]
         with (args.output / 'results.jsonl').open('w') as stream:
             for future in as_completed(futures):
                 row = future.result()

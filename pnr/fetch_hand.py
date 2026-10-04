@@ -30,10 +30,11 @@ TUCK_COMPACT = .36     # stop searching at a posture this compact: every arm lin
                        # through axis-aligned corridors)
 TUCK_BUDGET = 24       # IK solves before settling for the most compact posture found (four times that: give up)
 GOAL_HEIGHT = .90
+PALM_NORMAL = np.array([0., 0., -1.])   # in the flange frame, wrist-end mount (ALLEGRO_MOUNTS['wrist'])
 ARM_LINKS = ('upperarm_roll_link', 'elbow_flex_link', 'forearm_roll_link', 'wrist_flex_link', 'wrist_roll_link')
 
 
-def plan_tuck(planner, q, base_xy, flange, orientation, held, first=False):
+def plan_tuck(planner, q, base_xy, flange, orientation, held, first=False, cradle=False):
     """Carry-posture joint targets for a held object, shared by training (FetchHandRig) and the hand system.
     Candidates: the held object TUCK_AHEAD of the base centre at TUCK_HEIGHTS, the hand turned about the
     vertical by one of TUCK_TURNS (palm tilt kept, so gravity pulls on the grasp as before), the torso at its
@@ -51,7 +52,6 @@ def plan_tuck(planner, q, base_xy, flange, orientation, held, first=False):
     q = np.asarray(q, dtype=float)
     env = planner.env
     seeds = [q, np.r_[q[:3], env.init_qpos[3:]]]
-    low, high = planner.lower[0], planner.upper[0]
     offset = np.asarray(held) - np.asarray(flange)
     grasp = Rotation.from_quat(orientation)
     names = [mujoco.mj_id2name(env.model, mujoco.mjtObj.mjOBJ_BODY, b) or '' for b in range(env.model.nbody)]
@@ -63,7 +63,24 @@ def plan_tuck(planner, q, base_xy, flange, orientation, held, first=False):
             planner._put(tuck)
             return np.abs(env._query.xpos[bodies, :2] - np.asarray(base_xy)[:2]).max()
 
-    best, solves, plan_tuck.last = (np.inf, None), 0, None
+    plan_tuck.last = None
+    palm = grasp.apply(PALM_NORMAL)                     # world palm normal of the grasp
+    if cradle and palm[2] < .5:                         # palm not already facing up: try the cradle first
+        axis = np.cross(palm, [0., 0., 1.])
+        if np.linalg.norm(axis) < 1e-6:                 # palm straight down: roll about the fingers
+            axis = grasp.apply([1., 0., 0.])
+        roll = Rotation.from_rotvec(axis / np.linalg.norm(axis) * np.arccos(np.clip(palm[2], -1., 1.)))
+        tuck = _search_tuck(planner, q, base_xy, roll.apply(offset), roll * grasp, seeds, extent, first)
+        if tuck is not None:
+            plan_tuck.last['cradle'] = True
+            return tuck
+    return _search_tuck(planner, q, base_xy, offset, grasp, seeds, extent, first)
+
+
+def _search_tuck(planner, q, base_xy, offset, grasp, seeds, extent, first):
+    """plan_tuck's search for one held-object offset and grasp orientation (see there)."""
+    low, high = planner.lower[0], planner.upper[0]
+    best, solves = (np.inf, None), 0
     give_up = TUCK_BUDGET * (1 if first else 4)
     for torso, heights in ((low, TUCK_HEIGHTS), (None, TUCK_HEIGHTS[:1])):
         for height in heights:
@@ -91,7 +108,7 @@ def plan_tuck(planner, q, base_xy, flange, orientation, held, first=False):
                                 continue
                         best = (size, tuck)
                         plan_tuck.last = dict(torso_free=torso is None, height=height, turn=turn, ahead=ahead, seed=k,
-                                              extent=round(float(size), 3), solves=solves)
+                                              extent=round(float(size), 3), solves=solves, cradle=False)
                         if first or size <= TUCK_COMPACT:
                             return tuck
         if best[1] is not None:
