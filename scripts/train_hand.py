@@ -207,8 +207,10 @@ def main():
         parser.error(f'{out} exists')
     if args.resume is not None and args.algo != 'ppo':
         parser.error('--resume supports PPO runs (an off-policy replay buffer is not saved)')
-    logger = RunLogger(args.run_id, root=ROOT / 'runs', kind='train', name=f'Allegro grasp {args.algo.upper()} · {args.run_id}', resume=args.resume is not None,
-                       summary='Grasp, lift and carry ' + ('with the hand on the Fetch' if args.robot == 'fetch' else 'on the hand rig'), budget=args.steps, algorithm=args.algo.upper(), skill='hand_grasp')
+    effector = 'Gripper' if args.robot == 'fetch-gripper' else 'Allegro'
+    where = {'fetch': 'with the hand on the Fetch', 'fetch-gripper': "with the Fetch's gripper"}.get(args.robot, 'on the hand rig')
+    logger = RunLogger(args.run_id, root=ROOT / 'runs', kind='train', name=f'{effector} grasp {args.algo.upper()} · {args.run_id}', resume=args.resume is not None,
+                       summary=f'Grasp, lift and carry {where}', budget=args.steps, algorithm=args.algo.upper(), skill='hand_grasp')
     config = dict({k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}, command=sys.argv)
     atomic_json(out / ('config.json' if args.resume is None else f'config_resume_{args.resume}.json'), config)
     venv = VecMonitor(SubprocVecEnv([make_env(i, args) for i in range(args.envs)], start_method='spawn'))
