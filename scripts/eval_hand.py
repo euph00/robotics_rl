@@ -35,14 +35,16 @@ def initialize_worker(policy, step):
     _POLICY = TeacherPolicy() if policy == 'teacher' else HandPolicy(ROOT / 'runs' / policy, step)
 
 
-def evaluate_case(case, speed_scale, holding_speed_scale, horizon, fingers='frozen', hand_mount='wrist', cradle=False):
+def evaluate_case(case, speed_scale, holding_speed_scale, horizon, fingers='frozen', hand_mount='wrist', cradle=False,
+                  effector='allegro'):
     started, env, first = time.monotonic(), None, {'reach': None}
 
     def on_step(controller, observation, info):
         if first['reach'] is None and info.get('complete_task_success'):
             first['reach'] = env.physics_steps
     try:
-        env = PickNavReachEnv(**case['env_kwargs'], physics='realistic', effector='allegro', hand_mount=hand_mount)
+        mount = {'hand_mount': hand_mount} if effector == 'allegro' else {}
+        env = PickNavReachEnv(**case['env_kwargs'], physics='realistic', effector=effector, **mount)
         system = HandPlannerSystem(env, _POLICY, horizon=horizon, on_step=on_step, seed=env.seed, speed_scale=speed_scale,
                                    holding_speed_scale=holding_speed_scale, fingers_after_grasp=fingers, cradle=cradle)
         result = system.run()
@@ -93,6 +95,8 @@ def main():
     parser.add_argument('--horizon', type=int, default=300, help='Hand-policy decisions for the grasp')
     parser.add_argument('--fingers-after-grasp', choices=('policy', 'frozen'), default='frozen',
                         help='After the grasp: servo targets fixed, or the hand policy keeps setting them')
+    parser.add_argument('--effector', choices=('allegro', 'gripper'), default='allegro',
+                        help="gripper: a learned grasp of the Fetch's gripper (train_hand.py --robot fetch-gripper)")
     parser.add_argument('--hand-mount', choices=('wrist', 'dorsal'), default='wrist')
     parser.add_argument('--carry-posture', choices=('cradle', 'upright'), default='upright',
                         help='Carry with the grasp orientation kept, or palm-up under the object (needs a policy trained to roll it there)')
@@ -110,7 +114,7 @@ def main():
     atomic_json(args.output / 'config.json', {'set': args.set, 'cases': len(cases), 'label': f'hand · {args.policy}',
                                               'controller': 'hand', 'policy': args.policy, 'step': args.step,
                                               'objects': args.objects, 'random_object_pose': args.random_object_pose,
-                                              'hand_mount': args.hand_mount, 'fingers_after_grasp': args.fingers_after_grasp,
+                                              'hand_mount': args.hand_mount, 'fingers_after_grasp': args.fingers_after_grasp, 'effector': args.effector,
                                               'carry_posture': args.carry_posture,
                                               'command': sys.argv})
     source = 'scripted teacher' if args.policy == 'teacher' else f'{args.policy}/{args.step}'
@@ -120,7 +124,7 @@ def main():
     with ProcessPoolExecutor(max_workers=min(args.workers, len(cases)), mp_context=mp.get_context('spawn'),
                              initializer=initialize_worker, initargs=(args.policy, args.step)) as pool:
         futures = [pool.submit(evaluate_case, case, args.speed_scale, args.holding_speed_scale, args.horizon, args.fingers_after_grasp,
-                               args.hand_mount, args.carry_posture == 'cradle') for case in cases]
+                               args.hand_mount, args.carry_posture == 'cradle', args.effector) for case in cases]
         with (args.output / 'results.jsonl').open('w') as stream:
             for future in as_completed(futures):
                 row = future.result()

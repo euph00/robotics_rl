@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 from scipy.spatial.transform import Rotation
 
+from .fetch_gripper import PAD_HALF_LENGTH, FetchGripperRig
 from .fetch_hand import READY, FetchHandRig, plan_tuck
 from .hand import pregrasp_wrist, side_grasp_geometry, wrist_for
 from .hand_env import FINGER_STEP, SIDE_GRASP_OBJECTS, HandGraspEnv
@@ -64,10 +65,16 @@ class TeacherPolicy:
 
 
 class HandPlannerSystem(ReferenceController):
+    """The full task with a learned (or scripted) grasp: planned approach to the training pregrasp, the
+    grasp policy through the end effector's rig, then the planned carry posture, maze carry and reach.
+    Either end effector (env.effector 'allegro' or 'gripper', the shared trainer's two rigs); the gripper
+    carries in the planner's own tuck pose."""
+
     def __init__(self, env, policy, horizon=300, clearance=.045, wrist_box=(.08, .5), fingers_after_grasp='frozen', cradle=False, **kwargs):
-        if getattr(env, 'effector', 'gripper') != 'allegro':
-            raise ValueError('HandPlannerSystem needs an environment with effector="allegro"')
+        if getattr(env, 'effector', 'gripper') not in ('allegro', 'gripper'):
+            raise ValueError('HandPlannerSystem needs effector "allegro" or "gripper"')
         super().__init__(env, **kwargs)
+        self.gripper = env.effector == 'gripper'
         self.policy, self.horizon, self.clearance = policy, int(horizon), float(clearance)
         self._holding = None          # the grasp's HandGraspEnv once it holds the object
         self.wrist_box = wrist_box
@@ -80,6 +87,14 @@ class HandPlannerSystem(ReferenceController):
         narrow horizontal axis (the one nearest pointing away from the robot); side-grasp objects: palm
         vertical on the robot's side, 6 cm out."""
         rig = self.rig
+        if self.gripper:                            # jaws from above, closing across the narrow axis
+            points = rig.object_points_world()
+            spread = points[:, :2] - points[:, :2].mean(0)
+            narrow = np.linalg.eigh(spread.T @ spread)[1][:, 0]
+            yaw = float(np.arctan2(-narrow[0], narrow[1]))
+            yaw = (yaw + np.pi / 2) % np.pi - np.pi / 2
+            top, centre = points[:, 2].max(), rig.object_pose()[0]
+            return rig.pregrasp(yaw, top + self.clearance + PAD_HALF_LENGTH - centre[2])
         if self.env.object_idx in SIDE_GRASP_OBJECTS:
             yaw = -np.pi / 2                       # palm +x (towards the object) along world +x
             grip, depth, _ = side_grasp_geometry(rig, yaw)
@@ -94,14 +109,15 @@ class HandPlannerSystem(ReferenceController):
         to 20 cm above the pregrasp and come straight down. With the wrist-end mount the hand reaches
         ~25 cm past the flange: turning it near the table, or sweeping between planner waypoints, pushes
         the object away."""
-        self.rig = FetchHandRig(env=self.env, stepper=lambda action: self.tick(action, 'grasp'))
+        Rig = FetchGripperRig if self.gripper else FetchHandRig
+        self.rig = Rig(env=self.env, stepper=lambda action: self.tick(action, 'grasp'))
         wrist = self.pregrasp = self.hand_pregrasp()
         _, rotation = self.rig._flange_target(wrist)
         orientation = Rotation.from_matrix(rotation).as_quat()
         base, error = self.base_position(), None
         for dx, dy, z in ((.3, 0., 1.15), (.35, 0., 1.), (.3, .15, 1.1), (.3, -.15, 1.1), (.4, 0., .95)):
             try:                                    # fold poses near the base, first reachable one
-                self.move_ee([base[0] + dx, base[1] + dy, z], orientation, 'fold')
+                self.move_ee([base[0] + dx, base[1] + dy, z], orientation, 'fold', closed=False if self.gripper else None)
                 break
             except ValueError as exc:
                 error = exc
@@ -126,6 +142,9 @@ class HandPlannerSystem(ReferenceController):
                 if np.linalg.norm(self.env.ee_pose()[0] - position) > .01:
                     break
             path.append(q)
+        if self.gripper:                            # jaws open, as every training episode starts
+            for q in path:
+                q[self.finger_slots] = self.rig.finger_open
         self.move_joint(path[-1], stage='pregrasp', include_object=True, step_size=.012)
         for q in reversed(path[:-1]):
             self.move_joint(q, stage='pregrasp', include_object=True, step_size=.006)
@@ -135,7 +154,7 @@ class HandPlannerSystem(ReferenceController):
 
     def execute_hand_grasp(self):
         task = HandGraspEnv(objects=[], physics=self.env.physics, horizon=self.horizon, carry=True,
-                            wrist_box=self.wrist_box)
+                            wrist_box=self.wrist_box, robot='fetch-gripper' if self.gripper else 'rig')
         observation = task.attach(self.rig)
         if hasattr(self.policy, 'bind'):
             self.policy.bind(task)
@@ -157,15 +176,23 @@ class HandPlannerSystem(ReferenceController):
         task = self._holding
         if task is not None and len(target) == len(self.env.joint_names):
             action = np.clip(self.policy.act(task._observation()), -1, 1)
-            task.finger_target = np.clip(task.finger_target + action[6:] * FINGER_STEP, self.env.hand_low, self.env.hand_high)
+            rig = task.rig
+            task.finger_target = np.clip(task.finger_target + action[6:] * getattr(rig, 'finger_step', FINGER_STEP),
+                                         rig.finger_low, rig.finger_high)
             task.previous_action = action
-            target = np.r_[target, task.finger_target]
+            if self.gripper:                        # the jaws are Fetch joints
+                target = np.asarray(target, dtype=float).copy()
+                target[self.finger_slots] = task.finger_target
+            else:
+                target = np.r_[target, task.finger_target]
         return super().tick(target, stage)
 
     def prepare_carry(self):
         """Retreat from the table, then tuck the held object close to the base for the maze (`plan_tuck`:
         object at or below the goal's height, hand turned about the vertical, held object kept off the robot's
         body), then a planned joint-space move. If no tuck is found, a straight-line path as far as it reaches."""
+        if self.gripper:
+            return super().prepare_carry()          # the gripper planner's tuck pose
         self.planner.set_payload()
         self.move_base([-1.25, 0], stage='retreat', step_size=.006, check=False)   # straight back from the table
         position, orientation = self.planner.ee_pose()
