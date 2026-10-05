@@ -6,9 +6,10 @@
 # Recipe chosen by the equal-budget tuning sweep (scripts/tune_v2.sh, runs/tune_v2_report.json; the
 # same levels won for both end effectors): learning rate 1e-4, exploration log-std -0.7 after cloning,
 # 300 demonstrations per object, no interleaved cloning. From scratch: the same learning rate.
-# Wide task: no hand-written grasp handles the wide cylinders (gripper teacher 0-1/12, hand script
-# 1/12), so both end effectors clone their standard-object demonstrations and PPO trains on the wide
-# objects (step 0 = the imitation cell); and PPO from scratch.
+# Wide task: each end effector's best hand-written prior. The gripper has none that works (teacher 0-1/12),
+# so it clones its standard-object demonstrations; the hand clones its side power-grasp script on the
+# idealised rig (it slides off on the Fetch) and starts from the side pregrasp (from scratch too).
+# Step 0 = the imitation cell; and PPO from scratch.
 # Queue order: standard BC -> PPO, wide BC -> PPO, standard from scratch, wide from scratch.
 # A queue keeps at most MAX_RUNS runs alive and launches only with MIN_FREE_GB available; SKIP (a regex of
 # run ids) leaves runs out.
@@ -52,8 +53,15 @@ for item in "${QUEUE[@]}"; do
   [ -n "$SKIP" ] && [[ $R =~ $SKIP ]] && continue      # e.g. SKIP='^v2_hand_bcppo_wide_' (recipe under review)
   while [ "$(alive_runs)" -ge $MAX_RUNS ] || [ "$(free_gb)" -lt $MIN_FREE_GB ]; do sleep 120; done
   EXTRA=()
-  [ $KIND = bcppo ] && EXTRA=(--bc-demos runs/v2_demos_${E}_std300/demonstrations.npz --bc-updates 40000 --bc-log-std -0.7
-                              --critic-warmup 1000000)
+  DEMOS=runs/v2_demos_${E}_std300
+  if [ $E = hand ] && [ $TASK = wide ]; then
+    # The hand's own wide-object prior: its side power-grasp script's demonstrations (idealised rig, 300 per
+    # object) and the side pregrasp they start from; development seed v2dev_hand_sidebc_wide_s0 decided it.
+    DEMOS=runs/v2_demos_hand_wide_rig300
+    EXTRA+=(--side-grasp-objects $WIDE)
+  fi
+  [ $KIND = bcppo ] && EXTRA+=(--bc-demos $DEMOS/demonstrations.npz --bc-updates 40000 --bc-log-std -0.7
+                               --critic-warmup 1000000)
   echo "$(date +%H:%M) launch $R"
   setsid nohup $PY scripts/train_hand.py --run-id $R --seed $SEED ${ROBOT[$E]} --objects ${OBJECTS[$TASK]} "${COMMON[@]}" "${EXTRA[@]}" \
       > runs/$R.log 2>&1 < /dev/null &

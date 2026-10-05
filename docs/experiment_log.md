@@ -441,3 +441,8 @@ Later on 2026-10-02:
 - Hand side-grasp demonstrations on the idealised rig, 300 per object: chef can 79 lifted / 69 carried,
   soup can x1.6 12 / 11; 80 episodes, 24,739 transitions (runs/v2_demos_hand_wide_rig300). Development
   seed v2dev_hand_sidebc_wide_s0: BC of these -> PPO on the Fetch from the side pregrasp, tuned recipe.
+- Development seed v2dev_hand_sidebc_wide_s0 (rig side-grasp demonstrations -> PPO on the Fetch from the
+  side pregrasp): 0.00 to 1M, then 0.33 / 0.67 / 0.54 / 0.71 / 0.71 at 2.0-4.0M (chef can 0.83, soup can
+  x1.6 0.50 at 4M). Mean over 2.5-4M 0.66 vs the gripper's 0.19-0.32 at the same steps and 0.36-0.55 at
+  8.5-10M: the rule is met; the campaign's five hand wide BC -> PPO seeds use this prior (fresh seeds;
+  the development run stays development evidence). Hand wide from scratch also starts from the side pregrasp.
