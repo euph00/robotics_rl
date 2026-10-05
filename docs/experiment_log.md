@@ -418,3 +418,13 @@ Later on 2026-10-02:
 - Tuning sweep, first four gripper configurations (score = mean of the last three evaluations):
   untuned 0.44; learning rate 1e-4 + exploration log-std -0.7 0.68 (0.47 -> 0.72); interleaved cloning
   collapses the gripper (0.07, 0.11). The gripper's flat curve was a tuning problem.
+
+## 2026-10-05: tuning sweep result; campaign restarted with the tuned recipe
+
+- Sweep (8 configurations per end effector, 4M steps, score = mean of the last three evaluations):
+  gripper 0.44 / 0.11 / 0.07 / 0.68 / 0.11 / 0.75 / 0.55 / 0.33, hand 0.42 / 0.37 / 0.38 / 0.61 / 0.31 /
+  0.77 / 0.49 / 0.48 (c1-c8). Main effects, both end effectors the same direction: learning rate 1e-4
+  (+0.18 / +0.16), log-std -0.7 (+0.05 / +0.02, within noise), 300 demos (+0.11 / +0.07), interleaved
+  cloning harmful (-0.45 / -0.19). Recipe: lr 1e-4, log-std -0.7, 300 demos, no interleaving.
+- Untuned campaign runs archived (runs/archive_superseded/v2_untuned/); campaign restarted with the
+  tuned recipe and top-down starts for every object (40 runs, 4 at a time).

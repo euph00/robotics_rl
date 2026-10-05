@@ -276,14 +276,14 @@
     {
       "key": "unified",
       "label": "Gripper in the shared trainer",
-      "status": "active",
-      "detail": "gripper rig, teacher, BC → PPO working; full-task deployment next"
+      "status": "done",
+      "detail": "gripper rig, teacher, full-task deployment"
     },
     {
       "key": "retrain",
       "label": "All learned cells retrained",
       "status": "active",
-      "detail": "40 runs queued: 2 effectors × (BC → PPO, scratch) × 2 tasks × 5 seeds"
+      "detail": "tuned recipe (lr 1e-4, log-std -0.7, 300 demos): 40 runs queued"
     },
     {
       "key": "wide_hold",

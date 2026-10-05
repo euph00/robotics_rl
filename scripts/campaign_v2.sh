@@ -1,8 +1,11 @@
 #!/bin/bash
 # Redesigned study (docs/project_spec.md, 2026-10-04): the training campaign.
 # One recipe for both end effectors: demonstrations from each end effector's hand-written grasp on the
-# standard objects (100 attempted episodes per object, protocol start range, 300-decision horizon,
+# standard objects (300 attempted episodes per object, protocol start range, 300-decision horizon,
 # carried) -> BC -> PPO; and PPO from scratch. Same PPO settings, 22 workers, 10M steps, 5 seeds.
+# Recipe chosen by the equal-budget tuning sweep (scripts/tune_v2.sh, runs/tune_v2_report.json; the
+# same levels won for both end effectors): learning rate 1e-4, exploration log-std -0.7 after cloning,
+# 300 demonstrations per object, no interleaved cloning. From scratch: the same learning rate.
 # Wide task: no hand-written grasp handles the wide cylinders (gripper teacher 0-1/12, hand script
 # 1/12), so both end effectors clone their standard-object demonstrations and PPO trains on the wide
 # objects (step 0 = the imitation cell); and PPO from scratch.
@@ -13,21 +16,22 @@
 #   setsid nohup bash scripts/campaign_v2.sh >> runs/campaign_v2.log 2>&1 < /dev/null &
 cd "$(dirname "$0")/.."
 PY=.venv/bin/python
-MAX_RUNS=${MAX_RUNS:-5}
+MAX_RUNS=${MAX_RUNS:-4}
 MIN_FREE_GB=${MIN_FREE_GB:-45}
 STANDARD="14 5 2 7 10"
 WIDE="0 102"
 declare -A OBJECTS=([std]="$STANDARD" [wide]="$WIDE")
 COMMON=(--algo ppo --physics realistic --wrist-box .08 .5 --carry --horizon 300 --start-shift .08 .12
         --steps 10000000 --envs 22 --eval-every 500000 --eval-episodes 12
+        --learning-rate 1e-4
         --side-grasp-objects)     # every object starts top-down (the cloned demonstrations' pregrasp)
 declare -A ROBOT=([gripper]="--robot fetch-gripper" [hand]="--robot fetch --hand-mount wrist")
 
 demos() {   # effector robot
-  local OUT=runs/v2_demos_$1_std
+  local OUT=runs/v2_demos_$1_std300
   [ -e $OUT/demonstrations.npz ] && return
   echo "$(date +%H:%M) demonstrations $1"
-  $PY scripts/hand_teacher_demos.py --robot $2 --objects $STANDARD --episodes 100 --carry --horizon 300 \
+  $PY scripts/hand_teacher_demos.py --robot $2 --objects $STANDARD --episodes 300 --carry --horizon 300 \
       --start-shift .08 .12 --workers 24 --output $OUT > $OUT.log 2>&1
   python3 -c "import json; d=json.load(open('$OUT/summary.json')); print('   kept', d['kept'], 'of', d['episodes'], 'episodes,', d['transitions'], 'transitions')"
 }
@@ -46,7 +50,8 @@ for item in "${QUEUE[@]}"; do
   [ -e runs/$R/config.json ] && continue
   while [ "$(alive_runs)" -ge $MAX_RUNS ] || [ "$(free_gb)" -lt $MIN_FREE_GB ]; do sleep 120; done
   EXTRA=()
-  [ $KIND = bcppo ] && EXTRA=(--bc-demos runs/v2_demos_${E}_std/demonstrations.npz --bc-updates 40000 --critic-warmup 1000000)
+  [ $KIND = bcppo ] && EXTRA=(--bc-demos runs/v2_demos_${E}_std300/demonstrations.npz --bc-updates 40000 --bc-log-std -0.7
+                              --critic-warmup 1000000)
   echo "$(date +%H:%M) launch $R"
   setsid nohup $PY scripts/train_hand.py --run-id $R --seed $SEED ${ROBOT[$E]} --objects ${OBJECTS[$TASK]} "${COMMON[@]}" "${EXTRA[@]}" \
       > runs/$R.log 2>&1 < /dev/null &
