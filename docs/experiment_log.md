@@ -428,3 +428,16 @@ Later on 2026-10-02:
   cloning harmful (-0.45 / -0.19). Recipe: lr 1e-4, log-std -0.7, 300 demos, no interleaving.
 - Untuned campaign runs archived (runs/archive_superseded/v2_untuned/); campaign restarted with the
   tuned recipe and top-down starts for every object (40 runs, 4 at a time).
+
+## 2026-10-05 (evening): tuned standard results; the hand's wide-object prior
+
+- Standard objects, tuned BC -> PPO, 5 seeds, lift and carry (step 0 -> mean of last three evaluations):
+  hand 0.42-0.58 -> 0.80-0.87 (best 0.82-0.90); gripper 0.42-0.57 -> 0.55-0.67 (best 0.68-0.80). RL adds
+  ~+0.38 for the hand, ~+0.11 for the gripper, which stays below its own teacher (~0.88).
+- Wide cylinders, BC of standard demos -> PPO: gripper 0.33-0.51 (seed 0 at 10M: chef can 0.42, soup can
+  x1.6 0.75; tilted rim pinch); hand 0.00 for 9M steps from the top-down start (peak lift 1.5 cm, never a
+  lift, no signal for PPO). Hand wide seed 1 stopped at 4M (archived); the queue skips the hand's wide
+  BC -> PPO runs (SKIP) pending its prior.
+- Hand side-grasp demonstrations on the idealised rig, 300 per object: chef can 79 lifted / 69 carried,
+  soup can x1.6 12 / 11; 80 episodes, 24,739 transitions (runs/v2_demos_hand_wide_rig300). Development
+  seed v2dev_hand_sidebc_wide_s0: BC of these -> PPO on the Fetch from the side pregrasp, tuned recipe.

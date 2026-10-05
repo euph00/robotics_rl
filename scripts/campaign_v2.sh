@@ -10,7 +10,8 @@
 # 1/12), so both end effectors clone their standard-object demonstrations and PPO trains on the wide
 # objects (step 0 = the imitation cell); and PPO from scratch.
 # Queue order: standard BC -> PPO, wide BC -> PPO, standard from scratch, wide from scratch.
-# A queue keeps at most MAX_RUNS runs alive and launches only with MIN_FREE_GB available.
+# A queue keeps at most MAX_RUNS runs alive and launches only with MIN_FREE_GB available; SKIP (a regex of
+# run ids) leaves runs out.
 # Idempotent: existing demonstration sets and runs are skipped (resume a stopped run with
 # train_hand.py --resume STEP).
 #   setsid nohup bash scripts/campaign_v2.sh >> runs/campaign_v2.log 2>&1 < /dev/null &
@@ -48,6 +49,7 @@ free_gb() { awk '/MemAvailable/ {print int($2 / 1048576)}' /proc/meminfo; }
 for item in "${QUEUE[@]}"; do
   set -- $item; R=$1; E=$2; KIND=$3; SEED=$4; TASK=$5
   [ -e runs/$R/config.json ] && continue
+  [ -n "$SKIP" ] && [[ $R =~ $SKIP ]] && continue      # e.g. SKIP='^v2_hand_bcppo_wide_' (recipe under review)
   while [ "$(alive_runs)" -ge $MAX_RUNS ] || [ "$(free_gb)" -lt $MIN_FREE_GB ]; do sleep 120; done
   EXTRA=()
   [ $KIND = bcppo ] && EXTRA=(--bc-demos runs/v2_demos_${E}_std300/demonstrations.npz --bc-updates 40000 --bc-log-std -0.7
