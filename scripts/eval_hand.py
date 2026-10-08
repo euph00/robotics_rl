@@ -91,6 +91,7 @@ def main():
     parser.add_argument('--objects', type=int, nargs='+', default=[2, 7, 10])
     parser.add_argument('--layout-limit', type=int)
     parser.add_argument('--random-object-pose', action='store_true', help='Seeded object start offset and yaw per case')
+    parser.add_argument('--starts', type=int, default=1, help='Seeded object starts per case (protocol: 3 for the wide set)')
     parser.add_argument('--speed-scale', type=float, default=3., help='Planned motion speed (as evaluate_mujoco.sh)')
     parser.add_argument('--holding-speed-scale', type=float, default=2., help='Planned motion speed while holding')
     parser.add_argument('--horizon', type=int, default=300, help='Hand-policy decisions for the grasp')
@@ -110,14 +111,14 @@ def main():
     if args.output.exists():
         parser.error(f'{args.output} exists')
     cases = E.select_cases(args.set, objects=args.objects, layout_limit=args.layout_limit,
-                           random_object_pose=args.random_object_pose)
+                           random_object_pose=args.random_object_pose, starts=args.starts)
     # The pregrasp the policy trained from: its run's side-grasp objects (None: the default 0, 102).
     trained = {} if args.policy == 'teacher' else json.loads((ROOT / 'runs' / args.policy / 'config.json').read_text())
     side = trained.get('side_grasp_objects')
     args.output.mkdir(parents=True)
     atomic_json(args.output / 'config.json', {'set': args.set, 'cases': len(cases), 'label': f'hand · {args.policy}',
                                               'controller': 'hand', 'policy': args.policy, 'step': args.step,
-                                              'objects': args.objects, 'random_object_pose': args.random_object_pose,
+                                              'objects': args.objects, 'random_object_pose': args.random_object_pose, 'starts': args.starts,
                                               'hand_mount': args.hand_mount, 'fingers_after_grasp': args.fingers_after_grasp, 'effector': args.effector, 'side_grasp_objects': side,
                                               'carry_posture': args.carry_posture,
                                               'command': sys.argv})

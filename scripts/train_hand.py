@@ -117,8 +117,45 @@ class DemoRegulariser:
         return count
 
 
+def behaviour_clone_sac(model, venv, demos, updates, log_std, device):
+    """RLPD's imitation start, as behaviour_clone for PPO: fit the SAC actor's squashed mean to teacher actions
+    (same demonstrations, updates, batch and learning rate); a state-independent log-std afterwards."""
+    import torch
+    data = np.load(demos)
+    obs = torch.as_tensor(venv.normalize_obs(data['observations'].astype(np.float32)), dtype=torch.float32, device=device)
+    target = torch.as_tensor(data['actions'], dtype=torch.float32, device=device)
+    actor = model.actor
+    optimizer = torch.optim.Adam(list(actor.latent_pi.parameters()) + list(actor.mu.parameters()), lr=3e-4)
+    rng = np.random.default_rng(0)
+    losses = []
+    for update in range(updates):
+        batch = torch.as_tensor(rng.integers(0, len(obs), 1024), device=device)
+        mean = torch.tanh(actor.mu(actor.latent_pi(actor.extract_features(obs[batch], actor.features_extractor))))
+        loss = ((mean - target[batch]) ** 2).mean()
+        optimizer.zero_grad(); loss.backward(); optimizer.step()
+        losses.append(float(loss))
+    with torch.no_grad():
+        actor.log_std.weight.zero_()
+        actor.log_std.bias.fill_(log_std)
+    return {'examples': len(obs), 'updates': updates, 'final_loss': float(np.mean(losses[-200:]))}
+
+
+_FROZEN_ENTROPY = {}     # SAC entropy-coefficient optimisers held back during the value warm-up (not saved with the model)
+
+
 def set_actor_trainable(model, trainable):
+    """Value warm-up: the actor (and for SAC the entropy coefficient) frozen while the critic learns."""
     policy = model.policy
+    if hasattr(policy, 'actor'):            # SAC / RLPD
+        import torch
+        for parameter in policy.actor.parameters():
+            parameter.requires_grad_(trainable)
+        if trainable:
+            model.ent_coef_optimizer = _FROZEN_ENTROPY.pop(id(model))
+        else:                               # SAC.train then uses ent_coef_tensor, unchanged
+            _FROZEN_ENTROPY[id(model)], model.ent_coef_optimizer = model.ent_coef_optimizer, None
+            model.ent_coef_tensor = torch.exp(model.log_ent_coef.detach())
+        return
     for module in (policy.mlp_extractor.policy_net, policy.action_net):
         for parameter in module.parameters():
             parameter.requires_grad_(trainable)
@@ -261,6 +298,12 @@ def main():
                     learning_starts=args.batch_size, gamma=.99, tau=.005, train_freq=1, gradient_steps=args.utd * args.envs,
                     replay_buffer_class=DemoMixReplayBuffer, replay_buffer_kwargs=dict(demos=str(args.rlpd_demos), demo_ratio=.5),
                     policy_kwargs=dict(net_arch=[512, 512, 256]), seed=args.seed, device=args.device, verbose=0)
+        if args.bc_demos:           # the same imitation start and value warm-up as BC -> PPO
+            clone = behaviour_clone_sac(model, venv, args.bc_demos, args.bc_updates, args.bc_log_std, model.device)
+            logger.event('Behaviour cloning complete', **clone)
+            print(json.dumps({'behaviour_cloning': clone}), flush=True)
+        if args.critic_warmup:
+            set_actor_trainable(model, False)
     else:
         model = SAC('MlpPolicy', venv, learning_rate=args.learning_rate, buffer_size=2_000_000, batch_size=args.batch_size,
                     learning_starts=20_000, gamma=.99, tau=.005, train_freq=1, gradient_steps=args.gradient_steps,
@@ -281,12 +324,15 @@ def main():
             start = args.resume or 0
             self.next_eval, self.started, self.recent = (start // args.eval_every + 1) * args.eval_every, time.monotonic(), []
             self.start_steps = start
+            self.eval_seconds = 0.          # wall-clock spent in evaluations (excluded from train_seconds)
             self.stage, self.stage_start = 0, 0
             if stages:
                 apply_stage(0)
 
 
         def evaluate_and_save(self):
+            began = time.monotonic()
+            train_seconds = began - self.started - self.eval_seconds
             rows = evaluate(self.model, eval_env, args, rng_seed=7_000, normalize=normalize)
             per_object = {str(i): float(np.mean([r['success'] for r in rows if r['object_idx'] == i])) for i in args.objects}
             metrics = dict(scope='hand_grasp', metric_source='evaluation',
@@ -298,7 +344,8 @@ def main():
                            carry_entered=float(np.mean([r['entered_carry'] for r in rows])),
                            carry_success_rate=float(np.mean([r['carried'] for r in rows])),
                            train_success_rate=float(np.mean(self.recent[-200:])) if self.recent else 0.,
-                           steps_per_second=(self.num_timesteps - self.start_steps) / (time.monotonic() - self.started))
+                           steps_per_second=(self.num_timesteps - self.start_steps) / (time.monotonic() - self.started),
+                           train_seconds=train_seconds, load_average=os.getloadavg()[0])
             if stages:
                 stage = stages[self.stage]
                 stage_success = float(np.mean([r['success'] for r in rows if r['object_idx'] in stage['objects']]))
@@ -314,6 +361,7 @@ def main():
             self.model.save(out / 'checkpoints' / f'step_{self.num_timesteps:08d}')
             if isinstance(venv, VecNormalize):
                 venv.save(str(out / 'checkpoints' / f'step_{self.num_timesteps:08d}_vecnormalize.pkl'))
+            self.eval_seconds += time.monotonic() - began
 
         def _on_rollout_end(self):
             if regulariser is not None and getattr(self, 'unfrozen', not args.critic_warmup):

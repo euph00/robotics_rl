@@ -72,7 +72,8 @@ _POLICIES = None
 COURSE_SEEDS = range(1000, 1020)
 
 
-def select_cases(name, objects=OBJECTS, layout_limit=None, random_object_pose=False):
+def select_cases(name, objects=OBJECTS, layout_limit=None, random_object_pose=False, starts=1):
+    """`starts` > 1 repeats every case with that many seeded object starts (needs random_object_pose)."""
     cases = []
     if name == 'course':
         seeds = list(COURSE_SEEDS)[:layout_limit] if layout_limit else COURSE_SEEDS
@@ -89,6 +90,11 @@ def select_cases(name, objects=OBJECTS, layout_limit=None, random_object_pose=Fa
         for case in selected:
             case['set'] = label
         cases += selected
+    if starts > 1:
+        if not random_object_pose:
+            raise ValueError('Several object starts per case need random_object_pose')
+        cases = [dict(case, case_id=f"{case['case_id']}_start{k}", env_kwargs=dict(case['env_kwargs']))
+                 for case in cases for k in range(starts)]
     if len({case['case_id'] for case in cases}) != len(cases):
         raise ValueError('Duplicate case identifiers across banks')
     if random_object_pose:      # seeded per case, so every system sees the same start
@@ -276,6 +282,7 @@ def main():
     parser.add_argument('--objects', type=int, nargs='+', default=OBJECTS)
     parser.add_argument('--allow-reserve', action='store_true')
     parser.add_argument('--random-object-pose', action='store_true', help='Seeded object start offset and yaw per case')
+    parser.add_argument('--starts', type=int, default=1, help='Seeded object starts per case (protocol: 3 for the wide set)')
     parser.add_argument('--workers', type=int, default=44)
     parser.add_argument('--output', type=Path, required=True, help='New run directory, e.g. runs/eval_x')
     parser.add_argument('--label', default='')
@@ -304,7 +311,7 @@ def main():
     elif set(checkpoints) != {'grasp', 'carry', 'reach'}:
         parser.error('Provide --candidate or all three checkpoints')
 
-    cases = select_cases(args.set, args.objects, args.layout_limit, args.random_object_pose)
+    cases = select_cases(args.set, args.objects, args.layout_limit, args.random_object_pose, args.starts)
     output = args.output
     if output.exists() and any(output.iterdir()):
         parser.error('Output directory already exists')

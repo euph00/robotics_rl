@@ -446,3 +446,36 @@ Later on 2026-10-02:
   x1.6 0.50 at 4M). Mean over 2.5-4M 0.66 vs the gripper's 0.19-0.32 at the same steps and 0.36-0.55 at
   8.5-10M: the rule is met; the campaign's five hand wide BC -> PPO seeds use this prior (fresh seeds;
   the development run stays development evidence). Hand wide from scratch also starts from the side pregrasp.
+
+## 2026-10-07: training campaign complete (40 runs)
+
+Training-time lift and carry (60 episodes standard, 24 wide), step 0 -> mean of the last three
+evaluations (best), 10M steps, 5 seeds:
+
+| | Standard | Wide |
+|---|---|---|
+| Gripper BC -> PPO | 0.42-0.57 -> 0.55-0.67 (0.68-0.80) | 0.00-0.04 -> 0.26-0.54 (0.38-0.62) |
+| Hand BC -> PPO | 0.42-0.58 -> 0.80-0.87 (0.82-0.90) | 0.00 -> 0.65-0.83 (0.83-0.88) |
+| Gripper PPO from scratch | 0.53-0.67 (0.67-0.80) | 0.50-0.74 (0.67-0.79) |
+| Hand PPO from scratch | seed 0 0.81; seeds 1-4 0.00 (best 0.03) | 0.00 (all five seeds) |
+
+- The gripper learns as well from scratch as from its demonstrations on standard objects, and better
+  from scratch on the wide cylinders (its standard-object prior is a top-down antipodal grasp that does
+  not fit them; from scratch it finds the tilted rim pinch directly). C2 therefore compares the hand
+  with the gripper's best system (planner, BC -> PPO or from scratch) on development data.
+- The hand from scratch needs its prior: 1 of 5 seeds discovers a grasp on standard objects, none on the
+  wide cylinders; with the prior every seed reaches 0.65-0.87.
+- Smoke test of the full task, hand BC -> PPO wide seed 0 at 10M, policy-held grip, 3 dev layouts x 2
+  objects x 3 starts: grasp held 18/18, delivered 9/18; all failures but one are drops in the maze
+  carry (the wide-object hold, plan step 3).
+
+## 2026-10-08: development evaluations; PPO vs RLPD set up
+
+- Full-task development evaluations of every cell (scripts/dev_v2.sh, dev mazes, wide 3 starts per case:
+  eval.py / eval_hand.py --starts). Checkpoint: the best training-time evaluation within 10M (later on
+  ties), fixed before; grip after the grasp decided per end effector and task on the BC -> PPO cells.
+- RLPD from the same imitation start as BC -> PPO: the SAC actor's squashed mean cloned on the same
+  demonstrations (40,000 updates), log-std -0.7, then the same 1M-step value warm-up (actor and
+  entropy coefficient frozen; checked: identical evaluations before and after warm-up steps).
+  train_seconds (wall-clock without evaluations) and the machine load are logged per evaluation.
+  scripts/algorithms_v2.sh queues the comparison behind the development evaluations.
