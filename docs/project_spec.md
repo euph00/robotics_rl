@@ -97,9 +97,14 @@ after the grasp are set per end effector and task on development data and declar
 2. **Retrain every learned cell** with the fairness controls: both end effectors, both tasks where
    applicable, imitation, imitation + PPO, PPO from scratch, 5 seeds.
 3. **Wide-object hold** (C2): the hand's hold through the carry, learned end to end in the real
-   post-grasp sequence, or the learned palm-up cradle; chosen on development data.
+   post-grasp sequence, or the learned palm-up cradle; chosen on development data. Skipped (2026-10-09):
+   with the frozen grip the hand delivers 0.69 of the wide development cases vs the gripper's best 0.42,
+   and hand-only carry engineering would be effort the gripper did not get.
 4. **Fair PPO vs RLPD** on both end effectors.
-5. **Freeze** systems and protocol (commit), then the single reserve-bank evaluation.
+5. **Freeze** systems and protocol (commit), then the single reserve-bank evaluation. Frozen 2026-10-09:
+   `configs/final_v2.json` (64 systems: checkpoints by the rule above with their hashes, grip, protocol),
+   run by `scripts/final_v2.py`. Any later change to a system is evaluated once on a freshly generated bank
+   (`scripts/build_confirmation_bank.py`, used mazes excluded), and every final run is reported.
 6. Report, figures, clips. Stretch, only after 1–5: orientation-constrained delivery.
 
 ## Reporting rules
