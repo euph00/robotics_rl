@@ -513,3 +513,29 @@ pooled over 5 seeds [Wilson 95%] (per seed):
   the warm-up, falls to 0.00 when the actor is released (1.25M) and recovers to 0.08 by 2.5M, at ~80
   steps/s (~14 h per run, GPU ~26% busy). Seeds 1-4 and the no-warm-up check now run four at a time
   after the isolated seed-0 runs (per step only); per-hour numbers come from the isolated seed 0.
+
+## 2026-10-09 (afternoon): final evaluation on the reserve bank (frozen systems, configs/final_v2.json)
+
+One run of all 64 frozen systems, 13:28-14:32 (runs/final_v2/, report.json). Delivered, pooled over 5 seeds
+[Wilson 95%] (per seed); standard 100 cases, wide 120 (20 layouts x 2 objects x 3 starts):
+
+| | Standard | Wide |
+|---|---|---|
+| Gripper planner | 0.85 [0.77, 0.91] | 0.27 [0.20, 0.35] |
+| Gripper BC | 0.69 [0.65, 0.73] (0.63-0.73) | 0.00 |
+| Gripper BC -> PPO | 0.62 [0.58, 0.67] (0.56-0.65) | 0.21 [0.18, 0.25] (0.10-0.25) |
+| Gripper PPO from scratch | 0.61 [0.56, 0.65] (0.55-0.67) | 0.39 [0.35, 0.43] (0.35-0.45) |
+| Hand scripted | 0.40 [0.31, 0.50] | 0.00 |
+| Hand BC | 0.49 [0.44, 0.53] (0.43-0.55) | 0.01 |
+| Hand BC -> PPO | 0.76 [0.72, 0.80] (0.59-0.92) | 0.68 [0.64, 0.71] (0.58-0.77) |
+| Hand PPO from scratch | 0.18 (seed 0 0.86, others 0.00-0.05) | 0.00 |
+
+- Every cell within a few points of its development estimate: the development-stage decisions did not
+  overfit the development mazes.
+- C1: RL adds +0.27 to the hand's imitation and -0.07 to the gripper's; the gripper's planner stays best
+  on standard objects. RL from scratch: the gripper matches its imitation + RL, the hand fails in 4 of 5 seeds.
+- C2: wide cylinders, RL hand 0.68 vs the gripper's best system 0.39 (from scratch) and its planner 0.27;
+  the hand's worst seed (0.58) is above the gripper's best (0.45).
+- PPO vs RLPD, seed 0, isolated: hand PPO 0.47 -> 0.75 in 1.3 training hours; RLPD 0.50 through the
+  warm-up, 0.00-0.08 after the actor is released, 0.07 at 4M after 14.4 hours (74 steps/s). Gripper PPO
+  0.48 -> 0.55 at 4M (best 0.73) in 0.7 hours; gripper RLPD running.

@@ -300,8 +300,8 @@
   {
    "key": "final",
    "label": "Freeze + reserve evaluation",
-   "status": "active",
-   "detail": "frozen 2026-10-09 (configs/final_v2.json); reserve run in progress"
+   "status": "done",
+   "detail": "reserve 2026-10-09: wide hand 0.68 vs gripper best 0.39"
   },
   {
    "key": "report",
