@@ -479,3 +479,37 @@ evaluations (best), 10M steps, 5 seeds:
   entropy coefficient frozen; checked: identical evaluations before and after warm-up steps).
   train_seconds (wall-clock without evaluations) and the machine load are logged per evaluation.
   scripts/algorithms_v2.sh queues the comparison behind the development evaluations.
+
+## 2026-10-09: development evaluations complete; PPO vs RLPD under way
+
+Full task, development mazes (standard 260 cases, wide 312 = 52 layouts x 2 objects x 3 starts), delivered,
+pooled over 5 seeds [Wilson 95%] (per seed):
+
+| | Standard | Wide |
+|---|---|---|
+| Gripper planner | 0.90 [0.85, 0.93] | 0.31 [0.27, 0.37] |
+| Gripper BC | 0.73 [0.70, 0.75] (0.67-0.77) | 0.00 |
+| Gripper BC -> PPO | 0.63 [0.61, 0.66] (0.59-0.72) | 0.23 [0.21, 0.25] (0.14-0.31) |
+| Gripper PPO from scratch | 0.64 [0.61, 0.66] (0.60-0.68) | 0.42 [0.40, 0.45] (0.38-0.51) |
+| Hand scripted | 0.43 [0.38, 0.50] | 0.00 |
+| Hand BC | 0.50 [0.47, 0.52] (0.47-0.52) | 0.01 |
+| Hand BC -> PPO | 0.78 [0.76, 0.81] (0.60-0.91) | 0.69 [0.67, 0.71] (0.54-0.78) |
+| Hand PPO from scratch | 0.19 (seed 0 0.88, others 0.00-0.04) | 0.00 |
+
+- Grip after the grasp (rule: more pooled deliveries on the BC -> PPO cells): frozen for every end effector
+  and task (gripper 823 vs 789 standard, 359 vs 349 wide; hand 1020 vs 873, 1079 vs 619). The first study's
+  policy-held wide grip does not carry over to the side-grasp policies.
+- C2 on development data: the RL hand delivers 0.69 of the wide cases vs the gripper's best system 0.42
+  (from scratch) and its planner 0.31; intervals far apart. The hand's wide failures are mostly drops in
+  the maze carry (seed 0 42, seed 4 113 of 312); the planner fails at the hold (192 of 312: the can
+  slips out of the jaws).
+- C1 in the full task: RL adds +0.28 to the hand's imitation (0.50 -> 0.78) and nothing to the gripper's
+  (0.73 -> 0.63 BC -> PPO, 0.64 from scratch), whose planner (0.90) stays best. The gripper's training-time
+  gain does not transfer: grasp failures unchanged (55 -> 49-58 of 260) and more drops in the maze carry
+  (3 -> 16-32), so RL's gripper grasps hold less securely than the cloned planner grasp.
+- Seed spread in the full task is wider than at training time (hand BC -> PPO 0.60-0.91 vs 0.80-0.87);
+  seed 1 fails at the grasp (91 of 260), seed 3 at grasp and carry.
+- PPO vs RLPD, hand seed 0, isolated: PPO 0.47 -> 0.75 at 4M in 1.3 training hours; RLPD holds 0.50 through
+  the warm-up, falls to 0.00 when the actor is released (1.25M) and recovers to 0.08 by 2.5M, at ~80
+  steps/s (~14 h per run, GPU ~26% busy). Seeds 1-4 and the no-warm-up check now run four at a time
+  after the isolated seed-0 runs (per step only); per-hour numbers come from the isolated seed 0.
