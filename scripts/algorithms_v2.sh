@@ -24,8 +24,10 @@ busy() { pgrep -f "[d]ev_v2.sh|[c]ampaign_v2.sh|[t]rain_hand.py --run-id|scripts
 MAX_RUNS=${MAX_RUNS:-4}
 MIN_FREE_GB=${MIN_FREE_GB:-45}
 QUEUE=()
-for s in 0 1 2 3 4; do for e in hand gripper; do for a in ppo rlpd; do QUEUE+=("v2c3_${e}_${a}_s$s $e $a $s 1000000"); done; done; done
-for e in hand gripper; do QUEUE+=("v2c3_${e}_rlpd_nowarmup_s0 $e rlpd 0 0"); done
+seeds() { for s in "$@"; do for e in hand gripper; do for a in ppo rlpd; do QUEUE+=("v2c3_${e}_${a}_s$s $e $a $s 1000000"); done; done; done; }
+seeds 0 1 2
+for e in hand gripper; do QUEUE+=("v2c3_${e}_rlpd_nowarmup_s0 $e rlpd 0 0"); done   # after seed 2 (2026-10-10)
+seeds 3 4
 alive_runs() { pgrep -fc "[t]rain_hand.py --run-id v2c3_" ; }
 free_gb() { awk '/MemAvailable/ {print int($2 / 1048576)}' /proc/meminfo; }
 summary() { python3 -c "
