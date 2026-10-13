@@ -1,0 +1,8 @@
+{
+ "policy": "v2_hand_bcppo_std_s0",
+ "step": 9000002,
+ "object": 14,
+ "seed": 0,
+ "outcome": "carried",
+ "decisions": 317
+}

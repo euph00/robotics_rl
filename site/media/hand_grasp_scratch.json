@@ -1,0 +1,8 @@
+{
+ "policy": "v2_hand_ppo_std_s1",
+ "step": 3000008,
+ "object": 14,
+ "seed": 0,
+ "outcome": "failed",
+ "decisions": 300
+}

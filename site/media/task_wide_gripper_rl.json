@@ -1,0 +1,7 @@
+{
+ "policy": "v2_gripper_ppo_wide_s1",
+ "step": 7500020,
+ "outcome": "delivered",
+ "case": "final_reserve_013_object_102_start1",
+ "set": "reserve"
+}

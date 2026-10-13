@@ -1,0 +1,583 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where RL Pays Off</title>
+<meta name="description" content="Where does reinforcement learning pay off in mobile manipulation? A course project on the Pick–Nav–Reach task: from a SAC+HER plan to a dexterous hand.">
+<link rel="stylesheet" href="vendor/katex/katex.min.css">
+<link rel="stylesheet" href="style.css">
+<script defer src="vendor/katex/katex.min.js"></script>
+<script defer src="vendor/katex/contrib/auto-render.min.js"></script>
+<script defer src="data/results.js"></script>
+<script defer src="app.js"></script>
+</head>
+<body>
+<nav class="topbar" aria-label="Contents"><div class="inner">
+  <span class="brand">Where RL pays off</span>
+  <a href="#task">Task</a><a href="#plan">Plan</a><a href="#pybullet">Making it work</a><a href="#simulator">New simulator</a>
+  <a href="#question">The question</a><a href="#hand">The hand</a><a href="#first-study">First study</a>
+  <a href="#design">Final design</a><a href="#results">Results</a><a href="#limits">Limits</a><a href="#reproduce">Reproduce</a>
+  <button class="theme-toggle" type="button" id="theme">Theme</button>
+</div></nav>
+<main>
+
+<header>
+<h1>Where does reinforcement learning pay off in mobile manipulation?</h1>
+<p class="lede">A semester project on the course's Pick–Nav–Reach task (CS5478, Intelligent Robots). We set out to
+solve the default project with reinforcement learning (RL), found that RL added nothing to it, and asked where it would:
+by giving the Fetch robot a 16-joint dexterous hand.</p>
+</header>
+
+<section class="answer" aria-label="The answer">
+<p><strong>Where hand-engineering runs out.</strong> With the Fetch's parallel gripper, a classical grasp planner delivers
+85% of objects through unseen mazes and RL adds nothing on top of it. With a 16-joint Allegro hand no grasp planner exists:
+a scripted grasp delivers 40%, imitating it 49%, and RL on top of imitation <strong>76%</strong>. The learned hand also
+delivers cylinders too wide for the gripper's jaws. RL needs the imitation prior to get started, and on-policy PPO
+beats the demonstration-driven off-policy RLPD by a wide margin.</p>
+<div class="tiles">
+  <div class="tile"><div class="value">+27 pts</div><div class="label"><span class="key hand"></span>RL's gain over imitation for the hand; <span class="key gripper"></span>gripper: −7 pts</div></div>
+  <div class="tile"><div class="value">68% vs 39%</div><div class="label">wide cylinders delivered: <span class="key hand"></span>RL hand vs <span class="key gripper"></span>the gripper's best system</div></div>
+  <div class="tile"><div class="value">0.65 vs 0.07</div><div class="label">hand lift-and-carry after 4M steps from the same start: <span class="key ppo"></span>PPO vs <span class="key rlpd"></span>RLPD</div></div>
+</div>
+<p class="small" style="margin-top:12px">Unless marked otherwise, rates are full-task delivery on 20 maze layouts no system or
+decision ever saw (the sealed reserve bank), pooled over 5 training seeds, with 95% Wilson intervals of about ±4 points.
+Colours follow the entity everywhere: <span class="key gripper"></span>gripper, <span class="key hand"></span>hand,
+<span class="key ppo"></span>PPO, <span class="key rlpd"></span>RLPD.</p>
+</section>
+
+<!-- ============================================================ 1 -->
+<h2 id="task"><span class="num">1</span>The task</h2>
+<div class="prose">
+<p>The course's default project runs in PyBullet. A Fetch mobile manipulator starts in a start room, drives to a table, picks
+up one of five household objects (foam brick, banana, soup can, apple, mug), carries it through a maze it has never seen,
+and holds it near a goal 0.9 m above the floor. The course supplies the robot, objects, maze generator and success
+test; how to solve it is ours to choose.</p>
+</div>
+<figure class="diagram">
+<svg viewBox="0 0 760 132" role="img" aria-label="The task is four stages in one uninterrupted episode: approach, grasp and lift, carry through an unseen maze, reach the goal.">
+  <defs><marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker></defs>
+  <rect x="8" y="20" width="164" height="72" rx="8" class="d-box"/><rect x="200" y="20" width="164" height="72" rx="8" class="d-box"/>
+  <rect x="392" y="20" width="164" height="72" rx="8" class="d-box"/><rect x="584" y="20" width="168" height="72" rx="8" class="d-box"/>
+  <text x="90" y="46" text-anchor="middle" class="d-t">Approach</text><text x="90" y="65" text-anchor="middle" class="d-s">drive to the table,</text><text x="90" y="80" text-anchor="middle" class="d-s">arm to a pregrasp</text>
+  <text x="282" y="46" text-anchor="middle" class="d-t">Grasp and lift</text><text x="282" y="65" text-anchor="middle" class="d-s">close, lift ≥ 10 cm,</text><text x="282" y="80" text-anchor="middle" class="d-s">hold it steady</text>
+  <text x="474" y="46" text-anchor="middle" class="d-t">Carry</text><text x="474" y="65" text-anchor="middle" class="d-s">through an unseen maze</text><text x="474" y="80" text-anchor="middle" class="d-s">without dropping it</text>
+  <text x="668" y="46" text-anchor="middle" class="d-t">Reach</text><text x="668" y="65" text-anchor="middle" class="d-s">within 10 cm of a goal</text><text x="668" y="80" text-anchor="middle" class="d-s">0.9 m above the floor</text>
+  <line x1="172" y1="56" x2="198" y2="56" class="d-line" marker-end="url(#a1)"/><line x1="364" y1="56" x2="390" y2="56" class="d-line" marker-end="url(#a1)"/><line x1="556" y1="56" x2="582" y2="56" class="d-line" marker-end="url(#a1)"/>
+  <text x="380" y="120" text-anchor="middle" class="d-m">one uninterrupted episode from the start room · no resets, no attaching the object · deadline 15,000 physics ticks</text>
+</svg>
+<figcaption>Success means the object is still held, within 10 cm of the goal, after the final hold. A dropped object, a wall
+collision or the deadline ends the episode.</figcaption>
+</figure>
+<div class="clips one">
+  <div class="clip"><video data-src="media/task_mug_gripper_planner.mp4" poster="media/task_mug_gripper_planner.jpg" muted loop playsinline controls preload="none"></video>
+  <div class="cap"><b>The classical pipeline</b> delivering the mug in an unseen maze (MuJoCo). <span class="outcome ok">delivered</span></div></div>
+</div>
+<details class="explainer"><summary>The classical pipeline: antipodal grasps, IK and A*<span class="tag">explainer</span></summary><div class="body">
+<p>The planner never learns anything. It samples pairs of points on the object's point cloud whose surface normals face each
+other closely enough that both contacts can hold by friction (an <em>antipodal</em> grasp), solves inverse kinematics
+(IK) for a collision-free arm pose that puts the jaws there, and moves the arm along a collision-checked path. For the carry
+it runs A* over the maze's occupancy grid and drives waypoint to waypoint; for the reach it servos the base and torso.</p>
+<p class="math">\[ \text{antipodal: } \angle\big(\mathbf n_1,\,-\mathbf n_2\big) \le \arctan\mu \quad\text{and}\quad \angle\big(\mathbf n_i,\ \mathbf p_2-\mathbf p_1\big)\ \text{within the friction cone} \]</p>
+<p>Two parallel jaws need exactly two such contacts, so the search is small and complete. That is what makes the gripper easy
+to hand-engineer, and the reason this project ended up being about end effectors.</p>
+</div></details>
+
+<!-- ============================================================ 2 -->
+<h2 id="plan"><span class="num">2</span>The plan we proposed</h2>
+<div class="prose">
+<p>Our proposal: learn the skills with off-policy RL, comparing <strong>SAC</strong> and <strong>TD3</strong>, both with
+<strong>hindsight experience replay (HER)</strong>, on the original gripper and on a modified one, with three seeds each.
+That makes twelve trained systems, compared on learning efficiency and full-task success. A fixed supervisor
+would sequence the skills; the skills themselves would be learned.</p>
+</div>
+<details class="explainer"><summary>SAC and TD3: off-policy actor-critics<span class="tag">explainer</span></summary><div class="body">
+<figure class="diagram" style="margin-top:4px">
+<svg viewBox="0 0 760 210" role="img" aria-label="Off-policy actor-critic: the environment's transitions fill a replay buffer; minibatches train twin critics; the actor is updated to maximise the critics' value and acts in the environment.">
+  <defs><marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker></defs>
+  <rect x="8" y="76" width="112" height="56" rx="8" class="d-box"/><text x="64" y="100" text-anchor="middle" class="d-t">Environment</text><text x="64" y="118" text-anchor="middle" class="d-s">22 parallel workers</text>
+  <rect x="196" y="76" width="132" height="56" rx="8" class="d-box"/><text x="262" y="100" text-anchor="middle" class="d-t">Replay buffer</text><text x="262" y="118" text-anchor="middle" class="d-s">every past transition</text>
+  <rect x="408" y="24" width="156" height="56" rx="8" class="d-learned"/><text x="486" y="48" text-anchor="middle" class="d-t">Twin critics Q₁, Q₂</text><text x="486" y="66" text-anchor="middle" class="d-s">target uses min(Q₁, Q₂)</text>
+  <rect x="408" y="128" width="156" height="56" rx="8" class="d-learned"/><text x="486" y="152" text-anchor="middle" class="d-t">Actor π</text><text x="486" y="170" text-anchor="middle" class="d-s">pushed towards high Q</text>
+  <line x1="120" y1="104" x2="194" y2="104" class="d-line" marker-end="url(#a2)"/><text x="157" y="96" text-anchor="middle" class="d-m">(s, a, r, s′)</text>
+  <polyline points="328,96 368,96 368,52 406,52" class="d-line" marker-end="url(#a2)"/><text x="362" y="66" text-anchor="end" class="d-m">minibatch</text>
+  <line x1="486" y1="80" x2="486" y2="126" class="d-line" marker-end="url(#a2)"/><text x="494" y="108" class="d-m">∇Q</text>
+  <polyline points="408,170 64,170 64,134" class="d-line" marker-end="url(#a2)"/><text x="236" y="164" text-anchor="middle" class="d-m">act</text>
+  <text x="584" y="40" class="d-t">SAC</text><text x="584" y="58" class="d-s">stochastic actor;</text><text x="584" y="73" class="d-s">reward + entropy bonus α·H</text>
+  <text x="584" y="132" class="d-t">TD3</text><text x="584" y="150" class="d-s">deterministic actor + noise;</text><text x="584" y="165" class="d-s">actor updated every 2nd step;</text><text x="584" y="180" class="d-s">smoothed target action</text>
+</svg>
+</figure>
+<p>Both learn a critic \(Q(s,a)\) from stored transitions and push the actor towards actions the critic values. Both keep
+two critics and use the smaller estimate in the target, which damps the overestimation that otherwise compounds through
+bootstrapping. SAC trains a stochastic policy that also maximises entropy:</p>
+<p class="math">\[ y = r + \gamma\Big(\min_{i=1,2} Q_{\bar\theta_i}(s',a') - \alpha \log \pi(a'\mid s')\Big),\quad a'\sim\pi(\cdot\mid s') \qquad\text{(SAC)} \]</p>
+<p class="math">\[ y = r + \gamma \min_{i=1,2} Q_{\bar\theta_i}\big(s',\ \pi_{\bar\phi}(s') + \epsilon\big),\quad \epsilon\sim\operatorname{clip}(\mathcal N(0,\sigma),-c,c) \qquad\text{(TD3)} \]</p>
+<p><strong>TD3 was proposed but never run.</strong> By the time the SAC system worked, the bottleneck was clearly not the
+choice between two members of the same algorithm family: on the gripper, RL of either kind had little left to add
+(<a href="#pybullet">section 3</a>). We dropped it on 2026-10-03 and spent the effort on the hand instead.</p>
+</div></details>
+<details class="explainer"><summary>Hindsight experience replay (HER)<span class="tag">explainer</span></summary><div class="body">
+<figure class="diagram" style="margin-top:4px">
+<svg viewBox="0 0 760 196" role="img" aria-label="HER relabels a failed episode: the goal is replaced by where the object actually ended, so the last transition becomes a success.">
+  <defs><marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker></defs>
+  <text x="180" y="18" text-anchor="middle" class="d-t">As collected</text>
+  <polyline points="40,140 90,120 130,128 170,96 210,84" class="d-line"/><circle cx="40" cy="140" r="5" class="d-box"/><circle cx="210" cy="84" r="5" fill="currentColor" class="d-s"/>
+  <circle cx="320" cy="46" r="9" fill="none" class="d-line"/><circle cx="320" cy="46" r="3" fill="currentColor" class="d-s"/>
+  <text x="40" y="160" text-anchor="middle" class="d-s">start</text><text x="214" y="104" class="d-s">object ends at g′</text><text x="320" y="72" text-anchor="middle" class="d-s">goal g</text>
+  <text x="180" y="186" text-anchor="middle" class="d-m">rewards 0, 0, …, 0: nothing to learn from</text>
+  <line x1="364" y1="98" x2="404" y2="98" class="d-line" marker-end="url(#a3)"/><text x="384" y="88" text-anchor="middle" class="d-m">relabel</text>
+  <text x="580" y="18" text-anchor="middle" class="d-t">Replayed with goal := g′</text>
+  <polyline points="440,140 490,120 530,128 570,96 610,84" class="d-line"/><circle cx="440" cy="140" r="5" class="d-box"/>
+  <circle cx="610" cy="84" r="9" fill="none" class="d-line"/><circle cx="610" cy="84" r="4" fill="currentColor" class="d-s"/>
+  <text x="440" y="160" text-anchor="middle" class="d-s">start</text><text x="626" y="88" class="d-s">goal := g′</text>
+  <text x="580" y="186" text-anchor="middle" class="d-m">rewards 0, 0, …, 1: a success to learn from</text>
+</svg>
+</figure>
+<p>For goal-conditioned tasks HER stores each episode a second time with the goal replaced by what was actually
+achieved, \(r(s,a,g') \) recomputed. It turns failures into examples of reaching <em>somewhere</em>. Its limit
+mattered for us: it only relabels outcomes that happened. If the object never moves, every relabelled goal is still
+"the object stays on the table", and nothing is learned about grasping.</p>
+</div></details>
+
+<!-- ============================================================ 3 -->
+<h2 id="pybullet"><span class="num">3</span>Making the full task work (PyBullet)</h2>
+<div class="prose"><p>We built the task end to end with a fixed supervisor and three learned skills. Planned motions bring the
+arm to a pregrasp and into a carry posture; the grasp, the maze carry and the final reach are neural policies.</p></div>
+<figure class="diagram">
+<svg viewBox="0 0 760 150" role="img" aria-label="Phase-one control boundary: approach and carry posture are planned; grasp, carry and reach are learned with SAC and HER, grasp and carry from demonstrations.">
+  <defs><marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker></defs>
+  <text x="380" y="14" text-anchor="middle" class="d-m">fixed supervisor: runs each stage, checks each handover</text>
+  <rect x="8" y="28" width="132" height="62" rx="8" class="d-box"/><text x="74" y="54" text-anchor="middle" class="d-t">Approach</text><text x="74" y="72" text-anchor="middle" class="d-s">planned</text>
+  <rect x="162" y="28" width="132" height="62" rx="8" class="d-learned"/><text x="228" y="54" text-anchor="middle" class="d-t">Grasp</text><text x="228" y="72" text-anchor="middle" class="d-s">SAC+HER + demos</text>
+  <rect x="316" y="28" width="132" height="62" rx="8" class="d-box"/><text x="382" y="54" text-anchor="middle" class="d-t">Carry posture</text><text x="382" y="72" text-anchor="middle" class="d-s">planned</text>
+  <rect x="470" y="28" width="132" height="62" rx="8" class="d-learned"/><text x="536" y="54" text-anchor="middle" class="d-t">Carry</text><text x="536" y="72" text-anchor="middle" class="d-s">SAC+HER + demos</text>
+  <rect x="624" y="28" width="128" height="62" rx="8" class="d-learned"/><text x="688" y="54" text-anchor="middle" class="d-t">Reach</text><text x="688" y="72" text-anchor="middle" class="d-s">SAC+HER only</text>
+  <line x1="140" y1="59" x2="160" y2="59" class="d-line" marker-end="url(#a4)"/><line x1="294" y1="59" x2="314" y2="59" class="d-line" marker-end="url(#a4)"/>
+  <line x1="448" y1="59" x2="468" y2="59" class="d-line" marker-end="url(#a4)"/><line x1="602" y1="59" x2="622" y2="59" class="d-line" marker-end="url(#a4)"/>
+  <rect x="236" y="116" width="14" height="14" rx="3" class="d-learned"/><text x="256" y="127" class="d-s">learned (RL)</text>
+  <rect x="356" y="116" width="14" height="14" rx="3" class="d-box"/><text x="376" y="127" class="d-s">planned (classical)</text>
+</svg>
+<figcaption>Phase-one control boundary. The same layout reappears in <a href="#design">section 8</a>, where only the grasp
+is learned.</figcaption>
+</figure>
+<ol class="steps">
+<li><span class="n">1</span><div><strong>Pure SAC+HER learned neither the grasp nor the carry.</strong> Random exploration almost never
+lifts an object, and HER cannot relabel a lift that never happened. <em>Fix:</em> demonstrations from the planner:
+behaviour cloning to initialise the actor, demonstrations in the replay buffer, and later a cloning term in SAC's actor loss to keep it near them.
+With that, one maze and one object passed three fresh full-task runs (milestone 1). <span class="verdict">worked</span></div></li>
+<li><span class="n">2</span><div><strong>Generalising to unseen mazes</strong> took a map encoder, carry demonstrations on 192
+training mazes and recovery demonstrations. Three candidate systems scored 78, 69 and 80 of 100 on fresh, unseen mazes.
+Of the confirmation test's 31 failures, 24 were the object slipping out of the gripper during the carry.
+<span class="verdict">worked, with a drop problem</span></div></li>
+<li><span class="n">3</span><div><strong>SAC fine-tuning added nothing.</strong> Swapping each skill between its imitation-only and
+SAC-fine-tuned version changed full-task success by at most 7 of 260 development cases, which is within noise.
+Only the reach, the one skill trained without demonstrations, owed its competence to RL.
+<span class="verdict">RL not the bottleneck</span></div></li>
+<li><span class="n">4</span><div><strong>The planner alone</strong> delivered 76 of 100 course cases against the learned
+system's 83. The learned carry won only by dropping the object less often: it moves continuously, while A* stops and
+starts at every waypoint. <span class="verdict">close to the planner</span></div></li>
+</ol>
+<div class="grid2">
+  <div class="chart" id="chart-ablation"></div>
+  <div class="clip"><video data-src="media/pybullet_milestone1.mp4" poster="media/pybullet_milestone1.jpg" muted loop playsinline controls preload="none"></video>
+  <div class="cap"><b>Milestone 1 in PyBullet:</b> learned grasp, carry and reach, one maze and one object.
+  <span class="outcome ok">delivered</span></div></div>
+</div>
+<details class="explainer"><summary>Behaviour cloning and demonstration-regularised SAC<span class="tag">explainer</span></summary><div class="body">
+<p>Behaviour cloning (BC) is supervised learning on a demonstrator's state–action pairs:</p>
+<p class="math">\[ \min_\theta\ \mathbb E_{(s,a^\ast)\sim\mathcal D}\,\big\lVert \mu_\theta(s) - a^\ast \big\rVert^2 \]</p>
+<p>A cloned policy drifts into states the demonstrator never visited and has no data for: compounding error. Continuing
+with SAC can repair that, but SAC's critic is poor where data is scarce, and the actor follows its errors. We added the
+cloning loss to SAC's actor objective, \( \mathcal L_\pi^{\text{SAC}} + \beta\,\mathbb E_{\mathcal D}\lVert\pi(s)-a^\ast\rVert^2 \)
+with \(\beta = 100\). It kept the policies stable, but also kept them close to the demonstrator, which is one reason RL
+added little.</p>
+</div></details>
+<div class="callout lesson"><div class="h">Where this left us</div>
+RL was not doing the work. Imitating a planner was, and the planner was nearly as good on its own. To give RL a real job,
+the robot needed something that is hard to hand-engineer.</div>
+
+<!-- ============================================================ 4 -->
+<h2 id="simulator"><span class="num">4</span>A dexterous hand, and a new simulator</h2>
+<div class="prose">
+<p>A 16-joint hand is hard to hand-engineer: no grasp planner exists for it, and a scripted grasp must coordinate many contacts at once.
+Before committing, we tested whether one would even hold objects through the carry in the course's simulator. We
+mounted an Allegro hand on a six-axis gantry that replays recorded carry motions, used scripted power grasps, and compared it
+with the Fetch gripper on the same routes.</p>
+</div>
+<div class="grid2">
+  <div class="chart" id="chart-spike"></div>
+  <div class="chart" id="chart-port"></div>
+</div>
+<p class="prose">In PyBullet the hand held <strong>worse</strong> than the gripper: 20 of 50 objects through recorded carries
+against 40, and 14 of 25 against 18 on unseen routes after a 5,400-trial search for robust grasp settings. Outcomes
+flipped with millimetre changes in placement. We stopped and worked out why. Two factors turned out to matter, and
+we changed both.</p>
+<h3>Factor 1: the contact simulation</h3>
+<div class="prose">
+<p>We rebuilt the identical task in MuJoCo: same robot model, objects, mazes, seeds, motor law, friction coefficients
+and grip force, with kinematics and motor response checked against PyBullet. The gripper planner's carry drops mostly disappeared: <strong>96 of 100</strong>
+course cases instead of 76 (dev mazes: 250 of 260 instead of 190). Since everything else was matched, PyBullet's drops came
+from how it resolves contacts under the motion jolts of the carry. A simulator whose grasps flip on millimetres would
+also make any comparison of end effectors meaningless.</p>
+</div>
+<details class="explainer"><summary>Why contact handling decides grasps<span class="tag">explainer</span></summary><div class="body">
+<p>A held object stays put only while every contact force lies inside its friction cone,
+\( \lVert \mathbf f_t \rVert \le \mu f_n \). Simulators enforce this approximately. A pyramidal cone (a few
+linear facets) lets contacts slide slightly along the facet directions, and soft contacts that allow millimetres of
+penetration let the object creep a little every tick. A two-jaw grasp has two such contacts; a hand grasp has five to
+fifteen, each with its own small error, so the errors stack. In MuJoCo we used elliptic cones with no-slip
+correction, which removed most of the creep. The settings mattered as much as the engine: on the same 20 planner runs,
+MuJoCo's defaults succeeded 4 times (PyBullet 15); elliptic cones and no-slip correction together, 19 times.</p>
+</div></details>
+<h3>Factor 2: the physics settings</h3>
+<div class="prose">
+<p>In MuJoCo with the course's own settings the hand <em>still</em> failed. RL taught it to lift only the foam brick and
+the banana, and a frozen grasp survived 1 of 10 maze carries. The limit was now physical: the course's fingers are slippery
+(\(\mu = 0.25\)) and its motors are unlimited, so every base command jolts the carried object at 25–30 m/s². The course
+gripper survives that by squeezing with about 450 N; a hand of realistic strength squeezes with 15–40 N.</p>
+</div>
+<figure class="diagram">
+<svg viewBox="0 0 760 230" role="img" aria-label="Friction budget: friction capacity is mu times total squeeze. Under course physics the hand's capacity, 4 to 10 newtons, is below the soup can's 11 newton load; with rubber grip it is 15 to 40 newtons.">
+  <defs><marker id="a5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker></defs>
+  <text x="150" y="20" text-anchor="middle" class="d-t">A held object slips when</text>
+  <rect x="80" y="86" width="26" height="56" rx="3" class="d-box"/><rect x="194" y="86" width="26" height="56" rx="3" class="d-box"/>
+  <rect x="108" y="62" width="84" height="104" rx="6" class="d-soft"/><text x="150" y="118" text-anchor="middle" class="d-s">object</text>
+  <line x1="40" y1="114" x2="76" y2="114" class="d-line" marker-end="url(#a5)"/><line x1="260" y1="114" x2="224" y2="114" class="d-line" marker-end="url(#a5)"/>
+  <text x="40" y="106" class="d-s">F<tspan dy="3" font-size="9">n</tspan></text><text x="246" y="106" class="d-s">F<tspan dy="3" font-size="9">n</tspan></text>
+  <line x1="112" y1="140" x2="112" y2="96" class="d-line" marker-end="url(#a5)"/><line x1="188" y1="140" x2="188" y2="96" class="d-line" marker-end="url(#a5)"/>
+  <text x="96" y="78" text-anchor="end" class="d-m">μF<tspan dy="3" font-size="8">n</tspan></text><text x="204" y="78" class="d-m">μF<tspan dy="3" font-size="8">n</tspan></text>
+  <line x1="150" y1="168" x2="150" y2="204" class="d-line" marker-end="url(#a5)"/><text x="158" y="198" class="d-s">m(g + a)</text>
+  <text x="150" y="44" text-anchor="middle" class="d-s">μ · ΣF<tspan dy="3" font-size="9">n</tspan><tspan dy="-3"> &lt; m(g + a)</tspan></text>
+  <text x="420" y="20" class="d-t">Friction capacity vs the soup can's load (N)</text>
+  <line x1="420" y1="40" x2="420" y2="190" class="c-axis"/>
+  <line x1="493" y1="84" x2="493" y2="190" class="d-line d-warn" stroke-width="2"/><text x="493" y="198" text-anchor="middle" class="d-s">load ≈ 11 N</text>
+  <text x="420" y="58" class="d-s">gripper, course physics: 0.25 × 450 N</text>
+  <rect x="420" y="64" width="300" height="16" rx="3" class="d-gripper" opacity=".85"/><text x="726" y="77" class="d-s">112 →</text>
+  <text x="420" y="104" class="d-s">hand, course physics: 0.25 × 15–40 N</text>
+  <rect x="420" y="110" width="25" height="16" rx="3" class="d-hand"/><rect x="445" y="110" width="42" height="16" class="d-hand" opacity=".4"/><text x="492" y="123" class="d-s"></text>
+  <text x="420" y="150" class="d-s">hand, realistic grip: 1.0 × 15–40 N</text>
+  <rect x="420" y="156" width="100" height="16" rx="3" class="d-hand"/><rect x="520" y="156" width="167" height="16" class="d-hand" opacity=".4"/>
+  <text x="420" y="198" class="c-tick">0</text><text x="587" y="198" class="c-tick" text-anchor="middle">25 N</text><text x="720" y="198" class="c-tick" text-anchor="middle">45 N</text>
+  <text x="420" y="222" class="d-m">load: 0.319 kg can × (9.8 + 25 m/s²); pale = squeeze range</text>
+</svg>
+<figcaption>Why the hand could not work under the course's settings, whatever its controller. With rubber-like friction
+(\(\mu\approx 1\)) the hand's realistic squeeze covers the load; actuator rate limits also shrink the jolts.</figcaption>
+</figure>
+<div class="prose">
+<p>We therefore switched <strong>both end effectors</strong> to the same realistic physics: rubber grip (\(\mu = 1.0\)) and
+joint velocity, acceleration and effort limits from the hardware (Fetch jaws ≤ 245 N, Allegro joints ≤ 0.7 N·m). The
+gripper planner was unaffected (99 of 100 hold-out cases); the hand became learnable (<a href="#hand">section 6</a>).</p>
+</div>
+<div class="callout"><div class="h">What we did not test</div>
+We never ran the hand in PyBullet with realistic physics. The evidence that PyBullet's contact handling was at fault comes
+from the gripper, whose drops vanished when only the simulator changed. "PyBullet cannot simulate a multi-finger grasp" is an
+inference, not a measurement.</div>
+
+<!-- ============================================================ 5 -->
+<h2 id="question"><span class="num">5</span>Same result in MuJoCo, and the real question</h2>
+<div class="prose">
+<p>We retrained the whole phase-one system in MuJoCo. On 100 fresh hold-out cases: planner <strong>98</strong>, imitation of the
+planner <strong>92</strong>, imitation + SAC <strong>92</strong> (realistic physics: 99, 77, 77). Again RL added nothing,
+and in MuJoCo the planner was simply best. That reframed the project:</p>
+<p style="font-size:1.1rem"><strong>Where does RL add value in mobile manipulation, and how does that depend on the end
+effector's complexity?</strong></p>
+<p>Our hypothesis: RL pays off where a good hand-written controller is hard to build. For two parallel jaws an antipodal
+planner is close to the ceiling; for sixteen joints there is no planner and scripts are weak. To test it fairly, both end
+effectors must face the same task, the same learning recipe and the same evaluation. We built towards that in two attempts.</p>
+</div>
+
+<!-- ============================================================ 6 -->
+<h2 id="hand"><span class="num">6</span>Teaching the hand to grasp</h2>
+<div class="prose"><p>We started on an idealised rig: the Allegro hand on a six-axis wrist over the course table, under realistic
+physics, with the task "grasp, lift 15 cm, then hold through a carry motion".</p></div>
+<figure class="diagram">
+<svg viewBox="0 0 760 158" role="img" aria-label="The recipe that worked: scripted teacher, demonstrations, behaviour cloning, a value warm-up with the actor frozen, then PPO. PPO from scratch never lifted an object.">
+  <defs><marker id="a6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker></defs>
+  <path d="M 24 64 C 24 30, 640 30, 678 64" class="d-thin" marker-end="url(#a6)"/><text x="350" y="20" text-anchor="middle" class="d-m">PPO from scratch: no 15 cm lift in 24M steps</text>
+  <rect x="8" y="66" width="130" height="62" rx="8" class="d-box"/><text x="73" y="92" text-anchor="middle" class="d-t">Scripted teacher</text><text x="73" y="110" text-anchor="middle" class="d-s">72% (top-down grasp)</text>
+  <rect x="160" y="66" width="130" height="62" rx="8" class="d-box"/><text x="225" y="92" text-anchor="middle" class="d-t">Demonstrations</text><text x="225" y="110" text-anchor="middle" class="d-s">noisy runs, clean labels</text>
+  <rect x="312" y="66" width="130" height="62" rx="8" class="d-learned"/><text x="377" y="92" text-anchor="middle" class="d-t">Behaviour cloning</text><text x="377" y="110" text-anchor="middle" class="d-s">14%</text>
+  <rect x="464" y="66" width="130" height="62" rx="8" class="d-soft"/><text x="529" y="92" text-anchor="middle" class="d-t">Value warm-up</text><text x="529" y="110" text-anchor="middle" class="d-s">actor frozen, 1M steps</text>
+  <rect x="616" y="66" width="136" height="62" rx="8" class="d-learned"/><text x="684" y="92" text-anchor="middle" class="d-t">PPO</text><text x="684" y="110" text-anchor="middle" class="d-s">97% at 6M steps</text>
+  <line x1="138" y1="97" x2="158" y2="97" class="d-line" marker-end="url(#a6)"/><line x1="290" y1="97" x2="310" y2="97" class="d-line" marker-end="url(#a6)"/>
+  <line x1="442" y1="97" x2="462" y2="97" class="d-line" marker-end="url(#a6)"/><line x1="594" y1="97" x2="614" y2="97" class="d-line" marker-end="url(#a6)"/>
+  <text x="380" y="150" text-anchor="middle" class="d-m">rig, realistic physics, soup can / apple / mug; percentages = lift-and-carry success</text>
+</svg>
+<figcaption>The learning recipe that every later hand result uses. Each piece answers a failure: PPO alone never finds a lift,
+cloning alone compounds its errors, and RL on an untrained critic wipes out the cloned behaviour.</figcaption>
+</figure>
+<div class="grid2">
+  <div class="chart" id="chart-rig"></div>
+  <div class="prose small" style="align-self:center">
+  <p><strong>What we tried on the rig</strong></p>
+  <p>PPO from scratch: the hand learned to press and scoop, never a 15 cm lift.<br>
+  Curriculum from easy objects and near-grasp starts: 0% after 10M steps.<br>
+  Cloning the teacher: 14%; the clone drifts off the teacher's states.<br>
+  Cloning, then PPO with a frozen-actor value warm-up: <strong>97%</strong>, above the teacher it learned from.<br>
+  Cloning interleaved during PPO (DAPG-style), to stay near the teacher: held at 14–33%.</p></div>
+</div>
+<div class="callout"><div class="h">Mistake: the hand learned to hover</div>
+Our first imitation-then-PPO runs rose and then collapsed after about 4M steps, with peak lifts settling at 14.2–15.0 cm, just
+under the 15 cm success height. Holding a lift below the threshold paid up to ~7.5 reward per step, entering the carry phase
+only ~1.5, so PPO learned to hover. The fix: the carry phase adds its bonus on top of the grasp reward, so carrying always
+pays more. RL optimises the reward you wrote, not the one you meant.</div>
+<details class="explainer"><summary>PPO, and why the value warm-up matters<span class="tag">explainer</span></summary><div class="body">
+<p>Proximal policy optimisation (PPO) is on-policy: it collects fresh rollouts with the current policy, estimates how much
+better each action was than expected (the advantage \(\hat A_t\), from a learned value function), takes a few gradient steps,
+and discards the data. The clipped objective stops one batch from moving the policy too far:</p>
+<p class="math">\[ L(\theta) = \mathbb E_t\Big[\min\big(\rho_t \hat A_t,\ \operatorname{clip}(\rho_t,1-\epsilon,1+\epsilon)\hat A_t\big)\Big],\qquad \rho_t=\frac{\pi_\theta(a_t\mid s_t)}{\pi_{\text{old}}(a_t\mid s_t)} \]</p>
+<figure class="diagram" style="max-width:640px">
+<svg viewBox="0 0 640 170" role="img" aria-label="PPO's clipped objective: for a positive advantage the gain stops growing beyond ratio 1 plus epsilon; for a negative advantage the penalty stops shrinking below 1 minus epsilon.">
+  <text x="160" y="16" text-anchor="middle" class="d-t">advantage > 0</text><text x="480" y="16" text-anchor="middle" class="d-t">advantage &lt; 0</text>
+  <line x1="20" y1="130" x2="300" y2="130" class="c-axis"/><line x1="20" y1="30" x2="20" y2="140" class="c-axis"/>
+  <line x1="188" y1="30" x2="188" y2="140" class="c-grid"/><text x="188" y="152" text-anchor="middle" class="c-tick">1+ε</text><text x="160" y="152" text-anchor="middle" class="c-tick">1</text>
+  <polyline points="20,130 188,54 300,54" fill="none" stroke="var(--ppo)" stroke-width="2"/><text x="300" y="148" text-anchor="end" class="c-tick">ratio ρ</text>
+  <text x="196" y="48" class="d-m">no further gain</text>
+  <line x1="340" y1="40" x2="620" y2="40" class="c-axis"/><line x1="340" y1="30" x2="340" y2="140" class="c-axis"/>
+  <line x1="452" y1="30" x2="452" y2="140" class="c-grid"/><text x="452" y="152" text-anchor="middle" class="c-tick">1−ε</text><text x="480" y="152" text-anchor="middle" class="c-tick">1</text>
+  <polyline points="340,85 452,85 620,136" fill="none" stroke="var(--ppo)" stroke-width="2"/><text x="350" y="78" class="d-m">no further gain</text>
+</svg>
+</figure>
+<p><strong>Warm-up:</strong> after cloning, the actor is good but the value function is random, so the first advantages are noise
+and the first updates destroy the cloned behaviour. Training the value function for 1M steps with the actor frozen
+gives PPO meaningful advantages from its first update.</p>
+</div></details>
+<h3>Onto the Fetch</h3>
+<div class="prose"><p>A policy trained on the idealised rig transferred poorly to the real arm (3 of 24 lifts), so the hand
+was mounted on the Fetch's wrist and trained there, inside the full robot's kinematics and joint limits. In the full task the
+hand reuses everything planned: a planned approach brings it to the same pregrasp it was trained from, the learned policy
+grasps, and a hand-specific carry posture (object at goal height, arm compact and clear of the body), A* and the reach do the rest.</p></div>
+<div class="clips one">
+  <div class="clip"><video data-src="media/task_mug_hand_rl.mp4" poster="media/task_mug_hand_rl.jpg" muted loop playsinline controls preload="none"></video>
+  <div class="cap"><b>RL hand, full task</b>: the same mug case as the planner clip above. <span class="outcome ok">delivered</span></div></div>
+</div>
+
+<!-- ============================================================ 7 -->
+<h2 id="first-study"><span class="num">7</span>The first study, and why we redid it</h2>
+<div class="prose"><p>Our first study (2026-10-03/04) filled the matrix of 2 end effectors × 4 grasp controllers on hold-out mazes, three seeds each.</p></div>
+<div class="chart" id="chart-first"></div>
+<div class="callout"><div class="h">Mistake: the comparison was not fair, and did not test the claim</div>
+Reviewing these results, we found five problems, each serious enough to undermine a conclusion:
+<table class="t" style="margin-top:8px">
+<tr><th>Problem</th><th>What the final study does instead</th></tr>
+<tr><td>Imitation can never beat its demonstrator. The gripper's demonstrator is the planner, so "RL helps the gripper less" was partly true by construction.</td>
+<td>Say so, and measure what can be measured: RL's gain, RL from scratch for both, and where the gain comes from (per object).</td></tr>
+<tr><td>Algorithm confound: the gripper was fine-tuned with SAC, the hand with PPO, in different trainers.</td>
+<td>One trainer and one recipe for both: the gripper behind the hand's environment interface, BC → PPO, same budget.</td></tr>
+<tr><td>No value-add: on wide cans the hand (0.25–0.35) did not beat the gripper planner (0.30).</td>
+<td>A wide task defined by a physical rule, and each effector's best hand-written prior for it.</td></tr>
+<tr><td>Unequal RLPD comparison: 8 workers against PPO's 22, a different demonstration set, no cloned start, and the GPU shared with other runs.</td>
+<td>Same start, workers and budget; seed 0 of each alone on the machine for timing.</td></tr>
+<tr><td>The hold-out bank's results had been seen and acted on (this redesign is a response to them), so it was no longer a clean test.</td>
+<td>All decisions on development mazes; freeze; one run on a sealed reserve bank.</td></tr>
+</table></div>
+
+<!-- ============================================================ 8 -->
+<h2 id="design"><span class="num">8</span>The final study</h2>
+<figure class="diagram">
+<svg viewBox="0 0 760 262" role="img" aria-label="Final control boundary: only the grasp is learned; both end effectors' grasp policies share one interface, trainer and recipe.">
+  <defs><marker id="a7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker></defs>
+  <rect x="8" y="10" width="132" height="62" rx="8" class="d-box"/><text x="74" y="36" text-anchor="middle" class="d-t">Approach</text><text x="74" y="54" text-anchor="middle" class="d-s">planned</text>
+  <rect x="162" y="10" width="132" height="62" rx="8" class="d-learned"/><text x="228" y="36" text-anchor="middle" class="d-t">Grasp</text><text x="228" y="54" text-anchor="middle" class="d-s">learned, ≤ 300 steps</text>
+  <rect x="316" y="10" width="132" height="62" rx="8" class="d-box"/><text x="382" y="36" text-anchor="middle" class="d-t">Carry posture</text><text x="382" y="54" text-anchor="middle" class="d-s">planned, per effector</text>
+  <rect x="470" y="10" width="132" height="62" rx="8" class="d-box"/><text x="536" y="36" text-anchor="middle" class="d-t">Carry</text><text x="536" y="54" text-anchor="middle" class="d-s">A* through the maze</text>
+  <rect x="624" y="10" width="128" height="62" rx="8" class="d-box"/><text x="688" y="36" text-anchor="middle" class="d-t">Reach</text><text x="688" y="54" text-anchor="middle" class="d-s">base, torso, arm</text>
+  <line x1="140" y1="41" x2="160" y2="41" class="d-line" marker-end="url(#a7)"/><line x1="294" y1="41" x2="314" y2="41" class="d-line" marker-end="url(#a7)"/>
+  <line x1="448" y1="41" x2="468" y2="41" class="d-line" marker-end="url(#a7)"/><line x1="602" y1="41" x2="622" y2="41" class="d-line" marker-end="url(#a7)"/>
+  <polyline points="228,72 228,104 150,104 150,132" class="d-line" marker-end="url(#a7)"/><polyline points="228,104 470,104 470,132" class="d-line" marker-end="url(#a7)"/>
+  <text x="300" y="98" class="d-m">one trainer, reward, network and budget</text>
+  <rect x="20" y="134" width="260" height="96" rx="8" class="d-box" stroke="var(--gripper)" stroke-width="2"/>
+  <text x="150" y="158" text-anchor="middle" class="d-t">Parallel gripper</text>
+  <text x="150" y="180" text-anchor="middle" class="d-s">action: wrist pose change (6) + 2 jaws</text>
+  <text x="150" y="198" text-anchor="middle" class="d-s">observation: 143 values</text>
+  <text x="150" y="216" text-anchor="middle" class="d-m">demos: the planner's antipodal grasp</text>
+  <rect x="340" y="134" width="260" height="96" rx="8" class="d-box" stroke="var(--hand)" stroke-width="2"/>
+  <text x="470" y="158" text-anchor="middle" class="d-t">Allegro hand</text>
+  <text x="470" y="180" text-anchor="middle" class="d-s">action: wrist pose change (6) + 16 joints</text>
+  <text x="470" y="198" text-anchor="middle" class="d-s">observation: 207 values</text>
+  <text x="470" y="216" text-anchor="middle" class="d-m">demos: the scripted power grasp</text>
+  <text x="620" y="160" class="d-s">fingers move 5% of</text><text x="620" y="176" class="d-s">their range per step</text><text x="620" y="192" class="d-s">for both, so jaws and</text><text x="620" y="208" class="d-s">fingers close at the</text><text x="620" y="224" class="d-s">same pace</text>
+  <text x="380" y="254" text-anchor="middle" class="d-m">a grasp counts when the object is lifted and carried through a synthetic carry motion while held</text>
+</svg>
+<figcaption>Final control boundary: only the grasp is learned, so the comparison isolates what each end effector's grasp
+controller contributes. Compare the phase-one boundary in <a href="#pybullet">section 3</a>.</figcaption>
+</figure>
+<table class="t">
+<tr><th>Element</th><th>Setting</th></tr>
+<tr><td>Matrix</td><td>2 end effectors × 4 grasp controllers: hand-written (gripper planner / hand script), imitation (BC),
+imitation + RL (BC → PPO), RL from scratch (PPO); 5 seeds per learned cell</td></tr>
+<tr><td>Standard task</td><td>The course's five objects</td></tr>
+<tr><td>Wide task</td><td>Upright cylinders wider than the gripper's 9.8 cm opening that its planner picks ≤ 50% of the time
+(development survey): master chef can (10.2 cm, 1.05 kg) and soup can ×1.6 (10.6 cm, 1.31 kg). Excluded with reason: bowl,
+plate and marker, which our planner fails on for lack of jaw clearance, not for physical reasons</td></tr>
+<tr><td>Recipe</td><td>300 attempted demonstrations per object from each effector's hand-written grasp (successful ones kept) → 40k cloning updates →
+1M-step value warm-up → PPO, 22 workers, 10M steps</td></tr>
+<tr><td>Wide prior</td><td>Each effector's best hand-written prior. Gripper: none works on wide cans, so it clones its standard
+demonstrations. Hand: its side power grasp, which only works on the idealised rig, cloned and then trained on the Fetch</td></tr>
+<tr><td>Tuning</td><td>Equal budget per effector: a 2<sup>4−1</sup> fractional factorial (8 runs × 4M steps); the same levels won for both</td></tr>
+<tr><td>Decisions</td><td>Checkpoint = best training-time evaluation within the budget; grip after the grasp (frozen vs held
+by the policy) chosen per effector and task by a fixed rule on development mazes: frozen everywhere</td></tr>
+</table>
+<div class="grid2">
+  <div class="chart" id="chart-tuning"></div>
+  <div class="prose small" style="align-self:center"><p><strong>Why we tuned.</strong> The untuned recipe left the gripper flat
+  at its cloned level (~50% lift-and-carry) while its own teacher lifted ~88%: a curve 40 points under the demonstrator
+  signals a pipeline problem, not a finding. An equal tuning budget for both effectors fixed it, and the same levels won for both:
+  a lower learning rate (1e-4), more demonstrations (300 per object), and no interleaved cloning, which hurt both.</p></div>
+</div>
+<figure class="diagram">
+<svg viewBox="0 0 760 178" role="img" aria-label="Evaluation hygiene: every decision is made on development mazes; the frozen systems are then run once on a sealed reserve bank; nothing flows back.">
+  <defs><marker id="a8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker></defs>
+  <rect x="8" y="20" width="230" height="88" rx="8" class="d-box"/><text x="123" y="44" text-anchor="middle" class="d-t">Development</text>
+  <text x="123" y="64" text-anchor="middle" class="d-s">52 maze layouts + training-time evals</text><text x="123" y="82" text-anchor="middle" class="d-s">recipe, checkpoints, grip, object set</text>
+  <rect x="282" y="20" width="196" height="88" rx="8" class="d-box"/><text x="380" y="44" text-anchor="middle" class="d-t">Freeze</text>
+  <text x="380" y="64" text-anchor="middle" class="d-s">manifest: 64 systems,</text><text x="380" y="82" text-anchor="middle" class="d-s">checkpoint hashes, protocol</text>
+  <rect x="522" y="20" width="230" height="88" rx="8" class="d-learned"/><text x="637" y="44" text-anchor="middle" class="d-t">Sealed reserve</text>
+  <text x="637" y="64" text-anchor="middle" class="d-s">20 unseen layouts: 100 standard</text><text x="637" y="82" text-anchor="middle" class="d-s">+ 120 wide cases per system</text>
+  <line x1="238" y1="64" x2="280" y2="64" class="d-line" marker-end="url(#a8)"/><text x="259" y="56" text-anchor="middle" class="d-m">commit</text>
+  <line x1="478" y1="64" x2="520" y2="64" class="d-line" marker-end="url(#a8)"/><text x="499" y="56" text-anchor="middle" class="d-m">run once</text>
+  <path d="M 637 108 C 637 160, 123 160, 123 112" class="d-thin"/><text x="380" y="152" text-anchor="middle" class="d-m">no results flow back</text>
+  <line x1="372" y1="128" x2="388" y2="144" class="d-line d-warn" stroke-width="2"/><line x1="388" y1="128" x2="372" y2="144" class="d-line d-warn" stroke-width="2"/>
+</svg>
+<figcaption>The reserve mazes come from the same generator but were never used for any decision. Wide cases repeat each
+layout with three seeded object starts.</figcaption>
+</figure>
+<details class="explainer"><summary>Confidence intervals for success rates<span class="tag">explainer</span></summary><div class="body">
+<p>Each case either succeeds or fails, so a rate over \(n\) cases is a binomial proportion. The Wilson score interval stays
+inside [0, 1] and behaves well near 0 and 1, where the textbook \(\hat p \pm 1.96\sqrt{\hat p(1-\hat p)/n}\) does not:</p>
+<p class="math">\[ \frac{\hat p + \frac{z^2}{2n} \pm z\sqrt{\frac{\hat p(1-\hat p)}{n} + \frac{z^2}{4n^2}}}{1+\frac{z^2}{n}},\qquad z = 1.96 \]</p>
+<p>We call a difference only when the intervals separate. Pooling 5 seeds × 100 cases gives intervals of about ±4 points.
+Pooling treats seeds as extra cases, so we also show every seed.</p>
+</div></details>
+
+<!-- ============================================================ 9 -->
+<h2 id="results"><span class="num">9</span>Results</h2>
+<h3>RL's value grows with the end effector's complexity</h3>
+<div class="chart" id="chart-ladder"></div>
+<div class="prose"><p>For the gripper, every learned controller sits below the planner, and RL makes the cloned planner slightly
+<em>worse</em> in the full task. For the hand, RL on top of imitation adds 27 points and overtakes the hand-written grasp
+by 36. RL from scratch tells the other half of the story: PPO finds a gripper grasp on its own (0.61), but for the hand
+only 1 of 5 seeds ever finds one. The hand needs the prior to explore and RL to improve on it.</p></div>
+<div class="grid2">
+  <div class="chart" id="chart-objects"></div>
+  <div class="prose small" style="align-self:center"><p><strong>Where the hand's gain comes from.</strong> The script and its
+  clone handle the soup can and mug but rarely the foam brick, banana or apple. RL fixes exactly those three (+41 to +65
+  points); on the two the script already handled it gains a little on the mug and gives some back on the can. RL is repairing
+  the demonstrator's failures, not polishing its successes.</p></div>
+</div>
+<div class="clips" id="clips-hand">
+  <div class="clip"><video data-src="media/hand_grasp_teacher.mp4" poster="media/hand_grasp_teacher.jpg" muted loop playsinline controls preload="none"></video><div class="cap"><b>Scripted grasp</b> <span class="outcome fail">fails</span></div></div>
+  <div class="clip"><video data-src="media/hand_grasp_imitation.mp4" poster="media/hand_grasp_imitation.jpg" muted loop playsinline controls preload="none"></video><div class="cap"><b>Imitation</b> <span class="outcome fail">fails</span></div></div>
+  <div class="clip"><video data-src="media/hand_grasp_imitation_ppo.mp4" poster="media/hand_grasp_imitation_ppo.jpg" muted loop playsinline controls preload="none"></video><div class="cap"><b>Imitation + PPO</b> <span class="outcome ok">lifts and carries</span></div></div>
+  <div class="clip"><video data-src="media/hand_grasp_scratch.mp4" poster="media/hand_grasp_scratch.jpg" muted loop playsinline controls preload="none"></video><div class="cap"><b>PPO from scratch</b> <span class="outcome fail">fails</span></div></div>
+</div>
+<p class="small prose">The foam brick from the same start, on the Fetch, by each hand controller (frozen checkpoints). On 20
+starts: script 0, imitation 1, imitation + PPO 19, from scratch 0.</p>
+<div class="grid2">
+  <div class="chart" id="chart-campaign"></div>
+  <div class="chart" id="chart-proxy"></div>
+</div>
+<div class="callout lesson"><div class="h">Lesson: training scores can mislead</div>
+During training the gripper's PPO gained about 11 points of lift-and-carry over its clone. In the full task it lost 7: its
+grasps failed slightly less often (21% of cases vs 28%), but the object slipped out in the maze carry far more often (12% vs 1%). Only the full task,
+on mazes nothing was tuned on, says what a system can do.</div>
+
+<h3>The learned hand does what the gripper cannot</h3>
+<div class="grid2">
+  <div class="chart" id="chart-wide"></div>
+  <div class="chart" id="chart-stages"></div>
+</div>
+<div class="clips">
+  <div class="clip"><video data-src="media/task_wide_gripper_planner.mp4" poster="media/task_wide_gripper_planner.jpg" muted loop playsinline controls preload="none"></video><div class="cap"><b>Gripper planner</b>: rim grasp, the can slips out. <span class="outcome fail">fails at the hold</span></div></div>
+  <div class="clip"><video data-src="media/task_wide_gripper_rl.mp4" poster="media/task_wide_gripper_rl.jpg" muted loop playsinline controls preload="none"></video><div class="cap"><b>Gripper, PPO from scratch</b>: a tilted rim pinch. <span class="outcome ok">delivered</span></div></div>
+  <div class="clip"><video data-src="media/task_wide_hand_rl.mp4" poster="media/task_wide_hand_rl.jpg" muted loop playsinline controls preload="none"></video><div class="cap"><b>Hand, imitation + PPO</b>: a side power grasp. <span class="outcome ok">delivered</span></div></div>
+</div>
+<div class="prose"><p>The soup can ×1.6 is 10.6 cm across, wider than the jaws open. The planner can only grasp its rim, and in two
+thirds of cases the can slips out before the carry. RL finds the gripper a better rim pinch (0.39), but the hand wraps the
+can and delivers it in 68% of cases; even its worst seed (0.58) beats the gripper's best (0.45). The hand's remaining
+failures are mostly drops during the maze carry. The clips are one reserve case where all five hand seeds deliver and three
+of the five gripper seeds do; median-performing seeds are shown.</p></div>
+
+<h3>PPO vs RLPD</h3>
+<div class="prose"><p>RLPD is the natural alternative for learning from demonstrations: an off-policy method that keeps the demonstrations
+in every training batch instead of only using them to initialise. We gave both algorithms the same start (the same cloned
+policy, demonstrations and 1M-step value warm-up), workers, reward and 4M-step budget, on both end effectors.</p></div>
+<figure class="diagram">
+<svg viewBox="0 0 760 214" role="img" aria-label="PPO collects fresh rollouts, updates on them and discards them; RLPD stores every transition and trains on batches that are half online data and half demonstrations.">
+  <defs><marker id="a9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker></defs>
+  <text x="8" y="20" class="d-t">PPO (on-policy)</text>
+  <rect x="8" y="30" width="120" height="50" rx="8" class="d-box"/><text x="68" y="52" text-anchor="middle" class="d-t">22 workers</text><text x="68" y="69" text-anchor="middle" class="d-s">current policy</text>
+  <rect x="176" y="30" width="150" height="50" rx="8" class="d-box"/><text x="251" y="52" text-anchor="middle" class="d-t">Rollouts</text><text x="251" y="69" text-anchor="middle" class="d-s">256 steps × 22</text>
+  <rect x="374" y="30" width="200" height="50" rx="8" class="d-learned" stroke="var(--ppo)"/><text x="474" y="52" text-anchor="middle" class="d-t">Clipped update</text><text x="474" y="69" text-anchor="middle" class="d-s">advantages, 5 epochs</text>
+  <line x1="128" y1="55" x2="174" y2="55" class="d-line" marker-end="url(#a9)"/><line x1="326" y1="55" x2="372" y2="55" class="d-line" marker-end="url(#a9)"/>
+  <line x1="574" y1="55" x2="620" y2="55" class="d-line" marker-end="url(#a9)"/><text x="626" y="52" class="d-s">data discarded,</text><text x="626" y="67" class="d-s">new policy acts</text>
+  <text x="8" y="116" class="d-t">RLPD (off-policy, with demonstrations)</text>
+  <rect x="8" y="126" width="120" height="50" rx="8" class="d-box"/><text x="68" y="148" text-anchor="middle" class="d-t">22 workers</text><text x="68" y="165" text-anchor="middle" class="d-s">current policy</text>
+  <rect x="176" y="124" width="150" height="34" rx="8" class="d-box"/><text x="251" y="146" text-anchor="middle" class="d-s">online replay buffer</text>
+  <rect x="176" y="166" width="150" height="34" rx="8" class="d-soft"/><text x="251" y="188" text-anchor="middle" class="d-s">demonstrations</text>
+  <rect x="374" y="140" width="130" height="44" rx="8" class="d-box"/><text x="439" y="160" text-anchor="middle" class="d-t">Batch</text><text x="439" y="175" text-anchor="middle" class="d-s">½ online, ½ demos</text>
+  <rect x="552" y="132" width="200" height="60" rx="8" class="d-learned" stroke="var(--rlpd)"/><text x="652" y="154" text-anchor="middle" class="d-t">SAC update</text><text x="652" y="170" text-anchor="middle" class="d-s">LayerNorm twin critics,</text><text x="652" y="184" text-anchor="middle" class="d-s">1 update per transition</text>
+  <line x1="128" y1="141" x2="174" y2="141" class="d-line" marker-end="url(#a9)"/><text x="151" y="134" text-anchor="middle" class="d-m">store</text>
+  <polyline points="326,141 350,141 350,156 372,156" class="d-line" marker-end="url(#a9)"/><polyline points="326,183 350,183 350,168 372,168" class="d-line" marker-end="url(#a9)"/>
+  <line x1="504" y1="162" x2="550" y2="162" class="d-line" marker-end="url(#a9)"/>
+</svg>
+<figcaption>What each algorithm does with data. RLPD (Ball et al., 2023) reuses every transition and always trains on the
+demonstrations; we ran one update per transition and two critics (the paper uses up to 20 and ten) because each update costs wall-clock time.</figcaption>
+</figure>
+<div class="grid2">
+  <div class="chart" id="chart-c3-steps"></div>
+  <div class="chart" id="chart-c3-hours"></div>
+</div>
+<div class="prose"><p>Every RLPD seed on both end effectors holds the cloned level while its actor is frozen, then collapses
+within 250k steps of being released; no seed gets back above 0.25 (gripper) or 0.18 (hand). Without the warm-up (RLPD's own default) the collapse
+simply starts at step 0. The likely mechanism is the classic one for off-policy RL from demonstrations: the critic is wrong for
+actions outside the data, the actor follows those errors, and in a 22- or 8-dimensional action space with contact-rich
+dynamics there is a lot of "outside". PPO's clipped, on-policy updates never step far from the data they were measured on.
+Per training hour the gap is larger still: PPO finishes 4M steps in 0.7–1.3 h, RLPD needs about 14 h.</p></div>
+<div class="clips">
+  <div class="clip"><video data-src="media/rlpd_end_of_warmup.mp4" poster="media/rlpd_end_of_warmup.jpg" muted loop playsinline controls preload="none"></video><div class="cap"><b>RLPD at 1M steps</b> (end of warm-up: the cloned actor) <span class="outcome ok">lifts and carries</span></div></div>
+  <div class="clip"><video data-src="media/rlpd_after_release.mp4" poster="media/rlpd_after_release.jpg" muted loop playsinline controls preload="none"></video><div class="cap"><b>RLPD at 2M steps</b> (1M steps of actor updates) <span class="outcome fail">fails</span></div></div>
+  <div class="clip"><video data-src="media/ppo_same_steps.mp4" poster="media/ppo_same_steps.jpg" muted loop playsinline controls preload="none"></video><div class="cap"><b>PPO at 2M steps</b>, same seed and start <span class="outcome ok">lifts</span></div></div>
+</div>
+<p class="small prose">The soup can from one start. Across 20 starts the RLPD actor carries 16 at the end of its warm-up and 0 after 1M steps of updates.</p>
+
+<h3>Did the development decisions overfit?</h3>
+<div class="grid2">
+  <div class="chart" id="chart-devres"></div>
+  <div class="prose small" style="align-self:center"><p>Every cell's reserve result lands within 5 points of its
+  development estimate, so choosing checkpoints, grips and recipes on development mazes did not tailor the systems to those mazes.</p></div>
+</div>
+
+<!-- ============================================================ 10 -->
+<h2 id="limits"><span class="num">10</span>Limits</h2>
+<ul class="prose">
+<li><strong>Only the grasp is learned.</strong> Deliberately: it isolates what each grasp controller contributes. Carry postures
+are planned and differ per end effector.</li>
+<li><strong>The hand's wide-object prior</strong> comes from a side grasp that only works on the idealised rig; we adopted it
+on development evidence, under a rule fixed beforehand.</li>
+<li><strong>Seed spread is wide</strong> for the hand (standard objects 0.59–0.92), and two of the five hand PPO seeds in the
+algorithm comparison drifted late. Every seed is shown.</li>
+<li><strong>RLPD ran in a reduced form</strong> (one update per transition, two critics). A larger update ratio might change its
+per-step curve, at a much higher wall-clock cost.</li>
+<li><strong>Simulation only</strong>, two wide objects, and no test of the hand in PyBullet under realistic physics.</li>
+</ul>
+
+<!-- ============================================================ 11 -->
+<h2 id="reproduce"><span class="num">11</span>Reproduce</h2>
+<table class="t">
+<tr><th>What</th><th>Where</th></tr>
+<tr><td>Environment (MuJoCo port of the course task, realistic physics)</td><td><code>pnr/env.py</code></td></tr>
+<tr><td>Gripper planner (antipodal grasp, IK, A*, reach)</td><td><code>pnr/reference.py</code>, <code>pnr/planning.py</code></td></tr>
+<tr><td>Hand and gripper on the Fetch; grasp environment; scripted teachers</td><td><code>pnr/fetch_hand.py</code>, <code>pnr/fetch_gripper.py</code>, <code>pnr/hand_env.py</code>, <code>pnr/hand_teacher.py</code></td></tr>
+<tr><td>Full task with a learned grasp</td><td><code>pnr/hand_system.py</code></td></tr>
+<tr><td>Training (BC, PPO, RLPD)</td><td><code>scripts/train_hand.py</code>, <code>pnr/rlpd.py</code></td></tr>
+<tr><td>Study drivers: tuning, campaign, development, PPO vs RLPD, freeze and reserve run</td><td><code>scripts/tune_v2.sh</code>, <code>campaign_v2.sh</code>, <code>dev_v2.sh</code>, <code>algorithms_v2.sh</code>, <code>final_v2.py</code></td></tr>
+<tr><td>Frozen systems (checkpoints, hashes, protocol)</td><td><code>configs/final_v2.json</code></td></tr>
+<tr><td>This page's data and clips</td><td><code>scripts/site_data.py</code>, <code>scripts/record_clips.py</code></td></tr>
+<tr><td>Phase-one code (PyBullet and SAC+HER skills)</td><td>git tag <code>pre-cleanup-2026-10-13</code></td></tr>
+<tr><td>Lab notebook</td><td><code>docs/experiment_log.md</code>, <code>docs/archive/pybullet/</code></td></tr>
+</table>
+</main>
+<div id="tip" role="status"></div>
+</body>
+</html>

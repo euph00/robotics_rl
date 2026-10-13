@@ -1,0 +1,8 @@
+{
+ "policy": "v2c3_hand_rlpd_s0",
+ "step": 1000010,
+ "object": 2,
+ "seed": 0,
+ "outcome": "carried",
+ "decisions": 321
+}

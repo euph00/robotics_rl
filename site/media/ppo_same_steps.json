@@ -1,0 +1,8 @@
+{
+ "policy": "v2c3_hand_ppo_s0",
+ "step": 2000020,
+ "object": 2,
+ "seed": 0,
+ "outcome": "lifted",
+ "decisions": 328
+}

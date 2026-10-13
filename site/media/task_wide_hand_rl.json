@@ -1,0 +1,7 @@
+{
+ "policy": "v2_hand_bcppo_wide_s2",
+ "step": 9500018,
+ "outcome": "delivered",
+ "case": "final_reserve_013_object_102_start1",
+ "set": "reserve"
+}

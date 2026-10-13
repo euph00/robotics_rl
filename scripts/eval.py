@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Full-task evaluation of a grasp/carry/reach system on a fixed set of mazes.
+"""Full-task evaluation of the gripper's classical planner on a fixed set of mazes, and the case sets shared
+with the learned-grasp evaluation (scripts/eval_hand.py).
 
-Every case starts from the original task start, with no resets between skills,
-teacher corrections or object attachment. Complete-task success and success
+The planner (pnr/reference.py): antipodal grasp from the object's point cloud, IK and collision-checked arm
+motion, A* carry through the maze, base/torso reach. Every case starts from the original task start, with
+no resets between stages or object attachment. Complete-task success and success
 within the 15,000-physics-tick deadline (including initial settling and the
 final hold) are reported separately.
 
@@ -20,7 +22,6 @@ from __future__ import annotations
 import argparse
 from collections import Counter, defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from functools import partial
 import json
 import multiprocessing as mp
 import os
@@ -36,13 +37,8 @@ import numpy as np
 
 from pnr.confirmation_scenes import load_evaluation_bank
 from pnr.env import PickNavReachEnv
-from pnr.general_carry import GeneralCarryEnv
-from pnr.general_manipulation import GeneralGraspEnv
-from pnr.carry_rules import CarryRules
-from pnr.policies import load_policy_checkpoint
 from pnr.reference import ReferenceController
 from pnr.scenes import case_specs
-from pnr.system import LearnedSystem
 from pnr.telemetry import RunLogger, atomic_json
 
 OBJECTS = [14, 5, 2, 7, 10]
@@ -58,15 +54,10 @@ SETS = {'validation': [(MAIN_BANK, 'validation', 'validation')],
         'reserve': [(MAIN_BANK, 'final_reserve', 'reserve')]}
 SETS['dev'] = SETS['validation'] + SETS['test1'] + SETS['test2']
 SETS['course'] = []  # built from course seeds in select_cases
-DEFAULT_EXECUTION = {'grasp_horizon': 600, 'carry_horizon': 1200, 'reach_horizon': 150,
-                     'delta_scale': .075, 'planned_speed_scale': 1., 'deadline_physics_ticks': 15000,
-                     'grasp_lift_m': .24, 'reach_tolerance_m': .08, 'grasp_proposal_mode': 'clearance-v2',
-                     'holding_speed_scale': 0.,  # 0: same as planned_speed_scale
-                     'controller': 'learned',  # or 'reference': classical planner end to end
-                     'carry_max_turn_deg': 0., 'carry_slip_drift_mm': 0., 'carry_slip_scale': .5,
-                     'grasp_mode': 'learned', 'carry_mode': 'learned', 'reach_mode': 'learned',  # 'planned': classical stage
-                     'physics': 'realistic'}  # or 'course' (unlimited course motors, mu 0.25 grip)
-_POLICIES = None
+DEFAULT_EXECUTION = {'planned_speed_scale': 1., 'holding_speed_scale': 0.,   # 0: same as planned_speed_scale
+                     'deadline_physics_ticks': 15000, 'grasp_proposal_mode': 'clearance-v2',
+                     'controller': 'reference',   # the only controller since the 2026-10-13 cleanup
+                     'physics': 'realistic'}      # or 'course' (unlimited course motors, mu 0.25 grip)
 
 
 COURSE_SEEDS = range(1000, 1020)
@@ -103,13 +94,6 @@ def select_cases(name, objects=OBJECTS, layout_limit=None, random_object_pose=Fa
     return cases
 
 
-def initialize_worker(checkpoints):
-    global _POLICIES
-    import torch
-    torch.set_num_threads(1)
-    _POLICIES = {name: load_policy_checkpoint(path, device='cpu') for name, path in checkpoints.items()}
-
-
 def run_reference(native, execution):
     """Classical pipeline: antipodal grasp, planned descent/lift, A* carry, base/torso reach."""
     stage_ticks, first = {}, {'reach': None}
@@ -122,7 +106,7 @@ def run_reference(native, execution):
     controller = ReferenceController(native, on_step=on_step, seed=native.seed,
         speed_scale=execution['planned_speed_scale'], grasp_proposal_mode=execution['grasp_proposal_mode'],
         holding_speed_scale=execution['holding_speed_scale'] or None)
-    result = {'success': False, 'policy_decisions': {}}
+    result = {'success': False}
     try:
         grasp = controller.prepare_grasp()
         result['stages_grasp'] = grasp.as_dict()
@@ -152,51 +136,6 @@ def run_reference(native, execution):
     return result
 
 
-def run_learned(native, execution):
-    """Three learned skills with planned approach and carry posture (LearnedSystem)."""
-    policies = dict(_POLICIES)
-    if execution['carry_max_turn_deg'] > 0 or execution['carry_slip_drift_mm'] > 0:
-        policies['carry'] = CarryRules(_POLICIES['carry'], execution['carry_max_turn_deg'],
-                                       execution['carry_slip_drift_mm'], execution['carry_slip_scale'])
-    system = LearnedSystem(native, policies,
-        grasp_horizon=execution['grasp_horizon'], carry_horizon=execution['carry_horizon'],
-        reach_horizon=execution['reach_horizon'], reach_tolerance_m=execution['reach_tolerance_m'],
-        grasp_proposal_mode=execution['grasp_proposal_mode'],
-        controller_speed_scale=execution['planned_speed_scale'],
-        skill_factories={'grasp': partial(GeneralGraspEnv.bind, goal_lift_m=execution['grasp_lift_m']),
-                         'carry': partial(GeneralCarryEnv.bind, delta_scale=execution['delta_scale'])})
-    if execution['holding_speed_scale'] > 0:
-        system.controller.holding_speed_scale = execution['holding_speed_scale']
-    learned_skill = system._skill
-
-    def skill(name):
-        # Optionally replace one learned stage with the classical controller's version.
-        if execution.get(f'{name}_mode', 'learned') != 'planned':
-            return learned_skill(name)
-        start = system._begin(name, 'planned')
-        if name == 'grasp':
-            ok = system.controller.execute_grasp(system.controller.grasp)
-        elif name == 'carry':
-            try:
-                system.controller.carry()
-            except RuntimeError as exc:
-                raise RuntimeError(f'carry: {exc}') from exc
-            ok = bool(native.contacts()['bilateral_contact']) and native.drop_events == 0
-        elif name == 'reach':
-            ok = bool(system.controller.reach()['complete_task_success'])
-        else:
-            raise ValueError(f'No planned version of {name}')
-        system._finish(name, start, ok)
-        if not ok:
-            raise RuntimeError(f'{name}: lost_grasp')
-    system._skill = skill
-    try:
-        return system.run()
-    except Exception as exc:
-        return {'success': False, 'failed_stage': system.stage, 'error': f'{type(exc).__name__}: {exc}',
-                'stages': system.stage_results, 'policy_decisions': system.policy_decisions}
-
-
 def evaluate_case(case, execution):
     started = time.monotonic()
     native = None
@@ -204,10 +143,7 @@ def evaluate_case(case, execution):
         native = PickNavReachEnv(**case['env_kwargs'], physics=execution['physics'])
         if case['maze_hash'] is not None and native.scene_manifest()['maze_hash'] != case['maze_hash']:
             raise ValueError('Native layout differs from the case maze hash')
-        if execution['controller'] == 'reference':
-            result = run_reference(native, execution)
-        else:
-            result = run_learned(native, execution)
+        result = run_reference(native, execution)
     except Exception as exc:  # environment construction or unexpected errors count as failures
         result = {'success': False, 'failed_stage': 'environment_setup' if native is None else 'unexpected',
                   'error': f'{type(exc).__name__}: {exc}'}
@@ -225,7 +161,6 @@ def evaluate_case(case, execution):
             'failed_stage': result.get('failed_stage'), 'error': result.get('error'),
             'physics_ticks': ticks, 'total_ticks_including_settling': total,
             'stage_ticks': {k: v.get('physics_ticks') for k, v in result.get('stages', {}).items()},
-            'policy_decisions': result.get('policy_decisions', {}),
             'drop_events': result.get('metrics', {}).get('drop_events'),
             'grasp': result.get('stages', {}).get('planned_approach', {}).get('grasp'),
             'pick_pose_error': result.get('pick_pose_error'),
@@ -274,9 +209,6 @@ def format_summary(summary):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--candidate', type=Path, help='Candidate JSON with checkpoints and execution settings')
-    for skill in ('grasp', 'carry', 'reach'):
-        parser.add_argument('--' + skill, type=Path, help='Model ZIP overriding the candidate')
     parser.add_argument('--set', choices=sorted(SETS), default='dev')
     parser.add_argument('--layout-limit', type=int, help='First N layouts of each bank (quick checks)')
     parser.add_argument('--objects', type=int, nargs='+', default=OBJECTS)
@@ -293,23 +225,12 @@ def main():
     if args.set == 'reserve' and not args.allow_reserve:
         parser.error('The final reserve is sealed; pass --allow-reserve only for a final claim')
 
-    execution, checkpoints = dict(DEFAULT_EXECUTION), {}
-    if args.candidate:
-        candidate = json.loads(args.candidate.read_text())
-        execution.update(candidate.get('execution', {}))
-        checkpoints = {k: v['frozen_path'] for k, v in candidate['checkpoints'].items()}
+    execution = dict(DEFAULT_EXECUTION)
     for key in DEFAULT_EXECUTION:
         if getattr(args, key) is not None:
             execution[key] = getattr(args, key)
-    for skill in ('grasp', 'carry', 'reach'):
-        if getattr(args, skill):
-            checkpoints[skill] = str(getattr(args, skill).resolve())
-    if execution['controller'] not in ('learned', 'reference'):
-        parser.error('--controller must be learned or reference')
-    if execution['controller'] == 'reference':
-        checkpoints = {}
-    elif set(checkpoints) != {'grasp', 'carry', 'reach'}:
-        parser.error('Provide --candidate or all three checkpoints')
+    if execution['controller'] != 'reference':
+        parser.error('--controller: only the planner (reference) remains')
 
     cases = select_cases(args.set, args.objects, args.layout_limit, args.random_object_pose, args.starts)
     output = args.output
@@ -317,14 +238,12 @@ def main():
         parser.error('Output directory already exists')
     logger = RunLogger(output.name, root=output.parent, kind='evaluation', planned_cases=len(cases),
                        name=args.label or f'Full task · {args.set}', summary=f'{len(cases)} original-start cases')
-    config = {'set': args.set, 'cases': len(cases), 'checkpoints': checkpoints, 'execution': execution,
+    config = {'set': args.set, 'cases': len(cases), 'execution': execution,
               'label': args.label, 'command': sys.argv}
     atomic_json(output / 'config.json', config)
-    initialize_worker(checkpoints)  # fail fast on unloadable checkpoints
     rows, started = [], time.monotonic()
     try:
-        with ProcessPoolExecutor(max_workers=min(args.workers, len(cases)), mp_context=mp.get_context('spawn'),
-                                 initializer=initialize_worker, initargs=(checkpoints,)) as pool, \
+        with ProcessPoolExecutor(max_workers=min(args.workers, len(cases)), mp_context=mp.get_context('spawn')) as pool, \
                 (output / 'results.jsonl').open('w') as stream:
             futures = [pool.submit(evaluate_case, case, execution) for case in cases]
             for future in as_completed(futures):

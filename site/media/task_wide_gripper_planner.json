@@ -1,0 +1,7 @@
+{
+ "policy": "planner",
+ "step": null,
+ "outcome": "failed at hold",
+ "case": "final_reserve_013_object_102_start1",
+ "set": "reserve"
+}
