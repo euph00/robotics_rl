@@ -1,7 +1,8 @@
 # Experiment log (MuJoCo)
 
-Condensed record of MuJoCo-era experiments; current results are in
-[project_state.md](project_state.md). Everything before 2026-10-01 ran on the course's
+Condensed record of MuJoCo-era experiments; the story and final results are on the project site
+([`site/index.html`](../site/index.html)). Scripts and modules named in entries before 2026-10-13 that no longer exist
+are at git tag `pre-cleanup-2026-10-13`. Everything before 2026-10-01 ran on the course's
 PyBullet simulator and is archived with its own log in [archive/pybullet/](archive/pybullet/)
 (including the dexterous-hand spike and the upstream audit).
 
@@ -559,3 +560,13 @@ Standard objects, 4M steps, training-time lift and carry (60 episodes per evalua
 - Per hour: PPO finishes 4M steps in 0.7-1.3 training hours; RLPD at the same wall-clock is still in its
   warm-up (0.8 h, 0.50 hand) and ends at 0.07 / 0.02 after ~14 h. Seeds 1-4 ran four at a time (per step only).
 - Hand PPO seeds 3-4 end at 0.53-0.54 after best evaluations of 0.75 / 0.68 (late drift; full curves in the report).
+
+## 2026-10-13: project site and repository cleanup
+
+- Project site (`site/`, static, opens from disk): the narrative from the proposal to the final study, 10 diagrams,
+  7 explainers, 15 charts from the run records (`scripts/site_data.py`) and 13 clips; the 12 new ones recorded from the
+  frozen checkpoints (`scripts/record_clips.py`; illustrative episodes chosen to match each policy's measured rate, e.g.
+  foam brick from one start: script 0/20, imitation 1/20, imitation + PPO 19/20, PPO from scratch 0/20 over 20 starts).
+- Cleanup, all of it at git tag `pre-cleanup-2026-10-13`: the phase-one SAC+HER skill stack (29 modules), the first study's
+  and phase-one scripts, their tests, configs and manifests, the live dashboard and the phase-two audit reports. `eval.py`
+  keeps only the planner. Remaining tests pass (38).

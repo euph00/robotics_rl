@@ -2,7 +2,7 @@
 """Full-task evaluation of the Allegro on the Fetch (pnr/hand_system.py) on eval.py's case sets.
 
 Same cases, physics, planned motion speeds and success/deadline accounting as
-`scripts/evaluate_mujoco.sh`'s planner runs (the parallel gripper, planned speed 3, holding 2), so the two
+`scripts/eval.py`'s planner runs (the parallel gripper, planned speed 3, holding 2), so the two
 compare case by case: complete = native complete_task_success; timed = complete within
 15,000 physics ticks including the scene's settling ticks.
 
@@ -92,7 +92,7 @@ def main():
     parser.add_argument('--layout-limit', type=int)
     parser.add_argument('--random-object-pose', action='store_true', help='Seeded object start offset and yaw per case')
     parser.add_argument('--starts', type=int, default=1, help='Seeded object starts per case (protocol: 3 for the wide set)')
-    parser.add_argument('--speed-scale', type=float, default=3., help='Planned motion speed (as evaluate_mujoco.sh)')
+    parser.add_argument('--speed-scale', type=float, default=3., help='Planned motion speed (as the planner runs)')
     parser.add_argument('--holding-speed-scale', type=float, default=2., help='Planned motion speed while holding')
     parser.add_argument('--horizon', type=int, default=300, help='Hand-policy decisions for the grasp')
     parser.add_argument('--fingers-after-grasp', choices=('policy', 'frozen'), default='frozen',

@@ -1,98 +1,80 @@
-# Where does RL add value in mobile manipulation? (Pick–Nav–Reach, MuJoCo)
+# Where does reinforcement learning pay off in mobile manipulation?
 
-A Fetch robot must drive to a table, grasp a supplied YCB object, carry it through an unseen
-maze, and hold it within 10 cm of an elevated goal sphere. The task comes from the course project
-[NUS-LinS-Lab/Pick-Nav-Reach-Default-Project](https://github.com/NUS-LinS-Lab/Pick-Nav-Reach-Default-Project),
-pinned at `54ab2d1` ([upstream.lock.json](upstream.lock.json)), and runs here in **MuJoCo**
-(`pnr/env.py`) with the course's robot, objects, mazes and success test, under realistic actuator
-limits for both end effectors.
+A course project (CS5478, Intelligent Robots) on the [Pick–Nav–Reach default project](https://github.com/NUS-LinS-Lab/Pick-Nav-Reach-Default-Project)
+(pinned at `54ab2d1`, [upstream.lock.json](upstream.lock.json)): a Fetch robot drives to a table, grasps an object, carries
+it through an unseen maze and holds it within 10 cm of an elevated goal. The task runs here in MuJoCo with the course's robot,
+objects, mazes and success test, under realistic actuator limits.
 
-**Study ([spec](docs/project_spec.md), [`configs/study.json`](configs/study.json)):** how much RL adds
-to the grasp, and how that depends on the end effector's complexity. Two end effectors (the Fetch
-parallel gripper, a 16-joint Allegro hand on the Fetch's wrist) × four grasp controllers (scripted,
-imitation, imitation + RL, RL from scratch), on standard objects and on wide, heavy cylinders,
-evaluated on held-out mazes with random object starts.
+**Start with the project site: [`site/index.html`](site/index.html)** (open it from disk, or
+`python3 -m http.server 8767 --directory site`). It tells the whole story, from the SAC+HER proposal through the move to
+MuJoCo and the dexterous hand to the final study, with diagrams, explainers, charts and clips.
 
-**Status (2026-10-03):** on the gripper RL adds nothing measurable over imitation of the planner;
-on the hand, imitation then PPO lifts and carries 97% on the test rig (imitation alone 14%, the
-scripted teacher 72%, RL from scratch 0%) and delivers 49 of 60 development cases in the full task
-on the Fetch (scripted hand 40, gripper planner 57; the hand is faster: 28 vs 1 within the
-deadline). Protocol runs are in progress: [docs/project_state.md](docs/project_state.md).
+**Answer.** RL pays off where hand-engineering runs out. Full-task delivery on 20 sealed maze layouts, 5 seeds pooled:
 
-## Systems
+| Grasp controller | Parallel gripper | Allegro hand (16 joints) | Wide cylinders: gripper's best / hand |
+|---|---|---|---|
+| Hand-written (planner / script) | **0.85** | 0.40 | 0.27 / 0.00 |
+| Imitation | 0.69 | 0.49 | 0.00 / 0.01 |
+| Imitation + RL (PPO) | 0.62 | **0.76** | 0.21 / **0.68** |
+| RL from scratch (PPO) | 0.61 | 0.18 | **0.39** / 0.00 |
 
-A fixed supervisor runs each stage from the original start, with no resets and no object attachment:
-
-| Stage | Gripper systems | Hand systems |
-|---|---|---|
-| Approach table, pregrasp | Planned (antipodal grasp from the point cloud, IK, collision-checked motion) | Planned (hand pregrasp, IK) |
-| Grasp and lift | Planner, or learned (BC, optionally SAC fine-tuned) | Scripted, or learned (BC, optionally PPO fine-tuned) |
-| Carry posture | Planned | Planned |
-| Carry through the maze | A* (planner), or learned base controller on a maze map | A* |
-| Reach goal while holding | Base and torso servo, or SAC+HER | Base, torso and arm servo |
+PPO vs RLPD from the same imitation start, 4M steps, 5 seeds: lift-and-carry 0.65 vs 0.07 (hand), 0.62 vs 0.03 (gripper).
 
 ## Layout
 
 | Path | Contents |
 |---|---|
-| `pnr/env.py` | MuJoCo environment: course scene, motor law, contacts, snapshots, rendering |
-| `pnr/` | Skills, planners, feature extractors, SAC variants, learned system |
-| `pnr/hand.py`, `pnr/hand_env.py`, `pnr/hand_teacher.py` | Allegro test rig, hand grasp task, scripted grasps |
-| `pnr/fetch_hand.py`, `pnr/hand_system.py` | The hand on the Fetch; full task with the hand |
-| `scripts/eval.py`, `scripts/eval_hand.py` | Full-task evaluation, gripper and hand systems (start here) |
-| `scripts/train_hand.py`, `scripts/hand_teacher_demos.py` | Hand training (BC, PPO) and scripted demonstrations |
-| `scripts/train_mujoco.sh`, `scripts/evaluate_mujoco.sh` | The full training recipe and every evaluation behind the docs |
-| `scripts/phase2_{grasp,carry,learned_carry}_demos.py` | Demonstration collection |
-| `scripts/phase2_train_{grasp,carry}.py`, `pnr/train.py` | Skill training (grasp, carry, reach) |
-| `scripts/record.py`, `scripts/dashboard_maze.py` | Episode videos/trajectories; dashboard maze figure |
-| `configs/` | Maze banks and candidate manifests (`imitation_sac.json`, `imitation_only.json`) |
-| `runs/` | Checkpoints, datasets, evaluation results (ignored by Git; PyBullet era in `runs/archive_pybullet/`) |
-| `dashboard/` | Read-only live dashboard: plan, results matrix, training, clips |
+| `pnr/env.py` | MuJoCo environment: course scene, motor law, realistic physics, contacts, rendering |
+| `pnr/reference.py`, `pnr/planning.py`, `pnr/clearance_grasps.py` | The gripper's classical pipeline: antipodal grasp, IK, collision-checked motion, A* carry, reach |
+| `pnr/hand.py`, `pnr/fetch_hand.py`, `pnr/fetch_gripper.py` | The Allegro hand (rig and on the Fetch) and the gripper behind the same interface |
+| `pnr/hand_env.py`, `pnr/hand_teacher.py` | Grasp-learning environment for both end effectors; scripted teachers |
+| `pnr/hand_system.py` | The full task with a learned (or scripted) grasp and planned approach, carry and reach |
+| `pnr/rlpd.py` | RLPD components (demonstration-mixed replay, layer-normalised critics) |
+| `pnr/scenes.py`, `pnr/confirmation_scenes.py` | Maze banks and evaluation cases |
+| `scripts/train_hand.py`, `scripts/hand_teacher_demos.py` | Training (BC, PPO, RLPD) and demonstration collection |
+| `scripts/eval.py`, `scripts/eval_hand.py` | Full-task evaluation: the gripper planner; systems with a learned or scripted grasp |
+| `scripts/tune_v2.sh`, `campaign_v2.sh`, `dev_v2.sh`, `algorithms_v2.sh`, `final_v2.py` | The study, in order (below) |
+| `scripts/site_data.py`, `scripts/record_clips.py` | The site's data bundle and clips |
+| `configs/` | Maze banks and the frozen systems (`final_v2.json`) |
+| `site/` | The project site |
+| `docs/` | [Spec](docs/project_spec.md), [experiment log](docs/experiment_log.md), [PyBullet era](docs/archive/pybullet/) |
+| `runs/` | Checkpoints, datasets and results (not in Git) |
+
+The PyBullet-era code, the SAC+HER skill stack of the first phase, the first study's scripts and the old live dashboard are at
+git tag `pre-cleanup-2026-10-13`.
 
 ## Setup
 
 ```bash
 source .venv/bin/activate   # Python 3.10, MuJoCo 3.14, SB3 2.7, PyTorch 2.7.1+cu118
-python -m pytest -q         # ~2 minutes
+python -m pytest -q         # under a minute
 ```
 
-Fresh machine: clone the upstream repository into `upstream/Pick-Nav-Reach-Default-Project`,
-check out `54ab2d1faa54d1aa7e2738f114531a76c6514cd3`, then
-`PNR_PYTHON_BIN=python3.10 bash scripts/setup.sh`. Rendering uses headless EGL on the
-GPU (`MUJOCO_GL=egl`, device 0 by default).
+Fresh machine: clone the upstream repository into `upstream/Pick-Nav-Reach-Default-Project`, check out
+`54ab2d1faa54d1aa7e2738f114531a76c6514cd3`, then `PNR_PYTHON_BIN=python3.10 bash scripts/setup.sh`. Rendering uses headless EGL
+on the GPU (`MUJOCO_GL=egl`).
 
-## Common commands
+## Reproduce the study
 
-Evaluate a system on the 260-case development set (52 unseen mazes × 5 objects, ~4 minutes on 44 CPU workers):
+Each driver is idempotent (finished runs are skipped) and keeps at most four 22-worker runs alive; launch long ones with
+`setsid nohup … &`. Times are for 48 CPU cores and one A100.
 
 ```bash
-python scripts/eval.py --candidate configs/imitation_sac.json --set dev --output runs/eval_example
-python scripts/eval.py --controller reference --set course --planned-speed-scale 3 --holding-speed-scale 2 --output runs/planner_example
-python scripts/rubric.py runs/eval_example   # course rubric estimate per trial
+bash scripts/tune_v2.sh            # equal-budget tuning sweep, 16 runs (~9 h); report: python scripts/tune_v2_report.py
+bash scripts/campaign_v2.sh        # demonstrations, then 40 training runs: 2 effectors x {imitation+PPO, PPO} x 2 tasks x 5 seeds (~2 days)
+bash scripts/dev_v2.sh             # full-task development evaluations, grip choice (~3 h)
+python scripts/final_v2.py freeze  # manifest of the 64 frozen systems (commit it before the next step)
+python scripts/final_v2.py run     # one run on the sealed reserve bank (~1 h); report: python scripts/final_v2.py report
+bash scripts/algorithms_v2.sh      # PPO vs RLPD, 24 runs (~5 days, RLPD-bound)
+python scripts/site_data.py        # rebuild site/data/results.js from runs/
 ```
 
-Sets: `validation` (60), `test1` (100), `test2` (100), `dev` (all 260), `holdout` (100 on
-20 fresh mazes), `course` (course seeds 1000–1019). The `reserve` set (100 cases on 20
-unseen mazes) stays sealed for a final claim. Overrides: `--grasp/--carry/--reach model.zip`,
-`--grasp-mode planned`, `--carry-mode planned`, `--delta-scale`, `--carry-horizon`.
-
-Record episodes (video, preview, per-call trajectory) exactly as the evaluator runs them:
+Single evaluations:
 
 ```bash
-python scripts/record.py --candidate configs/imitation_sac.json --set dev \
-  --cases validation_008_object_05 --output runs/recording_example
+python scripts/eval.py --set dev --random-object-pose --planned-speed-scale 3 --holding-speed-scale 2 --output runs/planner_example
+python scripts/eval_hand.py --policy v2_hand_bcppo_std_s0 --step 9000002 --set dev --random-object-pose --objects 14 5 2 7 10 --output runs/hand_example
 ```
 
-Retrain everything and rerun all evaluations: `bash scripts/train_mujoco.sh && bash scripts/evaluate_mujoco.sh`
-(about 2 + 2 hours on 48 CPUs and one GPU).
-
-Dashboard: `python dashboard/server.py --port 8766`, then open http://127.0.0.1:8766
-(forward the port over SSH from a remote machine).
-
-## Documents
-
-- [Project spec](docs/project_spec.md): question, study matrix, frozen evaluation protocol, milestones.
-- [Project state](docs/project_state.md): current results and next steps.
-- [Experiment log](docs/experiment_log.md): MuJoCo-era experiments.
-- [PyBullet era](docs/archive/pybullet/): the original course simulator — results, experiment log,
-  upstream audit and the dexterous-hand spike, kept for the report.
+Sets: `validation` (60), `test1` (100), `test2` (100), `dev` (all 260), `holdout` (100), `course` (course seeds 1000–1019),
+`reserve` (sealed; `--allow-reserve`). Wide objects: `--objects 0 102 --starts 3`.

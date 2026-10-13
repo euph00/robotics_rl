@@ -9,7 +9,7 @@ description = "Goal-conditioned learning on the NUS Fetch Pick-Nav-Reach task"
 requires-python = ">=3.10,<3.11"
 
 [tool.setuptools.packages.find]
-include = ["pnr*", "dashboard*"]
+include = ["pnr*"]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "dashboard/tests"]
+testpaths = ["tests"]

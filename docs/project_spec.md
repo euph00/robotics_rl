@@ -3,8 +3,8 @@
 Redesigned 2026-10-04 for fair comparisons, a physical value-add and a sealed final evaluation.
 Earlier plans: [archive/project_spec_2026-10-03.md](archive/project_spec_2026-10-03.md) (first study
 version, whose results are now development evidence), [archive/project_spec_2026-09-28.md](archive/project_spec_2026-09-28.md)
-and the PyBullet-era guide in [archive/](archive/). Machine-readable plan (drives the dashboard):
-[`configs/study.json`](../configs/study.json).
+and the PyBullet-era records in [archive/pybullet/](archive/pybullet/). The study's story and results are on the project
+site ([`site/index.html`](../site/index.html)).
 
 ## Question and claims
 

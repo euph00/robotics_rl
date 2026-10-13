@@ -1,4 +1,4 @@
-"""Small durable training logger consumed by ``dashboard/server.py``.
+"""Small durable run logger: status, events and metrics under runs/<id>/ (read by scripts/site_data.py).
 
 No training dependency is imported. All paths default to the repository's runs/.
 """
