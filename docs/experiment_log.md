@@ -539,3 +539,23 @@ One run of all 64 frozen systems, 13:28-14:32 (runs/final_v2/, report.json). Del
 - PPO vs RLPD, seed 0, isolated: hand PPO 0.47 -> 0.75 in 1.3 training hours; RLPD 0.50 through the
   warm-up, 0.00-0.08 after the actor is released, 0.07 at 4M after 14.4 hours (74 steps/s). Gripper PPO
   0.48 -> 0.55 at 4M (best 0.73) in 0.7 hours; gripper RLPD running.
+
+## 2026-10-13: PPO vs RLPD complete (24 runs, scripts/algorithms_v2.sh)
+
+Standard objects, 4M steps, training-time lift and carry (60 episodes per evaluation, every 250k), 5 seeds:
+
+| | Imitation start (step 0) | Mean of last three evaluations at 4M (per seed) | Best after the warm-up | Seed 0 training hours (isolated) |
+|---|---|---|---|---|
+| Hand PPO | 0.47 | 0.65 (0.76 0.71 0.72 0.54 0.53) | 0.74 | 1.3 |
+| Hand RLPD | 0.47 | 0.07 (0.03 0.10 0.03 0.07 0.09) | 0.12 | 14.4 |
+| Gripper PPO | 0.50 | 0.62 (0.58 0.68 0.64 0.65 0.55) | 0.75 | 0.7 |
+| Gripper RLPD | 0.52 | 0.03 (0.03 0.01 0.04 0.02 0.04) | 0.18 | 13.8 |
+
+- Equal starts confirmed: both algorithms begin at the same imitation level (0.47 / 0.47 hand, 0.50 / 0.52
+  gripper). RLPD holds it while the actor is frozen (normalisation fixed) and collapses within 250k steps of
+  the actor's release on every seed of both end effectors; no seed recovers above 0.18.
+- No-warm-up sensitivity (seed 0): hand 0.06, gripper 0.03 at 4M (best 0.12 / 0.27 early): the collapse
+  starts at step 0 instead; the warm-up is not its cause.
+- Per hour: PPO finishes 4M steps in 0.7-1.3 training hours; RLPD at the same wall-clock is still in its
+  warm-up (0.8 h, 0.50 hand) and ends at 0.07 / 0.02 after ~14 h. Seeds 1-4 ran four at a time (per step only).
+- Hand PPO seeds 3-4 end at 0.53-0.54 after best evaluations of 0.75 / 0.68 (late drift; full curves in the report).

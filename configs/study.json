@@ -294,8 +294,8 @@
   {
    "key": "algorithms",
    "label": "Fair PPO vs RLPD",
-   "status": "active",
-   "detail": "same imitation start and warm-up, 4M steps; seed 0 isolated, seeds 1-4 parallel"
+   "status": "done",
+   "detail": "PPO 0.65 / 0.62 vs RLPD 0.07 / 0.03 (hand / gripper, 4M, 5 seeds)"
   },
   {
    "key": "final",
