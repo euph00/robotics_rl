@@ -215,6 +215,21 @@ flipped with millimetre changes in placement. We stopped and worked out why. Two
 we changed both.</p>
 <h3>Factor 1: the contact simulation</h3>
 <div class="prose">
+<p>First we checked whether the carry's jolts were to blame. They were not: with the lifted object held completely still,
+the hand's grasp still failed, and its fingers sat twice as deep inside the object.</p>
+</div>
+<table class="t" style="max-width:620px">
+<tr><th>Still hold, 2,000 commands (PyBullet)</th><th>Gripper</th><th>Allegro hand</th></tr>
+<tr><td>Holds that failed</td><td class="n">1 of 20</td><td class="n">4 of 19</td></tr>
+<tr><td>Median penetration into the object</td><td class="n">1.5 mm</td><td class="n">3.1 mm</td></tr>
+<tr><td>Object drift</td><td class="n">2.0 mm</td><td class="n">7.5 mm</td></tr>
+<tr><td>Object jitter</td><td class="n">0.42 mm/s</td><td class="n">1.20 mm/s</td></tr>
+</table>
+<div class="prose">
+<p>The contacts were unstable on their own, and part of that was our setup: the hand had inherited the course's control
+settings (finger targets deep inside the object, a 2,000,000 N force cap, no damping), so four fingers pushed against each
+other through the object, and PyBullet's contact parameters were at their defaults. Rather than tune contacts for one end
+effector, we tested the simulator itself with the gripper, whose drops already dominated our failures.</p>
 <p>We rebuilt the identical task in MuJoCo: same robot model, objects, mazes, seeds, motor law, friction coefficients
 and grip force, with kinematics and motor response checked against PyBullet. The gripper planner's carry drops mostly disappeared: <strong>96 of 100</strong>
 course cases instead of 76 (dev mazes: 250 of 260 instead of 190). Since everything else was matched, PyBullet's drops came
@@ -270,7 +285,7 @@ joint velocity, acceleration and effort limits from the hardware (Fetch jaws ≤
 gripper planner was unaffected (99 of 100 hold-out cases); the hand became learnable (<a href="#hand">section 6</a>).</p>
 </div>
 <div class="callout"><div class="h">What we did not test</div>
-We never ran the hand in PyBullet with realistic physics. The evidence that PyBullet's contact handling was at fault comes
+We never ran the hand in PyBullet with tuned contact parameters or realistic physics. The evidence that PyBullet's contact handling was at fault comes
 from the gripper, whose drops vanished when only the simulator changed. "PyBullet cannot simulate a multi-finger grasp" is an
 inference, not a measurement.</div>
 

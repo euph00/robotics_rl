@@ -159,6 +159,14 @@ Allegro hand vs Fetch gripper on a gantry that reproduces the carry motion
 20/50 vs Fetch 40/50 over 10 recorded routes; after a 5,400-trial robustness search,
 14/25 vs 18/25 on unseen routes. No-go: the hand does not hold better in PyBullet.
 
+Still-hold diagnosis (same rig, object held motionless for 2,000 commands after the lift, 20 trials per hand):
+Fetch 19/20 held, median penetration 1.5 mm, drift 2.0 mm, jitter 0.42 mm/s, 489 N total normal force;
+Allegro 15/19 held, 3.1 mm, 7.5 mm, 1.20 mm/s, 374 N. The grasp fails without any carry motion, so the
+contacts are unstable on their own. Likely contributors on our side: the course's finger control reused for the
+hand (targets deep inside the object, 2e6 N force cap, no damping: four fingers pushing against each other give
+the solver conflicting constraints) and default contact parameters. Tuning them was skipped in favour of the
+MuJoCo port, which tested the simulator with the gripper first.
+
 ## 2026-10-01: MuJoCo backend and planner-only replication
 
 `pnr/mj_env.py`, same interface as the PyBullet environment. Steps that mattered:
