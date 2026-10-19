@@ -158,7 +158,8 @@ arm to a pregrasp and into a carry posture; the grasp, the maze carry and the fi
   <rect x="356" y="116" width="14" height="14" rx="3" class="d-box"/><text x="376" y="127" class="d-s">planned (classical)</text>
 </svg>
 <figcaption>Phase-one control boundary. The same layout reappears in <a href="#design">section 8</a>, where only the grasp
-is learned.</figcaption>
+is learned. Each skill was a multilayer perceptron on simulator state; the carry policy also read a map of the maze's walls
+through a small convolutional encoder.</figcaption>
 </figure>
 <ol class="steps">
 <li><span class="n">1</span><div><strong>Pure SAC+HER learned neither the grasp nor the carry.</strong> Random exploration almost never
@@ -341,6 +342,9 @@ and discards the data. The clipped objective stops one batch from moving the pol
 <p><strong>Warm-up:</strong> after cloning, the actor is good but the value function is random, so the first advantages are noise
 and the first updates destroy the cloned behaviour. Training the value function for 1M steps with the actor frozen
 gives PPO meaningful advantages from its first update.</p>
+<p><strong>Settings</strong> (identical for both end effectors): rollouts of 256 decisions on each of 22 workers (5,632
+transitions per update), 5 epochs over minibatches of 4,096, discount \(\gamma = 0.99\), GAE \(\lambda = 0.95\), clip
+\(\epsilon = 0.2\), no entropy bonus, learning rate \(10^{-4}\) (chosen by the tuning sweep in section 8).</p>
 </div></details>
 <h3>Onto the Fetch</h3>
 <div class="prose"><p>A policy trained on the idealised rig transferred poorly to the real arm (3 of 24 lifts), so the hand
@@ -402,6 +406,66 @@ Reviewing these results, we found five problems, each serious enough to undermin
 <figcaption>Final control boundary: only the grasp is learned, so the comparison isolates what each end effector's grasp
 controller contributes. Compare the phase-one boundary in <a href="#pybullet">section 3</a>.</figcaption>
 </figure>
+<h3 id="policy">Inside the grasp policy</h3>
+<div class="prose"><p>Both end effectors use the same policy design; only the input and output sizes differ. It makes 48
+decisions per second (one every five physics ticks), so the 300-decision grasp budget is about six seconds.</p></div>
+<figure class="diagram">
+<svg viewBox="0 0 760 322" role="img" aria-label="The grasp policy: observations in the palm frame are normalised and fed to separate actor and critic networks of 512, 512 and 256 units; the actor outputs small changes to the wrist pose and the finger targets.">
+  <defs><marker id="a10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="d-head"/></marker></defs>
+  <text x="8" y="16" class="d-t">Observation, in the palm's frame</text>
+  <rect x="8" y="26" width="262" height="30" rx="6" class="d-box"/><text x="18" y="45" class="d-s">object position, orientation, velocity</text><text x="260" y="45" text-anchor="end" class="d-m">15</text>
+  <rect x="8" y="62" width="262" height="30" rx="6" class="d-box"/><text x="18" y="81" class="d-s">32 points on the object's surface</text><text x="260" y="81" text-anchor="end" class="d-m">96</text>
+  <rect x="8" y="98" width="262" height="30" rx="6" class="d-box"/><text x="18" y="117" class="d-s">finger angles, speeds, targets</text><text x="260" y="117" text-anchor="end" class="d-m">3f</text>
+  <rect x="8" y="134" width="262" height="30" rx="6" class="d-box"/><text x="18" y="153" class="d-s">fingertips to object, contacts</text><text x="260" y="153" text-anchor="end" class="d-m">4t + 1</text>
+  <rect x="8" y="170" width="262" height="30" rx="6" class="d-box"/><text x="18" y="189" class="d-s">gravity, lift, height over table</text><text x="260" y="189" text-anchor="end" class="d-m">5</text>
+  <rect x="8" y="206" width="262" height="30" rx="6" class="d-box"/><text x="18" y="225" class="d-s">last action, palm speed, carry flag</text><text x="260" y="225" text-anchor="end" class="d-m">f + 10</text>
+  <text x="8" y="256" class="d-m">f = finger joints, t = fingertips</text>
+  <text x="8" y="272" class="d-m">hand: f = 16, t = 4 → 207 inputs</text>
+  <text x="8" y="288" class="d-m">gripper: f = 2, t = 2 → 143 inputs</text>
+  <line x1="270" y1="131" x2="300" y2="131" class="d-line" marker-end="url(#a10)"/>
+  <rect x="302" y="104" width="92" height="54" rx="8" class="d-soft"/><text x="348" y="127" text-anchor="middle" class="d-t">Normalise</text><text x="348" y="144" text-anchor="middle" class="d-s">running stats</text>
+  <polyline points="394,131 412,131 412,74 428,74" class="d-line" marker-end="url(#a10)"/><polyline points="412,131 412,196 428,196" class="d-line" marker-end="url(#a10)"/>
+  <rect x="430" y="44" width="148" height="60" rx="8" class="d-learned"/><text x="504" y="68" text-anchor="middle" class="d-t">Actor</text><text x="504" y="86" text-anchor="middle" class="d-s">512 → 512 → 256</text>
+  <rect x="430" y="166" width="148" height="60" rx="8" class="d-learned"/><text x="504" y="190" text-anchor="middle" class="d-t">Critic (separate)</text><text x="504" y="208" text-anchor="middle" class="d-s">512 → 512 → 256</text>
+  <line x1="578" y1="74" x2="604" y2="74" class="d-line" marker-end="url(#a10)"/><line x1="578" y1="196" x2="604" y2="196" class="d-line" marker-end="url(#a10)"/>
+  <rect x="606" y="26" width="146" height="96" rx="8" class="d-box"/><text x="679" y="46" text-anchor="middle" class="d-t">Action (Gaussian)</text>
+  <text x="616" y="68" class="d-s">wrist change (6)</text><text x="616" y="83" class="d-m">≤ 1 cm, ≤ 0.05 rad</text>
+  <text x="616" y="102" class="d-s">finger targets (f)</text><text x="616" y="117" class="d-m">≤ 5% of range</text>
+  <rect x="606" y="166" width="146" height="60" rx="8" class="d-box"/><text x="679" y="190" text-anchor="middle" class="d-t">Value V(s)</text><text x="679" y="208" text-anchor="middle" class="d-s">for advantages</text>
+  <text x="430" y="256" class="d-m">PPO: tanh units, state-independent noise</text>
+  <text x="430" y="272" class="d-m">RLPD: same sizes, squashed Gaussian,</text>
+  <text x="430" y="288" class="d-m">two layer-normalised critics Q(s, a)</text>
+  <text x="380" y="312" text-anchor="middle" class="d-m">the wrist target stays within 8 cm sideways and 0.5 rad of tilt of the pregrasp, and 2 cm ahead of the measured wrist</text>
+</svg>
+<figcaption>The grasp policy. Every input is relative to the palm, so the same grasp looks the same wherever the object stands
+and however the arm reached it.</figcaption>
+</figure>
+<ul class="prose">
+<li><strong>Surface points instead of an object label.</strong> Thirty-two points on the object's surface tell the policy the shape
+it is holding, so one policy covers all five objects without knowing which one it has.</li>
+<li><strong>Small changes, not absolute targets.</strong> Each decision nudges the wrist and the finger targets, and zero action
+holds still. With absolute finger targets, exploration noise reopened the grasp at every step and PPO learned nothing in 3M steps.</li>
+<li><strong>A short leash on the wrist.</strong> Clamping the wrist target near the pregrasp keeps the policy's job local:
+it cannot drive the arm into the table or out of reach, and cannot build up large pressing forces.</li>
+<li><strong>Last action and velocities as inputs.</strong> The joints are rate- and effort-limited, so where the hand goes next
+depends on recent commands; feeding them back removes that hidden state.</li>
+<li><strong>Same networks for both end effectors.</strong> Separate actor and critic of 512, 512 and 256 units, standard for
+state-based manipulation; a fair comparison needs equal capacity on both sides. After imitation, the input statistics start from the
+demonstrations, so the cloned policy sees inputs on the scale it was trained on.</li>
+<li><strong>Simulator state, not cameras.</strong> The course task supplies state observations; adding perception would put a
+second problem on top of the one we study.</li>
+</ul>
+<details class="explainer"><summary>The reward<span class="tag">explainer</span></summary><div class="body">
+<p>Dense, and dominated by lifting. Per decision, with \(d\) the distance from the grasp point to the object, \(\bar d\) the mean
+fingertip distance, and lift capped at 0.2 m:</p>
+<p class="math">\[ \begin{aligned} r = {} & 0.5\,(1-\tanh 10d) + 0.5\,(1-\tanh 10\bar d) + 0.1\,\text{contacts} \\ & + 0.25\,[\text{grasped}] + 50\,\text{lift}\,[\text{held}] + 5\,[\text{success}] - 5\,[\text{fell}] \end{aligned} \]</p>
+<p>Success is a 15 cm lift with the thumb and another finger (or both jaws) on the object. After 10 decisions of success the base
+carries the arm along a synthetic carry route while the policy keeps the grip: +1 per decision while the object stays at least
+10 cm up, −20 and the end of the episode on a drop, +10 for finishing the route.</p>
+<p>Two weights came from failures. With a smaller lift weight the hand learned to hold the object on the table indefinitely,
+a reward plateau it never left. And the carry bonus is added <em>on top of</em> the grasp reward: when it replaced it, hovering
+just under the success height paid more than carrying (<a href="#hand">section 6</a>).</p>
+</div></details>
 <table class="t">
 <tr><th>Element</th><th>Setting</th></tr>
 <tr><td>Matrix</td><td>2 end effectors × 4 grasp controllers: hand-written (gripper planner / hand script), imitation (BC),
