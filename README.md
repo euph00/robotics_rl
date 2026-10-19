@@ -1,6 +1,6 @@
 # Where does reinforcement learning pay off in mobile manipulation?
 
-A course project (CS5478, Intelligent Robots) on the [Pick–Nav–Reach default project](https://github.com/NUS-LinS-Lab/Pick-Nav-Reach-Default-Project)
+A project on the [Pick–Nav–Reach default project](https://github.com/NUS-LinS-Lab/Pick-Nav-Reach-Default-Project)
 (pinned at `54ab2d1`, [upstream.lock.json](upstream.lock.json)): a Fetch robot drives to a table, grasps an object, carries
 it through an unseen maze and holds it within 10 cm of an elevated goal. The task runs here in MuJoCo with the course's robot,
 objects, mazes and success test, under realistic actuator limits.
